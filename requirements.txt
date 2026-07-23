@@ -1,0 +1,22 @@
+pandas>=2.0.0
+datasets>=2.12.0
+nltk>=3.8.0
+pyarrow>=12.0.0
+datasketch>=1.5.0
+tqdm>=4.65.0
+scikit-learn>=1.2.0
+joblib>=1.2.0
+python-docx>=0.8.11
+pymupdf>=1.22.0
+reportlab>=4.0.0
+
+fastapi
+uvicorn
+python-multipart
+transformers
+torch
+requests
+
+
+# System Dependency (non-pip installable):
+# LibreOffice (required for legacy .doc conversion)

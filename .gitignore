@@ -1,0 +1,31 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+ENV/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IDE / System files
+.vscode/
+.idea/
+.DS_Store
+
+# Project data directory
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+
+# Local Server PID files
+.backend.pid
+.frontend.pid
+*.log
+
+# Large Model directory (transferred separately)
+models/
+

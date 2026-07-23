@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+  <g transform="translate(2, 2) scale(0.18) rotate(-45) translate(-300, -60)">
+    <!-- Main teardrop shape -->
+    <path d="M 300 60 C 335 105 348 138 348 150 A 48 48 0 1 1 252 150 C 252 138 265 105 300 60 Z" fill="#21242B" />
+    <!-- Highlight accent -->
+    <path d="M 275 120 A 30 30 0 0 1 300 96" stroke="#7A2331" stroke-width="7" stroke-linecap="round" />
+  </g>
+</svg>
