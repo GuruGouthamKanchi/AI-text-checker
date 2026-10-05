@@ -1,0 +1,12 @@
+=================================================================
+ADVERSARIAL COMPARISON MATRIX (BEFORE VS AFTER CLOSED-LOOP)
+=================================================================
+Metric                        | Baseline Raw Synthetic | Humanized Closed-Loop
+-----------------------------------------------------------------
+Overall AI Detection Score    |   95.6%                |   94.8%
+Total Sentences               |     24                 |     24
+High-Risk AI Sentences        |     20                 |     19
+Medium-Risk AI Sentences      |      2                 |      3
+Total AI Flagged Sentences    |     22                 |     22
+Adversarial Evasion Delta     | --                     |   +0.8%
+=================================================================

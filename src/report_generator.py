@@ -1,6 +1,7 @@
 import os
 import sys
 import re
+import subprocess
 import math
 import uuid
 import datetime
@@ -71,46 +72,47 @@ def align_sentences_to_bboxes(pdf_path: str, sentences: list[str]) -> list[dict]
     aligned_sentences = []
     search_start_pos = 0
     
-    # 2. Match each sentence in the text stream
+    # 2. Match each sentence (or its constituent sub-parts if multi-line) in the text stream
     for sent in sentences:
-        sent_clean = clean_text_for_alignment(sent)
-        if not sent_clean:
-            continue
-            
-        # Search forward in the clean text stream
-        match_idx = clean_doc.find(sent_clean, search_start_pos)
-        if match_idx == -1:
-            # Fallback search from the start (handles sentence ordering discrepancies)
-            match_idx = clean_doc.find(sent_clean, 0)
-            
-        if match_idx != -1:
-            try:
-                # Find start and end positions in original text
-                orig_start = clean_to_orig_idx[match_idx]
-                orig_end = clean_to_orig_idx[match_idx + len(sent_clean) - 1]
+        sub_parts = [p.strip() for p in re.split(r'[\n\r]+', sent) if p.strip()]
+        if not sub_parts:
+            sub_parts = [sent]
+
+        bboxes_by_page = {}
+
+        for part in sub_parts:
+            part_clean = clean_text_for_alignment(part)
+            if len(part_clean) < 3:
+                continue
                 
-                # Fetch word mapping range
-                start_word_idx = char_to_word_idx[orig_start]
-                end_word_idx = char_to_word_idx[orig_end]
+            match_idx = clean_doc.find(part_clean, search_start_pos)
+            if match_idx == -1:
+                match_idx = clean_doc.find(part_clean, 0)
                 
-                # Group coordinates by page
-                bboxes_by_page = {}
-                for w_idx in range(start_word_idx, end_word_idx + 1):
-                    word_info = words_list[w_idx]
-                    p = word_info["page"]
-                    if p not in bboxes_by_page:
-                        bboxes_by_page[p] = []
-                    bboxes_by_page[p].append(word_info["bbox"])
+            if match_idx != -1:
+                try:
+                    orig_start = clean_to_orig_idx[match_idx]
+                    orig_end = clean_to_orig_idx[match_idx + len(part_clean) - 1]
                     
-                aligned_sentences.append({
-                    "sentence": sent,
-                    "pages_bboxes": bboxes_by_page
-                })
-                # Advance search pointer
-                search_start_pos = match_idx + len(sent_clean)
-            except Exception:
-                # Fallback if mapping bounds are outside index limits
-                pass
+                    start_word_idx = char_to_word_idx[orig_start]
+                    end_word_idx = char_to_word_idx[orig_end]
+                    
+                    for w_idx in range(start_word_idx, end_word_idx + 1):
+                        word_info = words_list[w_idx]
+                        p = word_info["page"]
+                        if p not in bboxes_by_page:
+                            bboxes_by_page[p] = []
+                        bboxes_by_page[p].append(word_info["bbox"])
+                        
+                    search_start_pos = match_idx + len(part_clean)
+                except Exception:
+                    pass
+
+        if bboxes_by_page:
+            aligned_sentences.append({
+                "sentence": sent,
+                "pages_bboxes": bboxes_by_page
+            })
                 
     doc.close()
     return aligned_sentences
@@ -323,56 +325,53 @@ def generate_pdf_report(
     Main pipeline to overlay coordinates highlights onto the original document,
     generate Cover and Summary pages, and merge them with running headers/footers.
     """
-    # Extract and segment paragraph-by-paragraph exactly matching the /analyze endpoint pipeline
-    from src.document_parser import extract_text
-    from src.app import model_dir, model, tokenizer
-    doc_text_raw, _ = extract_text(source_file_path)
-    doc_text_clean = doc_text_raw.strip()
-    
-    sentences_for_pipeline = segment_sentences(doc_text_clean)
-        
-    # Re-run prediction and smoothing on the synchronized sentence segmentation list
-    predictions_pipeline, _ = run_predictions(
-        sentences=sentences_for_pipeline,
-        model_dir=model_dir,
-        preloaded_model=model,
-        preloaded_tokenizer=tokenizer
-    )
-    smoothed_pipeline = smooth_predictions(predictions_pipeline)
-    
-    total_sent = len(smoothed_pipeline)
+    if not predictions:
+        from src.document_parser import extract_text
+        from src.app import model_dir, roberta_dir, model_modernbert, tokenizer_modernbert, model_roberta, tokenizer_roberta
+        doc_text_raw, _ = extract_text(source_file_path)
+        doc_text_clean = doc_text_raw.strip()
+        sentences_for_pipeline = segment_sentences(doc_text_clean)
+        predictions_pipeline, _ = run_predictions(
+            sentences=sentences_for_pipeline,
+            model_dir=model_dir,
+            preloaded_model=model_modernbert,
+            preloaded_tokenizer=tokenizer_modernbert,
+            preloaded_roberta_model=model_roberta,
+            preloaded_roberta_tokenizer=tokenizer_roberta,
+            roberta_dir=roberta_dir
+        )
+        predictions = smooth_predictions(predictions_pipeline)
+
+    # Ensure all predictions have normalized keys and confidence tiers matching the web app
     flagged_high = 0
     flagged_mid = 0
     unflagged = 0
-    
-    for pred in smoothed_pipeline:
-        score = pred.get("score", 0.0)
-        if score >= 0.80:
-            pred["confidence_tier"] = "high"
+
+    for pred in predictions:
+        if "sentence" not in pred and "text" in pred:
+            pred["sentence"] = pred["text"]
+        score = pred.get("score", pred.get("ai_probability", 0.0))
+        pred["score"] = float(score)
+
+        tier = pred.get("confidence_tier")
+        if not tier or tier == "unflagged":
+            if score >= 0.75:
+                tier = "high"
+            elif score >= 0.60:
+                tier = "medium"
+            else:
+                tier = "none"
+        pred["confidence_tier"] = tier
+
+        if tier == "high":
             flagged_high += 1
-        elif score >= 0.60:
-            pred["confidence_tier"] = "medium"
+        elif tier == "medium":
             flagged_mid += 1
         else:
-            pred["confidence_tier"] = "none"
             unflagged += 1
-            
-    flagged_total = flagged_high + flagged_mid
-    flagged_ratio = (flagged_total / total_sent * 100) if total_sent > 0 else 0.0
-    overall_percentage = min(100.0, flagged_ratio * 2.5) if flagged_total > 0 else 0.0
-    
-    # Round the percentage to the nearest integer matching the website's frontend formatting exactly
-    overall_percentage = float(int(round(overall_percentage)))
-    
-    metrics = {
-        "high_confidence_count": flagged_high,
-        "medium_confidence_count": flagged_mid,
-        "unflagged_count": unflagged,
-        "file_size_bytes": os.path.getsize(source_file_path)
-    }
-    
-    # Override predictions list and metadata for visual overlay highlights
-    predictions = smoothed_pipeline
+
+    overall_percentage = round(float(overall_percentage), 1)
+    metrics["file_size_bytes"] = os.path.getsize(source_file_path)
 
     is_docx = source_file_path.lower().endswith(".docx") or source_file_path.lower().endswith(".doc")
     temp_pdf_path = None
@@ -438,8 +437,15 @@ def generate_pdf_report(
         shutil.copyfile(pdf_path_to_highlight, highlighted_pdf_path)
         dest_doc = fitz.open(highlighted_pdf_path)
         
-        # Build lookup for prediction scores
-        pred_map = {pred["sentence"]: pred for pred in predictions}
+        # Build normalized lookup for prediction scores (handles exact string, stripped string, and clean text keys)
+        pred_map = {}
+        for pred in predictions:
+            text_key = pred.get("sentence", pred.get("text", ""))
+            pred_map[text_key] = pred
+            pred_map[text_key.strip()] = pred
+            clean_k = clean_text_for_alignment(text_key)
+            if clean_k:
+                pred_map[clean_k] = pred
         
         # Colors matching the brand theme
         color_high = (186/255, 45/255, 34/255)    # hex #BA2D22 red
@@ -447,11 +453,20 @@ def generate_pdf_report(
         
         for aligned in aligned_data:
             sent = aligned["sentence"]
-            pred = pred_map.get(sent)
+            pred = pred_map.get(sent) or pred_map.get(sent.strip()) or pred_map.get(clean_text_for_alignment(sent))
             if not pred:
                 continue
                 
             tier = pred.get("confidence_tier")
+            score = float(pred.get("score", pred.get("ai_probability", 0.0)))
+            if not tier or tier == "unflagged":
+                if score >= 0.75:
+                    tier = "high"
+                elif score >= 0.60:
+                    tier = "medium"
+                else:
+                    tier = "none"
+
             if tier == "high":
                 color = color_high
             elif tier == "medium":
@@ -605,3 +620,117 @@ def generate_pdf_report(
                     os.remove(path)
                 except Exception:
                     pass
+
+import base64
+
+def render_highlighted_pdf_page_images(pdf_path: str, processed_sentences: list[dict]) -> list[dict]:
+    """
+    Renders high-res visual page images with sentence AI probability highlights
+    (Red for High Risk, Yellow/Amber for Medium Risk) overlaid directly onto PyMuPDF pages
+    for the web app PDF canvas mode.
+    """
+    if not pdf_path or not os.path.exists(pdf_path) or not pdf_path.lower().endswith(".pdf"):
+        return []
+
+    try:
+        doc = fitz.open(pdf_path)
+        sentences_list = [s.get("sentence", s.get("text", "")) for s in processed_sentences if s.get("confidence_tier") in ["high", "medium"]]
+        
+        # If no sentences flagged, return clean high-res rendered pages
+        if not sentences_list:
+            page_images = []
+            for i, page in enumerate(doc):
+                pix = page.get_pixmap(dpi=150)
+                img_bytes = pix.tobytes("png")
+                base64_img = f"data:image/png;base64,{base64.b64encode(img_bytes).decode('utf-8')}"
+                page_images.append({
+                    "page_number": i + 1,
+                    "image_data": base64_img,
+                    "width": pix.width,
+                    "height": pix.height
+                })
+            doc.close()
+            return page_images
+
+        aligned_data = align_sentences_to_bboxes(pdf_path, sentences_list)
+        pred_map = {}
+        for s in processed_sentences:
+            text_k = s.get("sentence", s.get("text", ""))
+            pred_map[text_k] = s
+            pred_map[text_k.strip()] = s
+            clean_k = clean_text_for_alignment(text_k)
+            if clean_k:
+                pred_map[clean_k] = s
+
+        # Create temporary working copy to draw highlights
+        temp_dir = tempfile.gettempdir()
+        temp_hl_pdf = os.path.join(temp_dir, f"render_hl_{uuid.uuid4().hex}.pdf")
+        shutil.copyfile(pdf_path, temp_hl_pdf)
+        hl_doc = fitz.open(temp_hl_pdf)
+
+        color_high = (186/255, 45/255, 34/255)    # hex #BA2D22 red
+        color_mid = (184/255, 134/255, 46/255)    # hex #B8862E amber
+
+        for aligned in aligned_data:
+            sent = aligned["sentence"]
+            pred = pred_map.get(sent) or pred_map.get(sent.strip()) or pred_map.get(clean_text_for_alignment(sent))
+            if not pred:
+                continue
+
+            tier = pred.get("confidence_tier")
+            score = float(pred.get("score", pred.get("ai_probability", 0.0)))
+            if not tier or tier == "unflagged":
+                if score >= 0.75:
+                    tier = "high"
+                elif score >= 0.60:
+                    tier = "medium"
+                else:
+                    tier = "none"
+
+            if tier == "high":
+                color = color_high
+            elif tier == "medium":
+                color = color_mid
+            else:
+                continue
+
+            for page_idx, bboxes in aligned["pages_bboxes"].items():
+                if page_idx >= len(hl_doc):
+                    continue
+                page = hl_doc[page_idx]
+                for bbox in bboxes:
+                    rect = fitz.Rect(bbox)
+                    if rect.width > 2 and rect.height > 2:
+                        page.draw_rect(
+                            rect,
+                            color=None,
+                            fill=color,
+                            fill_opacity=0.25,
+                            width=0
+                        )
+
+        # Render page pixmaps with highlights to base64 PNG
+        page_images = []
+        for i, page in enumerate(hl_doc):
+            pix = page.get_pixmap(dpi=150)
+            img_bytes = pix.tobytes("png")
+            base64_img = f"data:image/png;base64,{base64.b64encode(img_bytes).decode('utf-8')}"
+            page_images.append({
+                "page_number": i + 1,
+                "image_data": base64_img,
+                "width": pix.width,
+                "height": pix.height
+            })
+
+        hl_doc.close()
+        doc.close()
+        if os.path.exists(temp_hl_pdf):
+            try:
+                os.remove(temp_hl_pdf)
+            except Exception:
+                pass
+
+        return page_images
+    except Exception as e:
+        print(f"[render_highlighted_pdf_page_images] Warning: {e}")
+        return []

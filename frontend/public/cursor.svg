@@ -1,8 +1,36 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
-  <g transform="translate(2, 2) scale(0.18) rotate(-45) translate(-300, -60)">
-    <!-- Main teardrop shape -->
-    <path d="M 300 60 C 335 105 348 138 348 150 A 48 48 0 1 1 252 150 C 252 138 265 105 300 60 Z" fill="#21242B" />
-    <!-- Highlight accent -->
-    <path d="M 275 120 A 30 30 0 0 1 300 96" stroke="#7A2331" stroke-width="7" stroke-linecap="round" />
-  </g>
+  <defs>
+    <!-- Cyber Gradient (Indigo -> Emerald -> Cyan) -->
+    <linearGradient id="cyberGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366F1" />
+      <stop offset="50%" stop-color="#10B981" />
+      <stop offset="100%" stop-color="#06B6D4" />
+    </linearGradient>
+    
+    <!-- Neon Glow Effect -->
+    <filter id="neonGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="1.2" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Precision Cyber Arrow Pointer -->
+  <path 
+    d="M 2 2 L 12 28 L 17 17 L 28 12 Z" 
+    fill="url(#cyberGradient)" 
+    stroke="#0F172A" 
+    stroke-width="1.8" 
+    stroke-linejoin="round"
+    filter="url(#neonGlow)"
+  />
+
+  <!-- Inner Dark Core Accent -->
+  <path 
+    d="M 5 6 L 12 22 L 15 15 L 22 12 Z" 
+    fill="#0F172A" 
+    opacity="0.65"
+  />
+
+  <!-- Emerald Forensic Reticle Pulse Core -->
+  <circle cx="10" cy="10" r="2.5" fill="#10B981" stroke="#FFFFFF" stroke-width="1" />
 </svg>

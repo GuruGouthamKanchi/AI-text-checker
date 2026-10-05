@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Fraunces, Source_Serif_4, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import CustomCursor from "@/components/CustomCursor";
 
 const fraunces = Fraunces({
   variable: "--font-fraunces",
@@ -35,7 +36,11 @@ export default function RootLayout({
       lang="en"
       className={`${fraunces.variable} ${sourceSerif.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-[#FAF8F2] text-[#21242B]" suppressHydrationWarning>{children}</body>
+      <body className="min-h-full flex flex-col bg-[#FAF8F2] text-[#21242B]" suppressHydrationWarning>
+        <CustomCursor />
+        {children}
+      </body>
     </html>
   );
 }
+

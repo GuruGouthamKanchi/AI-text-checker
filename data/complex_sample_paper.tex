@@ -1,0 +1,92 @@
+\documentclass[10pt,journal,compsoc]{IEEEtran}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{cite}
+\usepackage{hyperref}
+
+\title{Dual-Agent Closed-Loop Optimization for Semantics-Preserving AI Text Detection and Humanization}
+
+\author{Goutham~Kanchi,~IEEE~Member, and~DeepMind~Research~Group
+\thanks{G. Kanchi is with the Department of Artificial Intelligence and Computer Science (e-mail: research@veripaper.ai). DOI: 10.1109/TPAMI.2024.3389102.}}
+
+\markboth{IEEE Transactions on Pattern Analysis and Machine Intelligence,~Vol.~46,~No.~9,~September~2026}%
+{Kanchi \MakeLowercase{\textit{et al.}}: Closed-Loop AI Text Detection and Humanization}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Furthermore, large language models (LLMs) exhibit significant advantages in sequence prediction tasks \cite{vaswani2017attention}. Consequently, current statistical AI text detectors fail to distinguish between AI-assisted drafts and natural human prose when subjected to aggressive paraphrasing \cite{sadasivan2024can}. In this paper, we propose \textbf{AccaHumanize-CL}, a novel dual-agent closed-loop optimization framework that unifies an AI Detector (Critic) and an Academic Paraphraser (Generator). By enforcing a SciBERT semantic similarity threshold $\mathcal{S}_{\text{SciBERT}} \ge 0.85$, our framework optimizes body paragraphs iteratively while maintaining a $100\%$ zero-corruption guarantee on LaTeX math equations, tables, figures, and citations \cite{mitchell2023detectgpt}. Empirical results across academic benchmarks demonstrate a $42.5\%$ reduction in false-positive detection rates without degrading technical fidelity.
+\end{abstract}
+
+\begin{IEEEkeywords}
+AI Text Detection, Closed-Loop Optimization, Natural Language Processing, Semantics Preservation, LaTeX AST Parsing.
+\end{IEEEkeywords}
+
+\section{Introduction}
+\IEEEPARstart{R}{ecent} advancements in deep learning have revolutionized natural language understanding and automated text generation \cite{vaswani2017attention}. However, the prolific adoption of LLMs in academic manuscript preparation presents profound challenges for scientific integrity and peer-review publishing \cite{solaiman2019release}. As demonstrated by Mitchell et al. \cite{mitchell2023detectgpt}, machine-generated text resides in localized negative curvature regions of the log-probability density function:
+\begin{equation}
+\label{eq:curvature}
+\mathbf{d}(x, P_\theta) = \log P_\theta(x) - \mathbb{E}_{\tilde{x} \sim q(\cdot|x)} \left[ \log P_\theta(\tilde{x}) \right]
+\end{equation}
+where $\tilde{x}$ represents minor local token perturbations obtained via mask-filling. 
+
+Consequently, traditional humanizers attempt to lower detection probability by aggressively substituting synonyms. However, as proven by Sadasivan et al. \cite{sadasivan2024can}, unconstrained paraphrasing causes severe corruption of domain terminology, citation keys, and mathematical proofs. To overcome these limitations, it is imperative to establish a closed-loop dual-agent architecture with strict Abstract Syntax Tree (AST) node locking.
+
+\section{Methodology}
+Our framework consists of three unified modules: (i) LaTeX AST Parsing and Node Isolation, (ii) Dual-Agent Closed-Loop Optimization, and (iii) Semantics-Preserving Verification.
+
+\subsection{LaTeX AST Node Protection}
+The input LaTeX document $\mathcal{D}_{\text{tex}}$ is parsed into a sequence of structural nodes $\mathcal{N} = \{n_1, n_2, \dots, n_k\}$. We partition $\mathcal{N}$ into \textit{Immutable Lock Nodes} $\mathcal{N}_{\text{lock}}$ and \textit{Mutable Text Paragraph Nodes} $\mathcal{N}_{\text{text}}$:
+\begin{align}
+\label{eq:joint_loss}
+\mathcal{N}_{\text{lock}} &= \mathcal{N}_{\text{math}} \cup \mathcal{N}_{\text{table}} \cup \mathcal{N}_{\text{media}} \cup \mathcal{N}_{\text{cite}} \\
+\mathcal{L}_{\text{joint}}(y) &= \alpha \cdot \left(1 - P_{\text{AI}}(y)\right) + (1 - \alpha) \cdot \text{Sim}_{\text{SciBERT}}(x, y)
+\end{align}
+where $x \in \mathcal{N}_{\text{text}}$ denotes the original paragraph, $y$ is a candidate paraphrase, and $\alpha = 0.55$ balances detection evasion against semantic fidelity.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.9\linewidth]{pipeline_architecture.png}
+\caption{System architecture of AccaHumanize-CL depicting closed-loop feedback between the Critic detector and Generator paraphraser.}
+\label{fig:pipeline}
+\end{figure">
+
+\section{Experimental Results}
+We evaluated AccaHumanize-CL across 500 academic papers collected from arXiv computer science repositories. As detailed in Table~\ref{tab:comparison}, our closed-loop optimization achieves superior score reduction while maintaining complete citation and formula integrity.
+
+\begin{table}[htbp]
+\caption{Performance Comparison of AI Detection and Humanization Tools}
+\label{tab:comparison}
+\centering
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Framework} & \textbf{Initial AI \%} & \textbf{Final AI \%} & \textbf{Semantic Sim.} & \textbf{Math Lock} \\
+\midrule
+Unconstrained T5 & 94.2\% & 22.1\% & 68.4\% & Failed \\
+QuillBot Academic & 94.2\% & 41.5\% & 74.2\% & Failed \\
+\textbf{AccaHumanize-CL (Ours)} & \textbf{94.2\%} & \textbf{14.8\%} & \textbf{96.5\%} & \textbf{100\% Pass} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Conclusion}
+In this work, we introduced an end-to-end format-preserving LaTeX pipeline for closed-loop AI text detection and humanization. By locking math equations, tables, figures, and inline citations, our system enables ethical manuscript polishing without risking academic corruption.
+
+\begin{thebibliography}{99}
+\bibitem{vaswani2017attention}
+A.~Vaswani, N.~Shazeer, N.~Parmar, et al., ``Attention is all you need,'' in \textit{Proc. Advances in Neural Information Processing Systems (NeurIPS)}, 2017, pp. 5998--6008.
+
+\bibitem{mitchell2023detectgpt}
+E.~Mitchell, Y.~Lee, A.~Khazatsky, C.~D.~Manning, and C.~Finn, ``DetectGPT: Zero-shot machine-generated text detection using probability curvature,'' in \textit{Proc. Int. Conf. Machine Learning (ICML)}, 2023.
+
+\bibitem{sadasivan2024can}
+V.~S.~Sadasivan, A.~Kumar, S.~Balasubramanian, W.~Wang, and S.~Feizi, ``Can AI-generated text be reliably detected?'' in \textit{Proc. Int. Conf. Learning Representations (ICLR)}, 2024.
+
+\bibitem{solaiman2019release}
+I.~Solaiman, M.~Brundage, J.~Clark, et al., ``Release strategies and the social implications of language models,'' \textit{arXiv preprint arXiv:1908.09203}, 2019.
+\end{thebibliography}
+
+\end{document}

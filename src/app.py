@@ -32,37 +32,55 @@ from src.document_parser import (
     MissingDependencyError
 )
 
-# Global variables for pre-loaded model and tokenizer
-model_dir = "models/roberta-sentence-academic-v2"
-model = None
-tokenizer = None
+# Global variables for Hybrid Ensemble Engine (ModernBERT 8k + RoBERTa 512)
+model_dir = os.environ.get("MODEL_DIR", "models/modernbert-academic")
+roberta_dir = os.environ.get("ROBERTA_MODEL_DIR", "models/roberta-sentence-academic-v2")
+
+model_modernbert = None
+tokenizer_modernbert = None
+model_roberta = None
+tokenizer_roberta = None
 device = "cpu"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global model, tokenizer, device
-    print("[FastAPI Startup] Checking local model weights...")
-    model_exists = (
-        os.path.exists(model_dir) and 
-        os.path.exists(os.path.join(model_dir, "config.json"))
-    )
+    global model_modernbert, tokenizer_modernbert, model_roberta, tokenizer_roberta, device, model_dir, roberta_dir
+    print(f"[FastAPI Startup] Initializing Hybrid Ensemble Engine (ModernBERT 8k + RoBERTa 512)...")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     
-    if model_exists:
+    # Load ModernBERT (8k macro context)
+    if os.path.exists(model_dir) and os.path.exists(os.path.join(model_dir, "config.json")):
         try:
-            print(f"[FastAPI Startup] Loading RoBERTa-v2 model from '{model_dir}' in memory...")
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            tokenizer = AutoTokenizer.from_pretrained(model_dir)
-            model = AutoModelForSequenceClassification.from_pretrained(model_dir)
-            model.eval()
-            model.to(device)
-            print(f"[FastAPI Startup] Model loaded successfully on {device}!")
+            print(f"[FastAPI Startup] Loading ModernBERT (8k) from '{model_dir}'...")
+            tokenizer_modernbert = AutoTokenizer.from_pretrained(model_dir)
+            model_modernbert = AutoModelForSequenceClassification.from_pretrained(model_dir).to(device)
+            model_modernbert.eval()
+            print(f"[FastAPI Startup] ModernBERT loaded successfully!")
         except Exception as e:
-            print(f"[FastAPI Startup] Error preloading model: {e}. Falling back to simulation.")
+            print(f"[FastAPI Startup] Error preloading ModernBERT: {e}")
+            
+    # Load RoBERTa (512 micro sentence precision)
+    if os.path.exists(roberta_dir) and os.path.exists(os.path.join(roberta_dir, "config.json")):
+        try:
+            print(f"[FastAPI Startup] Loading RoBERTa-v2 (512) from '{roberta_dir}'...")
+            tokenizer_roberta = AutoTokenizer.from_pretrained(roberta_dir)
+            model_roberta = AutoModelForSequenceClassification.from_pretrained(roberta_dir).to(device)
+            model_roberta.eval()
+            print(f"[FastAPI Startup] RoBERTa-v2 loaded successfully!")
+        except Exception as e:
+            print(f"[FastAPI Startup] Error preloading RoBERTa: {e}")
+
+    if model_modernbert is not None and model_roberta is not None:
+        print(f"[FastAPI Startup] HYBRID ENSEMBLE ENGINE ACTIVE on {device}! (65% ModernBERT + 35% RoBERTa)")
+    elif model_modernbert is not None:
+        print(f"[FastAPI Startup] ModernBERT Standalone active on {device}.")
+    elif model_roberta is not None:
+        print(f"[FastAPI Startup] RoBERTa Standalone active on {device}.")
     else:
-        print(f"[FastAPI Startup] Model weights not found at '{model_dir}'. App will run in SIMULATION MODE.")
+        print(f"[FastAPI Startup] App running in SIMULATION MODE until fine-tuned weights exist.")
         
     yield
-    print("[FastAPI Shutdown] Unloading model...")
+    print("[FastAPI Shutdown] Unloading Hybrid Ensemble Engine models...")
 
 app = FastAPI(
     title="VeriPaper AI Text Detector API",
@@ -71,17 +89,67 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Enable CORS for next.js dev server on localhost:3000
+# Enable CORS for next.js dev server
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["Content-Disposition"],
 )
 
-def run_analysis_pipeline(doc_text: str, filename: str, page_count: int):
+# Global prediction cache to ensure single-execution AI text detection
+analysis_cache = {}
+
+def split_into_smart_paragraphs(text: str) -> list[str]:
+    """
+    Intelligently splits raw extracted document text into structural paragraphs, headings,
+    title metadata, affiliations, itemized lists, and reference entries.
+    """
+    if not text:
+        return []
+        
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    # Insert explicit double-newline breaks before structural section markers embedded inside lines
+    text = re.sub(r'(?<=\S)\s*(\b(?:Abstract|Index Terms|1\s+Introduction|Introduction|Background|Related Work|Methodology|Experiments|Results|Discussion|Conclusion|References|Bibliography)\b[\s—\-\.\:]+)', r'\n\n\1', text, flags=re.IGNORECASE)
+    
+    blocks = [b.strip() for b in text.split("\n\n") if b.strip()]
+    paragraphs = []
+    
+    for block in blocks:
+        lines = [l.strip() for l in block.split("\n") if l.strip()]
+        if len(lines) <= 1:
+            paragraphs.append(block)
+            continue
+            
+        current_chunk = []
+        for line in lines:
+            # Check for section headings, title numbers, affiliations, emails, keywords, and citations
+            is_heading = bool(re.match(
+                r'^(?:[0-9]+\.|\d+\s+[A-Z]|\b(?:abstract|introduction|background|related work|methodology|experiments|results|discussion|conclusion|references|works cited|bibliography|department|school|university|e-mail|email|keywords|author|authors|independent research|july \d{4}|june \d{4}|august \d{4}|january \d{4}|february \d{4}|march \d{4}|april \d{4}|may \d{4}|september \d{4}|october \d{4}|november \d{4}|december \d{4})\b)', 
+                line, 
+                re.IGNORECASE
+            ))
+            is_bracket_ref = bool(re.match(r'^\[\d+\]', line))
+            is_author_ref = bool(re.match(r'^[A-Z][a-z]+,?\s+[A-Z]\.?(?:\s+&\s+[A-Z][a-z]+,?\s+[A-Z]\.?)?\s+\(\d{4}\)', line))
+            is_bullet = bool(re.match(r'^(?:[\*\-\•]|\d+\.)\s+', line))
+            
+            # Treat short standalone title/author/metadata header lines as separate blocks
+            is_short_header = (len(line) < 70 and not line.endswith("."))
+            
+            if (is_heading or is_bracket_ref or is_author_ref or is_bullet or is_short_header) and current_chunk:
+                paragraphs.append(" ".join(current_chunk))
+                current_chunk = [line]
+            else:
+                current_chunk.append(line)
+                
+        if current_chunk:
+            paragraphs.append(" ".join(current_chunk))
+            
+    return [p for p in paragraphs if p.strip()]
+
+def run_analysis_pipeline(doc_text: str, filename: str, page_count: int, page_images: list = None, extracted_figures: list = None, pdf_path: str = None):
     # Clean up whitespace
     doc_text = doc_text.strip()
     if not doc_text:
@@ -107,8 +175,11 @@ def run_analysis_pipeline(doc_text: str, filename: str, page_count: int):
         predictions, is_simulated = run_predictions(
             sentences=sentences,
             model_dir=model_dir,
-            preloaded_model=model,
-            preloaded_tokenizer=tokenizer
+            preloaded_model=model_modernbert,
+            preloaded_tokenizer=tokenizer_modernbert,
+            preloaded_roberta_model=model_roberta,
+            preloaded_roberta_tokenizer=tokenizer_roberta,
+            roberta_dir=roberta_dir
         )
     except Exception as e:
         raise HTTPException(
@@ -162,8 +233,9 @@ def run_analysis_pipeline(doc_text: str, filename: str, page_count: int):
     unflagged = 0
     
     paragraph_index = 0
-    raw_paragraphs = doc_text.split("\n\n")
+    raw_paragraphs = split_into_smart_paragraphs(doc_text)
     sentence_idx = 0
+
     
     for p_idx, p_text in enumerate(raw_paragraphs):
         p_sentences = segment_sentences(p_text)
@@ -174,7 +246,7 @@ def run_analysis_pipeline(doc_text: str, filename: str, page_count: int):
             pred = predictions[sentence_idx]
             score = pred["score"]
             
-            if score >= 0.80:
+            if score >= 0.75:
                 tier = "high"
                 flagged_high += 1
             elif score >= 0.60:
@@ -195,7 +267,7 @@ def run_analysis_pipeline(doc_text: str, filename: str, page_count: int):
     while sentence_idx < len(predictions):
         pred = predictions[sentence_idx]
         score = pred["score"]
-        if score >= 0.80:
+        if score >= 0.75:
             tier = "high"
             flagged_high += 1
         elif score >= 0.60:
@@ -213,11 +285,64 @@ def run_analysis_pipeline(doc_text: str, filename: str, page_count: int):
         })
         sentence_idx += 1
 
-    flagged_total = flagged_high + flagged_mid
-    flagged_ratio = (flagged_total / total_sentences * 100) if total_sentences > 0 else 0.0
-    overall_percentage = min(100.0, flagged_ratio * 2.5) if flagged_total > 0 else 0.0
+    flagged_words = 0.0
+    doc_words_total = 0
+
+    for item in processed_sentences:
+        text = item["text"]
+        score = item["ai_probability"]
+        words = len([w for w in text.split() if w.strip()])
+        doc_words_total += words
+        if score >= 0.75:
+            flagged_words += words * 1.0
+        elif score >= 0.60:
+            flagged_words += words * max(0.85, score)
+        elif score >= 0.50:
+            flagged_words += words * 0.50
+
+    if doc_words_total > 0:
+        overall_percentage = round(min(100.0, (flagged_words / doc_words_total) * 100.0), 1)
+    else:
+        overall_percentage = 0.0
+
+    cache_entry = {
+        "filename": filename,
+        "predictions": predictions,
+        "processed_sentences": [
+            {
+                "sentence": s["text"],
+                "score": s["ai_probability"],
+                "confidence_tier": s["confidence_tier"] if s["confidence_tier"] != "unflagged" else "none"
+            }
+            for s in processed_sentences
+        ],
+        "overall_percentage": overall_percentage,
+        "metrics": {
+            "high_confidence_count": flagged_high,
+            "medium_confidence_count": flagged_mid,
+            "unflagged_count": unflagged
+        },
+        "word_count": word_count,
+        "char_count": len(doc_text)
+    }
+    analysis_cache[filename] = cache_entry
+    analysis_cache["_latest"] = cache_entry
+
+    from src.section_analyzer import analyze_paper_sections
+    section_analysis = analyze_paper_sections(doc_text, processed_sentences)
+
+    if pdf_path and os.path.exists(pdf_path) and pdf_path.lower().endswith(".pdf"):
+        try:
+            from src.report_generator import render_highlighted_pdf_page_images
+            hl_images = render_highlighted_pdf_page_images(pdf_path, processed_sentences)
+            if hl_images:
+                page_images = hl_images
+        except Exception as e:
+            print(f"[run_analysis_pipeline] PDF visual highlight rendering warning: {e}")
 
     return {
+        "paragraphs": raw_paragraphs,
+        "text": doc_text,
         "metadata": {
             "filename": filename,
             "page_count": page_count,
@@ -225,6 +350,9 @@ def run_analysis_pipeline(doc_text: str, filename: str, page_count: int):
         },
         "overall_ai_percentage": overall_percentage,
         "sentences": processed_sentences,
+        "section_analysis": section_analysis,
+        "page_images": page_images or [],
+        "extracted_figures": extracted_figures or [],
         "explainability": {
             "lexical_diversity": {
                 "score": lexical_diversity,
@@ -252,6 +380,7 @@ def run_analysis_pipeline(doc_text: str, filename: str, page_count: int):
         },
         "is_simulated": is_simulated
     }
+
 
 @app.post("/analyze")
 async def analyze_document(file: UploadFile = File(...)):
@@ -300,11 +429,22 @@ async def analyze_document(file: UploadFile = File(...)):
             detail=f"Failed to write uploaded file to temp buffer: {str(e)}"
         )
 
-    # 4. Extract document text using the unified parser
+    # 4. Extract document text & visual page renderings
     doc_text = ""
     page_count = 0
+    page_images = []
+    extracted_figures = []
+    
     try:
-        doc_text, page_count = extract_text(temp_path)
+        if ext == ".pdf":
+            from src.document_parser import extract_pdf_visual_and_text
+            pdf_data = extract_pdf_visual_and_text(temp_path)
+            doc_text = pdf_data["text"]
+            page_count = pdf_data["page_count"]
+            page_images = pdf_data["page_images"]
+            extracted_figures = pdf_data["extracted_figures"]
+        else:
+            doc_text, page_count = extract_text(temp_path)
     except PasswordProtectedError as e:
         raise HTTPException(
             status_code=400,
@@ -325,6 +465,9 @@ async def analyze_document(file: UploadFile = File(...)):
             status_code=500,
             detail=f"An unexpected error occurred during document parsing: {str(e)}"
         )
+
+    try:
+        return run_analysis_pipeline(doc_text, file.filename, page_count, page_images, extracted_figures, pdf_path=temp_path)
     finally:
         # Clean up temporary file
         if os.path.exists(temp_path):
@@ -333,7 +476,6 @@ async def analyze_document(file: UploadFile = File(...)):
             except Exception:
                 pass
 
-    return run_analysis_pipeline(doc_text, file.filename, page_count)
 
 @app.get("/sample")
 async def analyze_sample(type: str):
@@ -358,29 +500,29 @@ async def analyze_sample(type: str):
             detail=f"Sample file not found at path: {file_path}"
         )
         
-    # Extract PDF text using pypdf
+    # Extract PDF text & visual page renderings using PyMuPDF
     doc_text = ""
     page_count = 0
+    page_images = []
+    extracted_figures = []
     try:
-        import pypdf
-        reader = pypdf.PdfReader(file_path)
-        page_count = len(reader.pages)
-        
-        text_pages = []
-        for page in reader.pages:
-            page_text = page.extract_text()
-            if page_text:
-                text_pages.append(page_text)
-        doc_text = "\n".join(text_pages)
+        from src.document_parser import extract_pdf_visual_and_text
+        pdf_data = extract_pdf_visual_and_text(file_path)
+        doc_text = pdf_data["text"]
+        page_count = pdf_data["page_count"]
+        page_images = pdf_data["page_images"]
+        extracted_figures = pdf_data["extracted_figures"]
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=f"Failed to parse sample PDF: {str(e)}"
         )
 
-    return run_analysis_pipeline(doc_text, filename, page_count)
+    return run_analysis_pipeline(doc_text, filename, page_count, page_images, extracted_figures, pdf_path=file_path)
+
 
 @app.post("/report")
+@app.get("/report")
 async def download_report(
     file: UploadFile = File(None),
     sample_type: str = None
@@ -445,57 +587,85 @@ async def download_report(
         from src.document_parser import extract_text
         from src.report_generator import generate_pdf_report
         
-        doc_text, page_count = extract_text(temp_path)
-        doc_text_clean = doc_text.strip()
-        if not doc_text_clean:
-            raise HTTPException(status_code=400, detail="The document contains no readable text.")
-            
-        sentences = segment_sentences(doc_text_clean)
-        total_sentences = len(sentences)
-        if total_sentences == 0:
-            raise HTTPException(status_code=400, detail="No valid sentences could be extracted.")
-            
-        word_count = len([w for w in doc_text_clean.split() if w.strip()])
-        char_count = len(doc_text_clean)
-        
-        # Run predictions
-        predictions, is_simulated = run_predictions(
-            sentences=sentences,
-            model_dir=model_dir,
-            preloaded_model=model,
-            preloaded_tokenizer=tokenizer
-        )
-        
-        # Apply smoothing
-        smoothed = smooth_predictions(predictions)
-        
-        # Compute breakdown metrics
-        flagged_high = 0
-        flagged_mid = 0
-        unflagged = 0
-        
-        for pred in smoothed:
-            score = pred["score"]
-            if score >= 0.85:
-                pred["confidence_tier"] = "high"
-                flagged_high += 1
-            elif score >= 0.50:
-                pred["confidence_tier"] = "medium"
-                flagged_mid += 1
-            else:
-                pred["confidence_tier"] = "none"
-                unflagged += 1
+        cache_key = sample_type if sample_type else (filename if filename in analysis_cache else "_latest")
+        cached = analysis_cache.get(cache_key) or analysis_cache.get(filename) or analysis_cache.get("_latest")
+
+        if cached and cached.get("processed_sentences"):
+            print(f"[Cache Hit] Reusing pre-computed AI text detection results for '{filename}'. Skipping redundant neural model inference!")
+            smoothed = cached["processed_sentences"]
+            overall_percentage = cached["overall_percentage"]
+            metrics = cached["metrics"]
+            metrics["file_size_bytes"] = size
+            word_count = cached["word_count"]
+            char_count = cached["char_count"]
+        else:
+            print(f"[Cache Miss] Executing AI text detection for report generation on '{filename}'...")
+            doc_text, page_count = extract_text(temp_path)
+            doc_text_clean = doc_text.strip()
+            if not doc_text_clean:
+                raise HTTPException(status_code=400, detail="The document contains no readable text.")
                 
-        flagged_total = flagged_high + flagged_mid
-        flagged_ratio = (flagged_total / total_sentences * 100) if total_sentences > 0 else 0.0
-        overall_percentage = min(100.0, flagged_ratio * 2.5) if flagged_total > 0 else 0.0
-        
-        metrics = {
-            "high_confidence_count": flagged_high,
-            "medium_confidence_count": flagged_mid,
-            "unflagged_count": unflagged,
-            "file_size_bytes": size
-        }
+            sentences = segment_sentences(doc_text_clean)
+            total_sentences = len(sentences)
+            if total_sentences == 0:
+                raise HTTPException(status_code=400, detail="No valid sentences could be extracted.")
+                
+            word_count = len([w for w in doc_text_clean.split() if w.strip()])
+            char_count = len(doc_text_clean)
+            
+            # Run predictions
+            predictions, is_simulated = run_predictions(
+                sentences=sentences,
+                model_dir=model_dir,
+                preloaded_model=model_modernbert,
+                preloaded_tokenizer=tokenizer_modernbert,
+                preloaded_roberta_model=model_roberta,
+                preloaded_roberta_tokenizer=tokenizer_roberta,
+                roberta_dir=roberta_dir
+            )
+            
+            # Apply smoothing
+            smoothed = smooth_predictions(predictions)
+            
+            # Compute breakdown metrics
+            flagged_high = 0
+            flagged_mid = 0
+            unflagged = 0
+            
+            for pred in smoothed:
+                score = pred["score"]
+                if score >= 0.75:
+                    pred["confidence_tier"] = "high"
+                    flagged_high += 1
+                elif score >= 0.60:
+                    pred["confidence_tier"] = "medium"
+                    flagged_mid += 1
+                else:
+                    pred["confidence_tier"] = "none"
+                    unflagged += 1
+                    
+            ai_weighted_words = 0.0
+            doc_words_total = 0
+
+            for pred in smoothed:
+                text = pred["sentence"]
+                score = pred["score"]
+                words = len([w for w in text.split() if w.strip()])
+                doc_words_total += words
+                if score >= 0.60:
+                    ai_weighted_words += words * score
+
+            if doc_words_total > 0:
+                overall_percentage = round((ai_weighted_words / doc_words_total) * 100, 1)
+            else:
+                overall_percentage = 0.0
+            
+            metrics = {
+                "high_confidence_count": flagged_high,
+                "medium_confidence_count": flagged_mid,
+                "unflagged_count": unflagged,
+                "file_size_bytes": size
+            }
         
         # Generate the PDF report
         report_pdf_path = generate_pdf_report(
@@ -540,4 +710,13 @@ async def download_report(
                 os.remove(temp_path)
             except Exception:
                 pass
+
+
+# Mount additive diagnostic APIRouter for adversarial robustness evaluation
+try:
+    from robustness_eval.router import router as robustness_router
+    app.include_router(robustness_router)
+except Exception as e:
+    print(f"[Warning] Failed to mount robustness router: {e}")
+
 

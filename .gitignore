@@ -29,3 +29,6 @@ data/processed/*
 # Large Model directory (transferred separately)
 models/
 
+# Office temporary lock files
+~$*
+

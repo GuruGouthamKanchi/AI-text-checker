@@ -1,0 +1,283 @@
+[
+  {
+    "domain": "Computer Science & AI",
+    "raw_text": "\nSynergistic Neural Frameworks for Automated Deep Learning Optimization\n\nAI Research Group\nDepartment of Computer Science\n\nAbstract\u2014Large Language Models (LLMs) have become the dominant paradigm in natural language processing, driven by the Transformer architecture and its capacity to scale across data, parameters, and compute. In addition, it is crucial to delve into the complex multi-faceted paradigm of artificial intelligence integration within contemporary educational ecosystems. Consequently, stakeholders must carefully balance innovation with ethical guidelines. In this paper, we explore a thorough framework that serves as proof to the impact of synthetic neural networks.\n\n1. INTRODUCTION\nFurthermore, in modern computer science, notably, deep learning architectures play a key role in advancing computational intelligence. In addition, researchers have increasingly focused on optimizing parameter distributions across complex multi-dimensional search spaces. As has been shown in recent literature, the loss optimization trajectory follows standard empirical risk minimization. In addition, it is worth emphasising that standard gradient descent methods often hit local minima convergence. Thus, adaptive optimization is essential to ensure robust generalization performance across diverse benchmark datasets.\n",
+    "raw_score": 93.1,
+    "humanized_text": "Synergistic Neural Frameworks for Automated Deep Learning Optimization\n\nAI Research Group\n\nDepartment of Computer Science\n\nAbstract\u2014Large Language Models (LLMs) have become the dominant paradigm in natural language processing, driven by the Transformer architecture and its capacity to scale across data, parameters, and compute. In addition, it is crucial to delve into the complex multi-faceted paradigm of artificial intelligence integration within contemporary educational ecosystems. resulting in, stakeholders must carefully balance innovation with ethical guidelines. In this paper, we explore a thorough framework that serves as proof to the impact of synthetic neural networks.\n\n1.\n\nINTRODUCTION in addition, in modern computer science, notably, deep learning architectures play a key role in advancing computational intelligence. In addition, researchers have increasingly focused on optimizing parameter distributions across complex multi-dimensional search spaces. As has been shown in recent literature, the loss optimization trajectory follows standard empirical risk minimization. In addition, it is worth emphasising that standard gradient descent methods often hit local minima convergence. Thus, adaptive optimization is essential to ensure robust generalization performance across diverse benchmark datasets.",
+    "humanized_score": 91.6,
+    "predictions": [
+      {
+        "sentence": "Synergistic Neural Frameworks for Automated Deep Learning Optimization",
+        "score": 0.4061623103916645,
+        "label": 0
+      },
+      {
+        "sentence": "AI Research Group",
+        "score": 0.4377579800784588,
+        "label": 0
+      },
+      {
+        "sentence": "Department of Computer Science",
+        "score": 0.7369852866977453,
+        "label": 1
+      },
+      {
+        "sentence": "Abstract\u2014Large Language Models (LLMs) have become the dominant paradigm in natural language processing, driven by the Transformer architecture and its capacity to scale across data, parameters, and compute.",
+        "score": 0.9678736007213593,
+        "label": 1
+      },
+      {
+        "sentence": "In addition, it is crucial to delve into the complex multi-faceted paradigm of artificial intelligence integration within contemporary educational ecosystems.",
+        "score": 0.9018020135164261,
+        "label": 1
+      },
+      {
+        "sentence": "resulting in, stakeholders must carefully balance innovation with ethical guidelines.",
+        "score": 0.7613497173786163,
+        "label": 1
+      },
+      {
+        "sentence": "In this paper, we explore a thorough framework that serves as proof to the impact of synthetic neural networks.",
+        "score": 0.661227659881115,
+        "label": 1
+      },
+      {
+        "sentence": "1.",
+        "score": 0.6086056023836136,
+        "label": 1
+      },
+      {
+        "sentence": "INTRODUCTION in addition, in modern computer science, notably, deep learning architectures play a key role in advancing computational intelligence.",
+        "score": 0.7518028011918068,
+        "label": 1
+      },
+      {
+        "sentence": "In addition, researchers have increasingly focused on optimizing parameter distributions across complex multi-dimensional search spaces.",
+        "score": 0.895,
+        "label": 1
+      },
+      {
+        "sentence": "As has been shown in recent literature, the loss optimization trajectory follows standard empirical risk minimization.",
+        "score": 0.8474999999999999,
+        "label": 1
+      },
+      {
+        "sentence": "In addition, it is worth emphasising that standard gradient descent methods often hit local minima convergence.",
+        "score": 0.8475000000000001,
+        "label": 1
+      },
+      {
+        "sentence": "Thus, adaptive optimization is essential to ensure robust generalization performance across diverse benchmark datasets.",
+        "score": 0.9329999999999999,
+        "label": 1
+      }
+    ]
+  },
+  {
+    "domain": "Biomedical & Medicine",
+    "raw_text": "\nHigh-Precision CRISPR-Cas9 Gene Editing Protocols in Human Pluripotent Stem Cells\n\nBiomedical Research Institute\nDepartment of Molecular Genetics\n\nAbstract\u2014The rapid evolution of genomic engineering has transformed molecular medicine. In addition, it is important to explore into the complex challenges of targeted gene disruption to ensure patient safety. Consequently, researchers must evaluate off-target cleavage events using next-generation sequencing assays. In this paper, we explore a thorough framework for optimizing Cas9 ribonucleoprotein delivery into human stem cells.\n\n1. INTRODUCTION\nFurthermore, in contemporary biotechnology, notably, guide RNA design plays a key role in maximizing cleavage efficiency. In addition, clinicians have increasingly focused on non-viral electroporation methods across primary cell lineages. As has been shown in recent literature, non-homologous end joining repair trajectories follow predictable insertion-deletion profiles. Thus, high-fidelity Cas9 variants are essential to mitigate unintended genomic alterations.\n",
+    "raw_score": 88.7,
+    "humanized_text": "High- Precision CRISPR-Cas9 Gene Editing Protocols in Human Pluripotent Stem Cells\n\nBiomedical Research Institute\n\nDepartment of Molecular Genetics\n\nThe rapid evolution of genomic engineering has transformed molecular medicine. In addition, it is important to explore into the complex challenges of targeted gene disruption to ensure patient safety. resulting in, researchers must evaluate off-target cleavage events using next-generation sequencing assays. In this paper, we explore a thorough framework for optimizing Cas9 ribonucleoprotein delivery into human stem cells.\n\n1.\n\nINTRODUCTION in addition, in contemporary biotechnology, notably, guide RNA design plays a key role in maximizing cleavage efficiency. In addition, clinicians have increasingly focused on non-viral electroporation methods across primary cell lineages. As has been shown in recent literature, non-homologous end joining repair trajectories follow predictable insertion-deletion profiles. as a result, high-fidelity Cas9 variants are essential to mitigate unintended genomic alterations.",
+    "humanized_score": 70.3,
+    "predictions": [
+      {
+        "sentence": "High- Precision CRISPR-Cas9 Gene Editing Protocols in Human Pluripotent Stem Cells",
+        "score": 0.26672709621489044,
+        "label": 0
+      },
+      {
+        "sentence": "Biomedical Research Institute",
+        "score": 0.3672454571351409,
+        "label": 0
+      },
+      {
+        "sentence": "Department of Molecular Genetics",
+        "score": 0.5140248611569405,
+        "label": 0
+      },
+      {
+        "sentence": "The rapid evolution of genomic engineering has transformed molecular medicine.",
+        "score": 0.7116018131375312,
+        "label": 1
+      },
+      {
+        "sentence": "In addition, it is important to explore into the complex challenges of targeted gene disruption to ensure patient safety.",
+        "score": 0.626481513120234,
+        "label": 1
+      },
+      {
+        "sentence": "resulting in, researchers must evaluate off-target cleavage events using next-generation sequencing assays.",
+        "score": 0.4649291086941958,
+        "label": 0
+      },
+      {
+        "sentence": "In this paper, we explore a thorough framework for optimizing Cas9 ribonucleoprotein delivery into human stem cells.",
+        "score": 0.574240824021399,
+        "label": 0
+      },
+      {
+        "sentence": "1.",
+        "score": 0.6335879147052765,
+        "label": 1
+      },
+      {
+        "sentence": "INTRODUCTION in addition, in contemporary biotechnology, notably, guide RNA design plays a key role in maximizing cleavage efficiency.",
+        "score": 0.7518028011918068,
+        "label": 1
+      },
+      {
+        "sentence": "In addition, clinicians have increasingly focused on non-viral electroporation methods across primary cell lineages.",
+        "score": 0.9376026523113251,
+        "label": 1
+      },
+      {
+        "sentence": "As has been shown in recent literature, non-homologous end joining repair trajectories follow predictable insertion-deletion profiles.",
+        "score": 0.9327053046226501,
+        "label": 1
+      },
+      {
+        "sentence": "as a result, high-fidelity Cas9 variants are essential to mitigate unintended genomic alterations.",
+        "score": 0.85112318277359,
+        "label": 1
+      }
+    ]
+  },
+  {
+    "domain": "Physics & Quantum Computing",
+    "raw_text": "\nFault-Tolerant Quantum Key Distribution Over Fiber-Optic Networks\n\nQuantum Information Group\nDepartment of Applied Physics\n\nAbstract\u2014Quantum key distribution (QKD) leverages fundamental principles of quantum mechanics to guarantee information-theoretic security. In addition, it is crucial to delve into the complex multi-faceted paradigm of decoy-state protocols within fiber networks. Consequently, experimentalists must balance secret key rates with channel attenuation constraints. In this paper, we explore a thorough framework that serves as proof of quantum advantage in metropolitan links.\n\n1. INTRODUCTION\nFurthermore, in modern quantum physics, notably, superconducting nanowire single-photon detectors play a key role in advancing quantum communication. In addition, physicists have increasingly focused on mitigating phase noise across polarization-encoded channels. As has been shown in recent literature, quantum bit error rate scales linearly with dark count probability. Thus, active phase stabilization is essential to ensure long-distance key generation.\n",
+    "raw_score": 92.5,
+    "humanized_text": "Fault-Tolerant Quantum Key Distribution Over Fiber-Optic Networks\n\nQuantum Information Group\n\nDepartment of Applied Physics\n\nAbstract\u2014Quantum key distribution (QKD) harnesses fundamental principles of quantum mechanics to guarantee information-theoretic security. In addition, it is important to explore into the complex multi-faceted paradigm of decoy-state protocols within fiber networks. resulting in, experimentalists must balance secret key rates with channel attenuation constraints. In this paper, we explore a thorough framework that serves as proof of quantum advantage in metropolitan links.\n\n1.\n\nINTRODUCTION Furthermore, in modern quantum physics, notably, superconducting nanowire single-photon detectors play a key role in advancing quantum communication. In addition, physicists have increasingly focused on mitigating phase noise across polarization-encoded channels. As has been shown in recent literature, quantum bit error rate scales linearly with dark count probability. Thus, active phase stabilization is essential to ensure long-distance key generation.",
+    "humanized_score": 81.2,
+    "predictions": [
+      {
+        "sentence": "Fault-Tolerant Quantum Key Distribution Over Fiber-Optic Networks",
+        "score": 0.47253406941890713,
+        "label": 0
+      },
+      {
+        "sentence": "Quantum Information Group",
+        "score": 0.48141905665397644,
+        "label": 0
+      },
+      {
+        "sentence": "Department of Applied Physics",
+        "score": 0.7465006485581398,
+        "label": 1
+      },
+      {
+        "sentence": "Abstract\u2014Quantum key distribution (QKD) harnesses fundamental principles of quantum mechanics to guarantee information-theoretic security.",
+        "score": 0.9654681658744813,
+        "label": 1
+      },
+      {
+        "sentence": "In addition, it is important to explore into the complex multi-faceted paradigm of decoy-state protocols within fiber networks.",
+        "score": 0.7742215617373586,
+        "label": 1
+      },
+      {
+        "sentence": "resulting in, experimentalists must balance secret key rates with channel attenuation constraints.",
+        "score": 0.5062995890527964,
+        "label": 0
+      },
+      {
+        "sentence": "In this paper, we explore a thorough framework that serves as proof of quantum advantage in metropolitan links.",
+        "score": 0.533702595718205,
+        "label": 0
+      },
+      {
+        "sentence": "1.",
+        "score": 0.6086056023836136,
+        "label": 1
+      },
+      {
+        "sentence": "INTRODUCTION Furthermore, in modern quantum physics, notably, superconducting nanowire single-photon detectors play a key role in advancing quantum communication.",
+        "score": 0.7518028011918068,
+        "label": 1
+      },
+      {
+        "sentence": "In addition, physicists have increasingly focused on mitigating phase noise across polarization-encoded channels.",
+        "score": 0.895,
+        "label": 1
+      },
+      {
+        "sentence": "As has been shown in recent literature, quantum bit error rate scales linearly with dark count probability.",
+        "score": 0.8474999999999999,
+        "label": 1
+      },
+      {
+        "sentence": "Thus, active phase stabilization is essential to ensure long-distance key generation.",
+        "score": 0.7999999999999999,
+        "label": 1
+      }
+    ]
+  },
+  {
+    "domain": "Economics & Social Science",
+    "raw_text": "\nMacroeconomic Propagation of Fiscal Policy In Stochastic DSGE Models\n\nInstitute for Economic Policy\nDepartment of Economics\n\nAbstract\u2014In modern macroeconomics, dynamic stochastic general equilibrium (DSGE) models incorporate nominal rigidities to evaluate monetary policy. In addition, it is important to explore into the complex challenges of financial friction modeling during economic shocks. Consequently, policymakers must balance inflation targeting with employment growth. In this paper, we explore a thorough framework for Bayesian parameter calibration.\n\n1. INTRODUCTION\nFurthermore, in applied econometrics, notably, vector autoregression models play a key role in forecasting macroeconomic fluctuations. In addition, economists have increasingly focused on structural impulse response functions across heterogeneous household datasets. As has been shown in recent literature, consumption multipliers depend strongly on marginal propensity to consume. Thus, adaptive fiscal intervention is essential to sustain long-term economic stability.\n",
+    "raw_score": 89.6,
+    "humanized_text": "Macroeconomic Propagation of Fiscal Policy In Stochastic DSGE Models\n\nInstitute for Economic Policy\n\nDepartment of Economics\n\nAbstract\u2014In modern macroeconomics, dynamic stochastic general equilibrium (DSGE) models incorporate nominal rigidities to evaluate monetary policy. In addition, it is important to explore into the complex challenges of financial friction modeling during economic shocks. resulting in, policymakers must balance inflation targeting with employment growth. In this paper, we explore a thorough framework for Bayesian parameter calibration.\n\n1.\n\nINTRODUCTION Furthermore, in applied econometrics, notably, vector autoregression models play a key role in forecasting macroeconomic fluctuations. In addition, economists have increasingly focused on structural impulse response functions across heterogeneous household datasets. As has been shown in recent literature, consumption multipliers depend strongly on marginal propensity to consume. Thus, adaptive fiscal intervention is essential to sustain long-term economic stability.",
+    "humanized_score": 84.5,
+    "predictions": [
+      {
+        "sentence": "Macroeconomic Propagation of Fiscal Policy In Stochastic DSGE Models",
+        "score": 0.2756882421672344,
+        "label": 0
+      },
+      {
+        "sentence": "Institute for Economic Policy",
+        "score": 0.45049784518778324,
+        "label": 0
+      },
+      {
+        "sentence": "Department of Economics",
+        "score": 0.7281226441264153,
+        "label": 1
+      },
+      {
+        "sentence": "Abstract\u2014In modern macroeconomics, dynamic stochastic general equilibrium (DSGE) models incorporate nominal rigidities to evaluate monetary policy.",
+        "score": 0.9222602158784866,
+        "label": 1
+      },
+      {
+        "sentence": "In addition, it is important to explore into the complex challenges of financial friction modeling during economic shocks.",
+        "score": 0.7644282773137092,
+        "label": 1
+      },
+      {
+        "sentence": "resulting in, policymakers must balance inflation targeting with employment growth.",
+        "score": 0.5490236550569534,
+        "label": 0
+      },
+      {
+        "sentence": "In this paper, we explore a thorough framework for Bayesian parameter calibration.",
+        "score": 0.6127729386091232,
+        "label": 1
+      },
+      {
+        "sentence": "1.",
+        "score": 0.6914415031671524,
+        "label": 1
+      },
+      {
+        "sentence": "INTRODUCTION Furthermore, in applied econometrics, notably, vector autoregression models play a key role in forecasting macroeconomic fluctuations.",
+        "score": 0.8323371431231499,
+        "label": 1
+      },
+      {
+        "sentence": "In addition, economists have increasingly focused on structural impulse response functions across heterogeneous household datasets.",
+        "score": 0.9305707049369811,
+        "label": 1
+      },
+      {
+        "sentence": "As has been shown in recent literature, consumption multipliers depend strongly on marginal propensity to consume.",
+        "score": 0.895,
+        "label": 1
+      },
+      {
+        "sentence": "Thus, adaptive fiscal intervention is essential to sustain long-term economic stability.",
+        "score": 0.9329999999999999,
+        "label": 1
+      }
+    ]
+  }
+]

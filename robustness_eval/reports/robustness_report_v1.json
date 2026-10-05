@@ -1,0 +1,30 @@
+{
+  "total_evaluations": 1,
+  "accuracy_original": 100.0,
+  "accuracy_rewritten": 0.0,
+  "accuracy_drop": 100.0,
+  "mean_original_score": 90.0,
+  "mean_rewritten_score": 40.0,
+  "mean_score_drop": 50.0,
+  "verdict_flip_rate": 100.0,
+  "adversarial_resilience_index": 0.0,
+  "confidence_under_attack_signal": "Critical Vulnerability (High Evasion Risk)",
+  "method_breakdown": {
+    "combined_v1": {
+      "sample_count": 1,
+      "orig_acc": 100.0,
+      "rewritten_acc": 0.0,
+      "acc_drop": 100.0,
+      "score_drop": 50.0,
+      "flip_rate": 100.0
+    }
+  },
+  "fooling_patterns": [
+    {
+      "pattern_name": "LLM Cliché Term Substitution (Vocabulary)",
+      "count": 1,
+      "avg_score_drop": 50.0,
+      "description": "Replacing high-signal LLM indicator terms ('delve', 'crucial', 'leverage') with human synonyms."
+    }
+  ]
+}

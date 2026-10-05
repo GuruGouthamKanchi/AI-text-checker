@@ -19,6 +19,7 @@ AI_Text_Checker/
 │
 ├── models/
 │   ├── baseline/                         # Saved TF-IDF vectorizer and Logistic Regression model
+│   ├── modernbert-academic/              # PRIMARY PRODUCTION CLASSIFIER (8,192 Context Window, FlashAttn-2)
 │   ├── roberta-sentence-academic/        # Original sentence model weights (v1)
 │   └── roberta-sentence-academic-v2/     # Optimized domain-stratified sentence weights (v2)
 │

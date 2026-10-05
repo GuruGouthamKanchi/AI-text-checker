@@ -55,6 +55,10 @@ body {
   width: 6px;
   height: 6px;
 }
+::-webkit-scrollbar:horizontal {
+  display: none;
+  height: 0px;
+}
 ::-webkit-scrollbar-track {
   background: var(--background);
 }
@@ -66,9 +70,17 @@ body {
   background: var(--seal);
 }
 
-/* Universal Custom Site-wide Ink Drop Cursor */
-* {
-  cursor: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32' fill='none'%3E%3Cg transform='translate(2, 2) scale(0.18) rotate(-45) translate(-300, -60)'%3E%3Cpath d='M 300 60 C 335 105 348 138 348 150 A 48 48 0 1 1 252 150 C 252 138 265 105 300 60 Z' fill='%2321242B'/%3E%3Cpath d='M 275 120 A 30 30 0 0 1 300 96' stroke='%237A2331' stroke-width='7' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E") 2 2, auto !important;
+
+/* Hide default OS browser cursor everywhere except native select/option dropdown popups */
+*, body, button, a, input, textarea {
+  cursor: none !important;
 }
+
+select, option {
+  cursor: url('/cursor.svg') 2 2, pointer !important;
+}
+
+
+
 
 

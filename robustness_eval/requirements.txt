@@ -1,0 +1,4 @@
+# Dedicated dependencies for robustness_eval module
+pydantic>=2.0.0
+scipy>=1.9.0
+dataclasses-json>=0.5.7

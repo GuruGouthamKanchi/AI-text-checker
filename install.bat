@@ -74,11 +74,11 @@ if %errorlevel% neq 0 (
 :: 5. Check Model Weights
 echo.
 echo [VeriPaper Setup] Checking model weights...
-if not exist models\roberta-sentence-academic-v2\model.safetensors (
-    echo [VeriPaper Setup] Note: Local model weights not found at models\roberta-sentence-academic-v2\model.safetensors.
-    echo [VeriPaper Setup] The app will run in SIMULATION MODE unless you download and place the weights there.
+if not exist models\modernbert-academic\model.safetensors (
+    echo [VeriPaper Setup] Note: Primary ModernBERT model weights not found at models\modernbert-academic\model.safetensors.
+    echo [VeriPaper Setup] The app will run in SIMULATION MODE unless fine-tuned weights exist.
 ) else (
-    echo [VeriPaper Setup] Model weights found successfully.
+    echo [VeriPaper Setup] Primary ModernBERT model weights found successfully.
 )
 
 :: 6. Frontend Setup

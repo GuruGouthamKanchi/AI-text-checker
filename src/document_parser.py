@@ -60,6 +60,82 @@ def detect_file_type(file_path: str) -> str:
         "Unsupported file format. Only academic manuscripts in PDF (.pdf), Word (.docx), or legacy Word (.doc) formats are supported."
     )
 
+import base64
+
+def extract_pdf_visual_and_text(file_path: str) -> dict:
+    """
+    Extracts text, page rendering images (base64 PNG), and embedded figures/tables
+    from an academic PDF using PyMuPDF (fitz).
+    """
+    try:
+        import fitz
+        doc = fitz.open(file_path)
+        if doc.is_encrypted:
+            raise PasswordProtectedError("The PDF document is password-protected. Please remove the password and try again.")
+            
+        page_count = len(doc)
+        text_pages = []
+        page_images = []
+        extracted_figures = []
+        
+        for i, page in enumerate(doc):
+            # 1. Extract text
+            page_text = page.get_text("text")
+            if page_text:
+                text_pages.append(page_text)
+                
+            # 2. Render high-res visual page image (base64 PNG)
+            pix = page.get_pixmap(dpi=150)
+            img_bytes = pix.tobytes("png")
+            base64_img = f"data:image/png;base64,{base64.b64encode(img_bytes).decode('utf-8')}"
+            page_images.append({
+                "page_number": i + 1,
+                "image_data": base64_img,
+                "width": pix.width,
+                "height": pix.height
+            })
+            
+            # 3. Extract embedded diagrams, charts, figures & tables
+            try:
+                image_list = page.get_images(full=True)
+                for img_index, img_info in enumerate(image_list[:4]):
+                    xref = img_info[0]
+                    base_image = doc.extract_image(xref)
+                    image_bytes = base_image["image"]
+                    image_ext = base_image["ext"]
+                    if base_image["width"] >= 60 and base_image["height"] >= 60:
+                        fig_b64 = f"data:image/{image_ext};base64,{base64.b64encode(image_bytes).decode('utf-8')}"
+                        extracted_figures.append({
+                            "id": f"fig-{i+1}-{img_index+1}",
+                            "page_number": i + 1,
+                            "image_data": fig_b64,
+                            "width": base_image["width"],
+                            "height": base_image["height"]
+                        })
+            except Exception:
+                pass
+                
+        full_text = "\n\n".join(text_pages)
+        if not full_text.strip():
+            raise DocumentParsingError("No readable text could be extracted from PDF.")
+            
+        return {
+            "text": full_text,
+            "page_count": page_count,
+            "page_images": page_images,
+            "extracted_figures": extracted_figures
+        }
+    except PasswordProtectedError:
+        raise
+    except Exception as e:
+        text, p_count = extract_text_from_pdf(file_path)
+        return {
+            "text": text,
+            "page_count": p_count,
+            "page_images": [],
+            "extracted_figures": []
+        }
+
 def extract_text_from_pdf(file_path: str) -> tuple[str, int]:
     """
     Extracts text from PDF using pypdf.
@@ -81,7 +157,6 @@ def extract_text_from_pdf(file_path: str) -> tuple[str, int]:
                 if page_text:
                     text_pages.append(page_text)
             except Exception as e:
-                # Handle decryption/unreadable pages inside encrypted PDFs
                 if "password" in str(e).lower() or "decrypt" in str(e).lower():
                     raise PasswordProtectedError("The PDF document is password-protected. Please remove the password and try again.")
                 raise DocumentParsingError(f"Error reading page {i+1}: {str(e)}")
@@ -98,6 +173,7 @@ def extract_text_from_pdf(file_path: str) -> tuple[str, int]:
         if "password" in str(e).lower() or "decrypt" in str(e).lower():
             raise PasswordProtectedError("The PDF document is password-protected. Please remove the password and try again.")
         raise DocumentParsingError(f"Failed to parse PDF document. It may be corrupted or unreadable: {str(e)}")
+
 
 def extract_text_from_docx(file_path: str) -> tuple[str, int]:
     """
