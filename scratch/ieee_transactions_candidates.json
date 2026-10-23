@@ -1,0 +1,253 @@
+[
+  {
+    "journal": "IEEE Transactions on Information Forensics and Security",
+    "title": "AdvScan: Black-Box Adversarial Example Detection at Runtime Through Power Analysis",
+    "doi": "10.1109/tifs.2026.3663053",
+    "authors": [
+      "R. Paul",
+      "M. Zuzak"
+    ],
+    "year": 2026
+  },
+  {
+    "journal": "IEEE Transactions on Information Forensics and Security",
+    "title": "MalProtect: Stateful Defense Against Adversarial Query Attacks in ML-Based Malware Detection",
+    "doi": "10.1109/tifs.2023.3293959",
+    "authors": [
+      "A. Rashid",
+      "J. Such"
+    ],
+    "year": 2023
+  },
+  {
+    "journal": "IEEE Transactions on Information Forensics and Security",
+    "title": "Adversarial Detection by Latent Style Transformations",
+    "doi": "10.1109/tifs.2022.3155975",
+    "authors": [
+      "S. Wang",
+      "S. Nepal",
+      "A. Abuadbba",
+      "C. Rudolph"
+    ],
+    "year": 2022
+  },
+  {
+    "journal": "IEEE Transactions on Information Forensics and Security",
+    "title": "ADVoIP: Adversarial Detection of Encrypted and Concealed VoIP",
+    "doi": "10.1109/tifs.2019.2922398",
+    "authors": [
+      "P. Addesso",
+      "M. Cirillo",
+      "M. Di Mauro",
+      "V. Matta"
+    ],
+    "year": 2019
+  },
+  {
+    "journal": "IEEE Transactions on Dependable and Secure Computing",
+    "title": "Effectiveness of Moving Target Defenses for Adversarial Attacks in ML-Based Malware Detection",
+    "doi": "10.1109/tdsc.2025.3542237",
+    "authors": [
+      "A. Rashid",
+      "J. Such"
+    ],
+    "year": 2025
+  },
+  {
+    "journal": "IEEE Transactions on Dependable and Secure Computing",
+    "title": "Alert-ME: An Explainability-Driven Defense Against Adversarial Examples in Transformer-Based Text Classification",
+    "doi": "10.1109/tdsc.2025.3624268",
+    "authors": [
+      "B. Sabir",
+      "Y. Gao",
+      "A. Abuadbba",
+      "M. A. Babar"
+    ],
+    "year": 2025
+  },
+  {
+    "journal": "IEEE Transactions on Dependable and Secure Computing",
+    "title": "Achieving Adversarial Robustness without Adversarial Training: Robust Dataset Distillation",
+    "doi": "10.1109/tdsc.2026.3738360",
+    "authors": [
+      "Y. Zhou",
+      "Z. Hua",
+      "N. Mu",
+      "Y. Zhang"
+    ],
+    "year": 2026
+  },
+  {
+    "journal": "IEEE Transactions on Neural Networks and Learning Systems",
+    "title": "Text Feature Adversarial Learning for Text Generation With Knowledge Transfer From GPT2",
+    "doi": "10.1109/tnnls.2022.3210975",
+    "authors": [
+      "H. Zhang",
+      "Y. Cong",
+      "Z. Wang",
+      "L. Zhang"
+    ],
+    "year": 2022
+  },
+  {
+    "journal": "IEEE Transactions on Neural Networks and Learning Systems",
+    "title": "Text-ADBench: Text Anomaly Detection Benchmark Based on LLM Embeddings",
+    "doi": "10.1109/tnnls.2026.3727304",
+    "authors": [
+      "F. Xiao",
+      "J. Fan"
+    ],
+    "year": 2026
+  },
+  {
+    "journal": "IEEE Transactions on Neural Networks and Learning Systems",
+    "title": "Learning Adversarial Transformer for Symbolic Music Generation",
+    "doi": "10.1109/tnnls.2020.2990746",
+    "authors": [
+      "N. Zhang"
+    ],
+    "year": 2020
+  },
+  {
+    "journal": "IEEE Transactions on Neural Networks and Learning Systems",
+    "title": "Multimodal Domain Generalization for Depression Detection: An Attention-Based BiLSTM Network With Domain-Adversarial Training",
+    "doi": "10.1109/tnnls.2026.3714047",
+    "authors": [
+      "A. Tabaraei",
+      "F. Simonetta",
+      "S. Ntalampiras"
+    ],
+    "year": 2026
+  },
+  {
+    "journal": "IEEE Transactions on Neural Networks and Learning Systems",
+    "title": "RecSys-DAN: Discriminative Adversarial Networks for Cross-Domain Recommender Systems",
+    "doi": "10.1109/tnnls.2019.2907430",
+    "authors": [
+      "C. Wang",
+      "M. Niepert",
+      "H. Li"
+    ],
+    "year": 2019
+  },
+  {
+    "journal": "IEEE Transactions on Pattern Analysis and Machine Intelligence",
+    "title": "Detection of text regions from digital engineering drawings",
+    "doi": "10.1109/34.677283",
+    "authors": [
+      "Zhaoyang Lu"
+    ],
+    "year": 2002
+  },
+  {
+    "journal": "IEEE Transactions on Pattern Analysis and Machine Intelligence",
+    "title": "Noisy text categorization",
+    "doi": "10.1109/tpami.2005.248",
+    "authors": [
+      "A. Vinciarelli"
+    ],
+    "year": 2005
+  },
+  {
+    "journal": "IEEE Transactions on Pattern Analysis and Machine Intelligence",
+    "title": "Metric learning for text documents",
+    "doi": "10.1109/tpami.2006.77",
+    "authors": [
+      "G. Lebanon"
+    ],
+    "year": 2006
+  },
+  {
+    "journal": "IEEE Transactions on Knowledge and Data Engineering",
+    "title": "Fraud's Bargain Attack: Generating Adversarial Text Samples via Word Manipulation Process",
+    "doi": "10.1109/tkde.2024.3349708",
+    "authors": [
+      "M. Ni",
+      "Z. Sun",
+      "W. Liu"
+    ],
+    "year": 2024
+  },
+  {
+    "journal": "IEEE Transactions on Knowledge and Data Engineering",
+    "title": "Weakly Supervised Joint Sentiment-Topic Detection from Text",
+    "doi": "10.1109/tkde.2011.48",
+    "authors": [
+      "C. Lin",
+      "Y. He",
+      "R. Everson",
+      "S. Ruger"
+    ],
+    "year": 2011
+  },
+  {
+    "journal": "IEEE Transactions on Knowledge and Data Engineering",
+    "title": "Generative Adversarial Active Learning for Unsupervised Outlier Detection",
+    "doi": "10.1109/tkde.2019.2905606",
+    "authors": [
+      "Y. Liu",
+      "Z. Li",
+      "C. Zhou",
+      "Y. Jiang"
+    ],
+    "year": 2019
+  },
+  {
+    "journal": "IEEE Transactions on Knowledge and Data Engineering",
+    "title": "Automatic text categorization and its application to text retrieval",
+    "doi": "10.1109/69.824599",
+    "authors": [
+      "Wai Lam",
+      "M. Ruiz",
+      "P. Srinivasan"
+    ],
+    "year": 2002
+  },
+  {
+    "journal": "IEEE Transactions on Knowledge and Data Engineering",
+    "title": "Sparse Feature Attacks in Adversarial Learning",
+    "doi": "10.1109/tkde.2018.2790928",
+    "authors": [
+      "Z. Yin",
+      "F. Wang",
+      "W. Liu",
+      "S. Chawla"
+    ],
+    "year": 2018
+  },
+  {
+    "journal": "IEEE/ACM Transactions on Audio, Speech, and Language Processing",
+    "title": "IEEE/ACM Transactions on Audio, Speech, and Language Processing",
+    "doi": "10.1109/taslp.2016.2541023",
+    "authors": [],
+    "year": 2016
+  },
+  {
+    "journal": "IEEE/ACM Transactions on Audio, Speech, and Language Processing",
+    "title": "IEEE/ACM Transactions on Audio, Speech, and Language Processing",
+    "doi": "10.1109/taslp.2016.2545139",
+    "authors": [],
+    "year": 2016
+  },
+  {
+    "journal": "IEEE/ACM Transactions on Audio, Speech, and Language Processing",
+    "title": "IEEE/ACM Transactions on Audio, Speech, and Language Processing",
+    "doi": "10.1109/taslp.2016.2545082",
+    "authors": [],
+    "year": 2016
+  },
+  {
+    "journal": "IEEE/ACM Transactions on Audio, Speech, and Language Processing",
+    "title": "IEEE/ACM Transactions on Audio, Speech, and Language Processing",
+    "doi": "10.1109/taslp.2016.2545117",
+    "authors": [],
+    "year": 2016
+  },
+  {
+    "journal": "IEEE/ACM Transactions on Audio, Speech, and Language Processing",
+    "title": "IEEE/ACM Transactions on Audio, Speech, and Language Processing EDICS",
+    "doi": "10.1109/taslp.2017.2772589",
+    "authors": [],
+    "year": 2017
+  }
+]

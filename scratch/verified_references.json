@@ -1,0 +1,448 @@
+{
+  "IEEE": [
+    {
+      "doi": "10.1109/ispras64596.2024.10899150",
+      "title": "N-Gram Perplexity-Based AI-Generated Text Detection",
+      "container": "2024 Ivannikov Ispras Open Conference (ISPRAS)",
+      "year": 2024,
+      "authors": [
+        "Poimanov Dmitrii",
+        "Leonid Mestetsky",
+        "Andrey Grabovoy"
+      ],
+      "volume": "",
+      "issue": "",
+      "page": "1-8"
+    },
+    {
+      "doi": "10.1109/icccnt61001.2024.10724991",
+      "title": "Detection and Classification of AI-Generated Text",
+      "container": "2024 15th International Conference on Computing Communication and Networking Technologies (ICCCNT)",
+      "year": 2024,
+      "authors": [
+        "Shreya Gupta",
+        "Deepa Gupta"
+      ],
+      "volume": "",
+      "issue": "",
+      "page": "1-6"
+    },
+    {
+      "doi": "10.1109/icecco67619.2026.11488791",
+      "title": "AI-Generated Text Detection Methods: A Review",
+      "container": "2026 18th International Conference on Electronics, Computer, and Computation (ICECCO)",
+      "year": 2026,
+      "authors": [
+        "Batyr Sharimbayev",
+        "Cemil Turan",
+        "Aiken Kazin"
+      ],
+      "volume": "",
+      "issue": "",
+      "page": "1-6"
+    },
+    {
+      "doi": "10.1109/iciptm69057.2026.11466076",
+      "title": "AI Generated Text vs Human Written Text: An Efficient Detection Tool Using Machine Learning",
+      "container": "2026 5th International Conference on Innovative Practices in Technology and Management (ICIPTM)",
+      "year": 2026,
+      "authors": [
+        "Ristika Singh",
+        "Vijay Singh",
+        "Vartika Puri"
+      ],
+      "volume": "",
+      "issue": "",
+      "page": "1-6"
+    }
+  ],
+  "ACM": [
+    {
+      "doi": "10.1145/3658644.3670344",
+      "title": "MGTBench: Benchmarking Machine-Generated Text Detection",
+      "container": "Proceedings of the 2024 on ACM SIGSAC Conference on Computer and Communications Security",
+      "year": 2024,
+      "authors": [
+        "Xinlei He",
+        "Xinyue Shen",
+        "Zeyuan Chen",
+        "Michael Backes"
+      ],
+      "volume": "",
+      "issue": "",
+      "page": "2251-2265"
+    },
+    {
+      "doi": "10.1145/3318299.3318373",
+      "title": "Scene Text Detection with Inception Text Proposal Generation Module",
+      "container": "Proceedings of the 2019 11th International Conference on Machine Learning and Computing",
+      "year": 2019,
+      "authors": [
+        "Hang Zhang",
+        "Jiahang Liu",
+        "Tieqiao Chen"
+      ],
+      "volume": "",
+      "issue": "",
+      "page": "456-460"
+    },
+    {
+      "doi": "10.1145/3717867.3717914",
+      "title": "Master of Deceit: Comparative Analysis of Human and Machine-Generated Deceptive Text",
+      "container": "Proceedings of the 17th ACM Web Science Conference 2025",
+      "year": 2025,
+      "authors": [
+        "Quang Minh Trinh",
+        "Samiha Zarin",
+        "Rezvaneh Rezapour"
+      ],
+      "volume": "",
+      "issue": "",
+      "page": "189-198"
+    },
+    {
+      "doi": "10.1145/3812734.3813713",
+      "title": "Detection of AI-Generated Text Using RoBERTa Across English and Spanish",
+      "container": "Proceedings of the 17th International Conference on Information and Communication Systems",
+      "year": 2026,
+      "authors": [
+        "Ayk Monther Alshmari",
+        "Inad Aljarrah"
+      ],
+      "volume": "",
+      "issue": "",
+      "page": "1-10"
+    }
+  ],
+  "Elsevier": [
+    {
+      "doi": "10.1016/j.compcom.2024.102831",
+      "title": "Towards a framework for local interrogation of AI ethics: A case study on text generators, academic integrity, and composing with ChatGPT",
+      "container": "Computers and Composition",
+      "year": 2024,
+      "authors": [
+        "Matthew A. Vetter",
+        "Brent Lucia",
+        "Jialei Jiang",
+        "Mahmoud Othman"
+      ],
+      "volume": "71",
+      "issue": "",
+      "page": "102831"
+    },
+    {
+      "doi": "10.1016/j.jrt.2023.100060",
+      "title": "ChatGPT and the rise of generative AI: Threat to academic integrity?",
+      "container": "Journal of Responsible Technology",
+      "year": 2023,
+      "authors": [
+        "Damian Okaibedi Eke"
+      ],
+      "volume": "13",
+      "issue": "",
+      "page": "100060"
+    },
+    {
+      "doi": "10.1016/j.techsoc.2023.102370",
+      "title": "Use of ChatGPT in academia: Academic integrity hangs in the balance",
+      "container": "Technology in Society",
+      "year": 2023,
+      "authors": [
+        "Saeed Awadh Bin-Nashwan",
+        "Mouad Sadallah",
+        "Mohamed Bouteraa"
+      ],
+      "volume": "75",
+      "issue": "",
+      "page": "102370"
+    },
+    {
+      "doi": "10.1016/j.jslw.2024.101130",
+      "title": "Graduate students\u2019 use of ChatGPT for academic text revision: Behavioral, cognitive, and affective engagement",
+      "container": "Journal of Second Language Writing",
+      "year": 2024,
+      "authors": [
+        "Svetlana Koltovskaia",
+        "Payam Rahmati",
+        "Hooman Saeli"
+      ],
+      "volume": "65",
+      "issue": "",
+      "page": "101130"
+    }
+  ],
+  "Springer Nature": [
+    {
+      "doi": "10.1007/978-3-031-76770-8_16",
+      "title": "AI-Generated Text Detection",
+      "container": "Introduction to Foundation Models",
+      "year": 2025,
+      "authors": [
+        "Pin-Yu Chen",
+        "Sijia Liu"
+      ],
+      "volume": "",
+      "issue": "",
+      "page": "209-220"
+    },
+    {
+      "doi": "10.1007/s10805-023-09492-6",
+      "title": "Detection of GPT-4 Generated Text in Higher Education: Combining Academic Judgement and Software to Identify Generative AI Tool Misuse",
+      "container": "Journal of Academic Ethics",
+      "year": 2024,
+      "authors": [
+        "Mike Perkins",
+        "Jasper Roe",
+        "Darius Postma",
+        "James McGaughran"
+      ],
+      "volume": "22",
+      "issue": "1",
+      "page": "89-113"
+    },
+    {
+      "doi": "10.1007/978-3-032-01638-6_5",
+      "title": "ChatGPT as a Tool for Assessment Design in Higher Education: How Educators\u2019 Mathematical Knowledge Shapes AI-Generated Exams",
+      "container": "Generative AI in Higher Education Assessment",
+      "year": 2026,
+      "authors": [
+        "Faten Khalloufi-Mouha"
+      ],
+      "volume": "",
+      "issue": "",
+      "page": "103-128"
+    },
+    {
+      "doi": "10.1007/s10758-025-09884-0",
+      "title": "Efficacy of AI-Text Detection Tools in Distinguishing Student-Produced, AI-Edited, and AI-Generated Essays",
+      "container": "Technology, Knowledge and Learning",
+      "year": 2025,
+      "authors": [
+        "Jessie S. Barrot",
+        "Ma. Rita R. Aranda"
+      ],
+      "volume": "",
+      "issue": "",
+      "page": ""
+    }
+  ],
+  "Wiley": [
+    {
+      "doi": "10.1002/iis2.12997",
+      "title": "Automatic Text Classification of PDF Documents using NLP Techniques",
+      "container": "INCOSE International Symposium",
+      "year": 2022,
+      "authors": [
+        "Nabil Abdoun",
+        "Mohammad Chami"
+      ],
+      "volume": "32",
+      "issue": "1",
+      "page": "1320-1331"
+    },
+    {
+      "doi": "10.1002/9781119004752.app1",
+      "title": "Appendix 1: Information Retrieval, NLP and Automatic Text Summarization",
+      "container": "Automatic Text Summarization",
+      "year": 2014,
+      "authors": [],
+      "volume": "",
+      "issue": "",
+      "page": "281-303"
+    },
+    {
+      "doi": "10.1002/9781394214167.ch3",
+      "title": "Text Generation &amp; Classification in NLP",
+      "container": "How Machine Learning is Innovating Today's World",
+      "year": 2024,
+      "authors": [
+        "Kuldeep Vayadande",
+        "Dattatray Raghunath Kale",
+        "Jagannath Nalavade",
+        "R. Kumar"
+      ],
+      "volume": "",
+      "issue": "",
+      "page": "25-36"
+    },
+    {
+      "doi": "10.1002/9781394315727.ch4",
+      "title": "Text Generation, Classification, and Optimization Using Tokenization in NLP",
+      "container": "Driving Innovation by Dynamic Optimization",
+      "year": 2026,
+      "authors": [
+        "Kuldeep Vayadande",
+        "Yogesh Bodhe",
+        "Ajit Patil",
+        "Amolkumar N. Jadhav"
+      ],
+      "volume": "",
+      "issue": "",
+      "page": "55-76"
+    }
+  ],
+  "MDPI": [
+    {
+      "doi": "10.3390/ai7080319",
+      "title": "Detecting AI-Generated Text and Code: An Empirical Study of Cross-Generator and Cross-Domain Generalization",
+      "container": "AI",
+      "year": 2026,
+      "authors": [
+        "Neethika Alluri",
+        "Pardha Saradhi Varma Gottumukkala",
+        "Hemalatha Indukuri"
+      ],
+      "volume": "7",
+      "issue": "8",
+      "page": "319"
+    },
+    {
+      "doi": "10.3390/math11153400",
+      "title": "Differentiating Chat Generative Pretrained Transformer from Humans: Detecting ChatGPT-Generated Text and Human Text Using Machine Learning",
+      "container": "Mathematics",
+      "year": 2023,
+      "authors": [
+        "Iyad Katib",
+        "Fatmah Y. Assiri",
+        "Hesham A. Abdushkour",
+        "Diaa Hamed"
+      ],
+      "volume": "11",
+      "issue": "15",
+      "page": "3400"
+    },
+    {
+      "doi": "10.3390/app152111338",
+      "title": "Detecting AI-Generated Network Traffic Using Transformer\u2013MLP Ensemble",
+      "container": "Applied Sciences",
+      "year": 2025,
+      "authors": [
+        "Byeongchan Kim",
+        "Abhishek Chaudhary",
+        "Sunoh Choi"
+      ],
+      "volume": "15",
+      "issue": "21",
+      "page": "11338"
+    },
+    {
+      "doi": "10.3390/bdcc8030032",
+      "title": "AI-Generated Text Detector for Arabic Language Using Encoder-Based Transformer Architecture",
+      "container": "Big Data and Cognitive Computing",
+      "year": 2024,
+      "authors": [
+        "Hamed Alshammari",
+        "Ahmed El-Sayed",
+        "Khaled Elleithy"
+      ],
+      "volume": "8",
+      "issue": "3",
+      "page": "32"
+    }
+  ],
+  "Taylor & Francis": [
+    {
+      "doi": "10.1080/08993400701538062",
+      "title": "Academic Integrity and Plagiarism: Australasian perspectives",
+      "container": "Computer Science Education",
+      "year": 2007,
+      "authors": [
+        "Donald Joyce"
+      ],
+      "volume": "17",
+      "issue": "3",
+      "page": "187-200"
+    },
+    {
+      "doi": "10.1080/1941126x.2026.2649222",
+      "title": "Academic integrity in the digital era: Awareness and use of plagiarism detection software in Tamil Nadu universities",
+      "container": "Journal of Electronic Resources Librarianship",
+      "year": 2026,
+      "authors": [
+        "Vinoth Sermarajan",
+        "P. Balasubramanian"
+      ],
+      "volume": "38",
+      "issue": "2",
+      "page": "119-138"
+    },
+    {
+      "doi": "10.1080/00228958.2021.1935506",
+      "title": "Intentional Plagiarism? Strategies for Teaching Language Learners Academic Integrity",
+      "container": "Kappa Delta Pi Record",
+      "year": 2021,
+      "authors": [
+        "Ellen Yeh"
+      ],
+      "volume": "57",
+      "issue": "3",
+      "page": "132-137"
+    },
+    {
+      "doi": "10.1080/01930820802186472",
+      "title": "Plagiarism and Academic Integrity Systems",
+      "container": "Journal of Library Administration",
+      "year": 2008,
+      "authors": [
+        "Patrick M. Drinan",
+        "Tricia Bertram Gallant"
+      ],
+      "volume": "47",
+      "issue": "3-4",
+      "page": "125-140"
+    }
+  ],
+  "SAGE": [
+    {
+      "doi": "10.1177/02666669241284230",
+      "title": "Artificial intelligence and academic integrity: The role of academic librarians",
+      "container": "Information Development",
+      "year": 2025,
+      "authors": [
+        "Christopher K. Filson",
+        "Diana Atuase"
+      ],
+      "volume": "41",
+      "issue": "3",
+      "page": "781-793"
+    },
+    {
+      "doi": "10.1177/20552076261419956",
+      "title": "Generative artificial intelligence in palliative care: A comparative evaluation of ChatGPT-4o and ChatGPT-5 as clinical decision support tools",
+      "container": "DIGITAL HEALTH",
+      "year": 2026,
+      "authors": [
+        "Emre Vuraloglu"
+      ],
+      "volume": "12",
+      "issue": "",
+      "page": ""
+    },
+    {
+      "doi": "10.1177/02683555261460252",
+      "title": "Artificial intelligence in the management of chronic pain and lipedema: A comparative analysis of ChatGPT-5o, Gemini-3, and perplexity AI in terms of readability and academic reliability",
+      "container": "Phlebology: The Journal of Venous Disease",
+      "year": 2026,
+      "authors": [
+        "\u0130lhan Celil \u00d6zbek",
+        "Erkan \u00d6zduran"
+      ],
+      "volume": "",
+      "issue": "",
+      "page": ""
+    },
+    {
+      "doi": "10.1177/21582440251343954",
+      "title": "Artificial Intelligence or Human: The Use of ChatGPT in the Academic Translation for Religious Texts",
+      "container": "SAGE Open",
+      "year": 2025,
+      "authors": [
+        "Mohammed Q. Shormani",
+        "Abdulrahaman Alfahad"
+      ],
+      "volume": "15",
+      "issue": "3",
+      "page": ""
+    }
+  ]
+}

@@ -33,7 +33,7 @@ if not exist .venv (
 )
 
 echo [VeriPaper Backend] Starting FastAPI server on port 8000 in background...
-start /B cmd /c "python -u -m uvicorn src.app:app --host 127.0.0.1 --port 8000 > backend.log 2>&1"
+start /B cmd /c ""%~dp0.venv\Scripts\python.exe" -u -m uvicorn src.app:app --host 127.0.0.1 --port 8000 > "%~dp0backend.log" 2>&1"
 
 :: Loop to wait for startup and capture the PID
 set BACKEND_PID=
@@ -46,7 +46,7 @@ if exist .port8000.tmp del .port8000.tmp
 
 if defined BACKEND_PID goto backend_ok
 set /a RETRIES+=1
-if %RETRIES% geq 15 (
+if %RETRIES% geq 30 (
     echo [VeriPaper Backend] Failed to start backend or bind to port 8000.
     echo [VeriPaper Backend] Please check backend.log for details.
     exit /b 1

@@ -1,0 +1,1426 @@
+[
+  {
+    "doi": "10.1109/ispras64596.2024.10899150",
+    "title": "N-Gram Perplexity-Based AI-Generated Text Detection",
+    "journal": "2024 Ivannikov Ispras Open Conference (ISPRAS)",
+    "year": 2024,
+    "authors": [
+      "P. Dmitrii",
+      "L. Mestetsky",
+      "A. Grabovoy"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1-8",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/icccnt61001.2024.10724991",
+    "title": "Detection and Classification of AI-Generated Text",
+    "journal": "2024 15th International Conference on Computing Communication and Networking Technologies (ICCCNT)",
+    "year": 2024,
+    "authors": [
+      "S. Gupta",
+      "D. Gupta"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1-6",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/icecco67619.2026.11488791",
+    "title": "AI-Generated Text Detection Methods: A Review",
+    "journal": "2026 18th International Conference on Electronics, Computer, and Computation (ICECCO)",
+    "year": 2026,
+    "authors": [
+      "B. Sharimbayev",
+      "C. Turan",
+      "A. Kazin"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1-6",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/iciptm69057.2026.11466076",
+    "title": "AI Generated Text vs Human Written Text: An Efficient Detection Tool Using Machine Learning",
+    "journal": "2026 5th International Conference on Innovative Practices in Technology and Management (ICIPTM)",
+    "year": 2026,
+    "authors": [
+      "R. Singh",
+      "V. Singh",
+      "V. Puri"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1-6",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/icmla66185.2025.00030",
+    "title": "A Feature-based Linguistic and Statistical Framework for AI-Generated Text Detection",
+    "journal": "2025 International Conference on Machine Learning and Applications (ICMLA)",
+    "year": 2025,
+    "authors": [
+      "V. Sen",
+      "R. Hasan"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "184-191",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/iccece69715.2026.11493065",
+    "title": "AI-Powered Mood Detection from User-Generated Text for Adaptive Music Recommendation",
+    "journal": "2026 International Conference on Computing, Electronics &amp;amp; Communications Engineering (ICCECE)",
+    "year": 2026,
+    "authors": [
+      "M. Kathiravan"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1-7",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/icetci71772.2026.11710723",
+    "title": "Detection of AI-Generated Khasi Text Using Machine Learning Techniques",
+    "journal": "2026 International Conference on Emerging Techniques in Computational Intelligence (ICETCI)",
+    "year": 2026,
+    "authors": [
+      "M. Chadap",
+      "T. D. Singh"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1-8",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/wconf61366.2024.10692072",
+    "title": "Detection of AI Generated Text With BERT Model",
+    "journal": "2024 2nd World Conference on Communication &amp;amp; Computing (WCONF)",
+    "year": 2024,
+    "authors": [
+      "P. Javaji",
+      "P. S. Sreeya",
+      "S. Rajesh"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1-6",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/compsac65507.2025.00094",
+    "title": "AI-Generated Text Detection Using RoBERTa: A Generalizability and Explainability Analysis",
+    "journal": "2025 IEEE 49th Annual Computers, Software, and Applications Conference (COMPSAC)",
+    "year": 2025,
+    "authors": [
+      "K. Sch\u00e4fer",
+      "M. Steinebach"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "701-706",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/ciees62939.2024.10811427",
+    "title": "AI-Generated Text Detection and Prevention of Unethical AI Use in Student Exams",
+    "journal": "2024 5th International Conference on Communications, Information, Electronic and Energy Systems (CIEES)",
+    "year": 2024,
+    "authors": [
+      "K. Nikiforova-Ilieva",
+      "T. Georgiev"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1-4",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/aiiot58121.2023.10174450",
+    "title": "Harnessing the Power of ChatGPT to Decimate Mis/Disinformation: Using ChatGPT for Fake News Detection",
+    "journal": "2023 IEEE World AI IoT Congress (AIIoT)",
+    "year": 2023,
+    "authors": [
+      "K. M. Caramancion"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "0042-0046",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/compsac61105.2024.00205",
+    "title": "Enhancing Website Fraud Detection: A ChatGPT-Based Approach to Phishing Detection",
+    "journal": "2024 IEEE 48th Annual Computers, Software, and Applications Conference (COMPSAC)",
+    "year": 2024,
+    "authors": [
+      "M. Schesny",
+      "N. Lutz",
+      "T. J\u00e4gle",
+      "F. Gerschner",
+      "M. Klaiber",
+      "A. Theissler"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1494-1495",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/zinc65316.2025.11103554",
+    "title": "Optimizing Object Detection Model Training Using ChatGPT for Dataset Reduction",
+    "journal": "2025 IEEE Zooming Innovation in Consumer Technologies Conference (ZINC)",
+    "year": 2025,
+    "authors": [
+      "A. Stokanovi\u0107",
+      "M. Milo\u0161evi\u0107",
+      "\u017d. Luka\u010d"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "101-106",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/e-cargo65996.2025.11139301",
+    "title": "Healthcare Fraud Detection Based on ChatGPT-Guided Method",
+    "journal": "2025 1st International Symposium on E-CARGO and Applications (E-CARGO)",
+    "year": 2025,
+    "authors": [
+      "Y. W. Hainan",
+      "C. Jin",
+      "W. Shang"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "88-92",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/re57278.2023.00045",
+    "title": "Inconsistency Detection in Natural Language Requirements using ChatGPT: a Preliminary Evaluation",
+    "journal": "2023 IEEE 31st International Requirements Engineering Conference (RE)",
+    "year": 2023,
+    "authors": [
+      "A. Fantechi",
+      "S. Gnesi",
+      "L. Passaro",
+      "L. Semini"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "335-340",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/ubmk59864.2023.10286663",
+    "title": "Evaluation of ChatGPT and BERT-based Models for Turkish Hate Speech Detection",
+    "journal": "2023 8th International Conference on Computer Science and Engineering (UBMK)",
+    "year": 2023,
+    "authors": [
+      "N. B. \u00c7am",
+      "A. \u00d6zg\u00fcr"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "229-233",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/niles59815.2023.10296682",
+    "title": "Detection of Cyberbullying in Arabic using Machine Learning and ChatGPT",
+    "journal": "2023 5th Novel Intelligent and Leading Emerging Sciences Conference (NILES)",
+    "year": 2023,
+    "authors": [
+      "A. Sadek",
+      "M. I. Khalil",
+      "C. Salama"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "242-245",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/apsec60848.2023.00085",
+    "title": "ChatGPT for Vulnerability Detection, Classification, and Repair: How Far Are We?",
+    "journal": "2023 30th Asia-Pacific Software Engineering Conference (APSEC)",
+    "year": 2023,
+    "authors": [
+      "M. Fu",
+      "C. K. Tantithamthavorn",
+      "V. Nguyen",
+      "T. Le"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "632-636",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/i-coste63786.2024.11024962",
+    "title": "Leveraging ChatGPT for Sponsored Ad Detection and Keyword Extraction in Youtube Videos",
+    "journal": "2024 International Conference on Sustainable Technology and Engineering (i-COSTE)",
+    "year": 2024,
+    "authors": [
+      "B. V. Kok-Shun",
+      "J. Chan"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1-6",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/nana63151.2024.00060",
+    "title": "Smart Contract Vulnerability Detection Based on Prompt-guided ChatGPT",
+    "journal": "2024 International Conference on Networking and Network Applications (NaNA)",
+    "year": 2024,
+    "authors": [
+      "J. Ma",
+      "S. Feng",
+      "J. Zeng",
+      "J. Lu",
+      "J. Chen"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "321-326",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/cisce65916.2025.11065851",
+    "title": "Machine-Human Boundary: A Systematic Survey of Machine-Generated Text Detection",
+    "journal": "2025 IEEE 7th International Conference on Communications, Information System and Computer Engineering (CISCE)",
+    "year": 2025,
+    "authors": [
+      "Q. Zhang"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "604-609",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/caibda65784.2025.11183470",
+    "title": "Dual-Supervision Collaborative Machine-Generated Text Detection Method",
+    "journal": "2025 5th International Conference on Artificial Intelligence, Big Data and Algorithms (CAIBDA)",
+    "year": 2025,
+    "authors": [
+      "Z. Yang"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1304-1310",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/bigdata59044.2023.10386674",
+    "title": "One-GPT: A One-Class Deep Fusion Model for Machine-Generated Text Detection",
+    "journal": "2023 IEEE International Conference on Big Data (BigData)",
+    "year": 2023,
+    "authors": [
+      "R. Corizzo",
+      "S. Leal-Arenas"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "5743-5752",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/icecco67619.2026.11488773",
+    "title": "Cross-Lingual Detection of Machine-Generated Text Using Multilingual Transformers and Balanced Data",
+    "journal": "2026 18th International Conference on Electronics, Computer, and Computation (ICECCO)",
+    "year": 2026,
+    "authors": [
+      "B. Sharimbayev",
+      "S. Duisen"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1-6",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/ijcnn.2019.8852340",
+    "title": "Learning Semantic Coherence for Machine Generated Spam Text Detection",
+    "journal": "2019 International Joint Conference on Neural Networks (IJCNN)",
+    "year": 2019,
+    "authors": [
+      "M. Bao",
+      "J. Li",
+      "J. Zhang",
+      "H. Peng",
+      "X. Liu"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1-8",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/iccit64611.2024.11022406",
+    "title": "Fine-tuning Pretrained Language Models for Multigenerator, Multidomain Machine Generated Text Detection",
+    "journal": "2024 27th International Conference on Computer and Information Technology (ICCIT)",
+    "year": 2024,
+    "authors": [
+      "S. Ahsan",
+      "M. Fahmida",
+      "M. S. Arefin"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "2038-2043",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/icmisi69868.2026.11584229",
+    "title": "Towards Reliable Detection of LLM-Generated Text Using a Multi-Feature Adaptive Framework",
+    "journal": "2026 International Conference on Machine Intelligence and Smart Innovation (ICMISI)",
+    "year": 2026,
+    "authors": [
+      "D. Mostafa",
+      "S. Ismail",
+      "M. Aref"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "91-97",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/ciacon65473.2025.11189404",
+    "title": "Deepfake Text Detection Using NLP and ML",
+    "journal": "2025 International Conference on Computing, Intelligence, and Application (CIACON)",
+    "year": 2025,
+    "authors": [
+      "Akashdeep",
+      "H. Mitra",
+      "O. B. Gashroo"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1-8",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/icdcot61034.2024.10515626",
+    "title": "Performance Analysis of Deepfake Text Detection Techniques on Social-media",
+    "journal": "2024 International Conference on Distributed Computing and Optimization Techniques (ICDCOT)",
+    "year": 2024,
+    "authors": [
+      "A. Gaur",
+      "S. K. Singh",
+      "P. Saxena"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1-6",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/icitsif69060.2026.11609156",
+    "title": "A Lightweight Hybrid Ensemble for Scalable Deepfake Text Detection",
+    "journal": "2026 IEEE 1st International Conference on Intelligent Technologies for a Sustainable and Inclusive Future (ICITSIF)",
+    "year": 2026,
+    "authors": [
+      "D. Dhanuk",
+      "R. Dubey"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "120-125",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/cai64502.2025.00293",
+    "title": "Towards Deepfake Detection for Everyone: A Lightweight Deepfake Detection Algorithm (LiDD)",
+    "journal": "2025 IEEE Conference on Artificial Intelligence (CAI)",
+    "year": 2025,
+    "authors": [
+      "A. Krishnan",
+      "A. Basu"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1168-1174",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/esci68015.2026.11493251",
+    "title": "Detectify: A Multimodal Deepfake Detection Framework Using Text and Image Analysis",
+    "journal": "2026 International Conference on Emerging Smart Computing and Informatics (ESCI)",
+    "year": 2026,
+    "authors": [
+      "I. Goel",
+      "K. Tekriwal",
+      "T. Jain",
+      "P. S. M"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1-6",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/reacs67479.2025.11413468",
+    "title": "Designing a Framework for Deepfake Text Detection Using Multi Model Ensembling Techniques",
+    "journal": "2025 IEEE International Conference on Recent Advances in Computing and Systems (REACS)",
+    "year": 2025,
+    "authors": [
+      "M. Ahmed",
+      "K. Malik",
+      "G. Indra"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1-6",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/sp46215.2023.10179387",
+    "title": "Deepfake Text Detection: Limitations and Opportunities",
+    "journal": "2023 IEEE Symposium on Security and Privacy (SP)",
+    "year": 2023,
+    "authors": [
+      "J. Pu",
+      "Z. Sarwar",
+      "S. M. Abdullah",
+      "A. Rehman",
+      "Y. Kim",
+      "P. Bhattacharya",
+      "M. Javed",
+      "B. Viswanath"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1613-1630",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/icmlas67792.2026.11483693",
+    "title": "Deepfake Text Detection on Twitter Using Linguistic Embeddings and Deep Learning",
+    "journal": "2026 International Conference on Machine Learning and Autonomous Systems (ICMLAS)",
+    "year": 2026,
+    "authors": [
+      "P. Nagababu",
+      "M. Meghana",
+      "A. Deepika",
+      "C. D. V. S. Krishna"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "478-485",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/icdca69396.2026.11619936",
+    "title": "Multimodal Deepfake Detection Using Audio, Video, Image and Text Analysis with Deep Learning",
+    "journal": "2026 International Conference on Data Science for Cyber-Physical Systems Resilience using Advanced Applications (ICDCA)",
+    "year": 2026,
+    "authors": [
+      "M. Kumar M",
+      "B. Vijaya Nirmala"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1-5",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/iccbi68589.2026.11619670",
+    "title": "A Novel Hybrid Architecture for Deepfake Text Detection on Social Media",
+    "journal": "2026 5th International Conference on Computer Networks, Big Data and IoT (ICCBI)",
+    "year": 2026,
+    "authors": [
+      "M. A. Lakshmi",
+      "B. Sumithra",
+      "A. Srija",
+      "A. Malathi",
+      "D. Venkat"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "859-865",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/cerma.2009.29",
+    "title": "Monotonicity Analysis for Paraphrase Detection",
+    "journal": "2009 Electronics, Robotics and Automotive Mechanics Conference (CERMA)",
+    "year": 2009,
+    "authors": [
+      "D. Uribe"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "82-87",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/ainit65432.2025.11035508",
+    "title": "Adversarial Paraphrase Substitution: Jailbreak Attacks on Text-to-Image Diffusion Models",
+    "journal": "2025 IEEE 6th International Seminar on Artificial Intelligence, Networking and Information Technology (AINIT)",
+    "year": 2025,
+    "authors": [
+      "B. Zhao",
+      "B. Lu",
+      "X. Gao",
+      "M. Shi"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1-8",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/ivmem51402.2020.00012",
+    "title": "ARPA: Armenian Paraphrase Detection Corpus and Models",
+    "journal": "2020 Ivannikov Memorial Workshop (IVMEM)",
+    "year": 2020,
+    "authors": [
+      "A. Malajyan",
+      "K. Avetisyan",
+      "T. Ghukasyan"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "35-39",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/icwr54782.2022.9786243",
+    "title": "ExaPPC: a Large-Scale Persian Paraphrase Detection Corpus",
+    "journal": "2022 8th International Conference on Web Research (ICWR)",
+    "year": 2022,
+    "authors": [
+      "R. Sadeghi",
+      "H. Karbasi",
+      "A. Akbari"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "168-175",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/iccgi.2007.4",
+    "title": "A Metric for Paraphrase Detection",
+    "journal": "2007 International Multi-Conference on Computing in the Global Information Technology (ICCGI'07)",
+    "year": 2007,
+    "authors": [
+      "J. Cordeiro",
+      "G. Dias",
+      "P. Brazdil"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "7-7",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/ialp54817.2021.9675232",
+    "title": "Chinese Paraphrase Dataset and Detection",
+    "journal": "2021 International Conference on Asian Language Processing (IALP)",
+    "year": 2021,
+    "authors": [
+      "B. An"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "235-240",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/icaccs.2019.8728539",
+    "title": "Paraphrase Detection using Dependency Tree Recursive Autoencoder",
+    "journal": "2019 5th International Conference on Advanced Computing &amp; Communication Systems (ICACCS)",
+    "year": 2019,
+    "authors": [
+      "D. S. Rana",
+      "P. Kumar Mishra"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "678-683",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/mapr72750.2026.11685740",
+    "title": "ViePAWS: A Vietnamese Adversarial Dataset for Paraphrase Identification under LLM-based Word Scrambling",
+    "journal": "2026 International Conference on Multimedia Analysis and Pattern Recognition (MAPR)",
+    "year": 2026,
+    "authors": [
+      "S. Q. Nguyen",
+      "K. Van Nguyen",
+      "N. L. Nguyen",
+      "D. Le"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "43-48",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/siu.2016.7496009",
+    "title": "Attribute value-range detection in identification of paraphrase sentence pairs",
+    "journal": "2016 24th Signal Processing and Communication Application Conference (SIU)",
+    "year": 2016,
+    "authors": [
+      "S. Kumova",
+      "B. Karaoglan",
+      "T. Kisla"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1393-1396",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/iscset65760.2025.11540524",
+    "title": "Sentence-Similarity Pipeline for Paraphrase Detection in Uzbek Texts",
+    "journal": "2025 International Symposium on Computer Science and Educational Technology (ISCSET)",
+    "year": 2025,
+    "authors": [
+      "D. Sultanov",
+      "K. Akhmedova",
+      "H. Ahn"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1-5",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/iccitechn.2017.8281793",
+    "title": "Automatic authorship detection from Bengali text using stylometric approach",
+    "journal": "2017 20th International Conference of Computer and Information Technology (ICCIT)",
+    "year": 2017,
+    "authors": [
+      "N. Islam",
+      "M. M. Hoque",
+      "M. R. Hossain"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1-6",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/qpain69676.2026.11545549",
+    "title": "Robust Detection of AI-Generated Text Using Stylometric-Semantic Modeling Under Paraphrasing and Adversarial Rewriting",
+    "journal": "2026 IEEE 2nd International Conference on Quantum Photonics, Artificial Intelligence &amp;amp; Networking (QPAIN)",
+    "year": 2026,
+    "authors": [
+      "S. Tasnim",
+      "A. Z. Khondoker"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1-6",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/sped.2019.8906616",
+    "title": "Text Sectioning based on Stylometric Distances",
+    "journal": "2019 International Conference on Speech Technology and Human-Computer Dialogue (SpeD)",
+    "year": 2019,
+    "authors": [
+      "H. Teodorescu",
+      "S. C. Bolea"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1-6",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/access.2026.3743372",
+    "title": "Privacy\u2013Personalization Trade-offs in LLMs: The Impact of Stylometric Signal Reduction on User-Specific Text Generation",
+    "journal": "IEEE Access",
+    "year": 2026,
+    "authors": [
+      "M. N. Arefin",
+      "O. J. Hammad"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1-1",
+    "type": "journal-article"
+  },
+  {
+    "doi": "10.1109/icdm.2017.52",
+    "title": "Accurate Detection of Automatically Spun Content via Stylometric Analysis",
+    "journal": "2017 IEEE International Conference on Data Mining (ICDM)",
+    "year": 2017,
+    "authors": [
+      "U. Shahid",
+      "S. Farooqi",
+      "R. Ahmad",
+      "Z. Shafiq",
+      "P. Srinivasan",
+      "F. Zaffar"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "425-434",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/siu49456.2020.9302393",
+    "title": "Detection of Stylometric Writeprint from the Turkish Texts",
+    "journal": "2020 28th Signal Processing and Communications Applications Conference (SIU)",
+    "year": 2020,
+    "authors": [
+      "P. Canbay",
+      "E. A. Sezer",
+      "H. Sever"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1-4",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/mees58014.2022.10005654",
+    "title": "Method for Evaluation the Pattern of Internet Service Customers Based on Stylometric Analysis Oof their Text Content",
+    "journal": "2022 IEEE 4th International Conference on Modern Electrical and Energy System (MEES)",
+    "year": 2022,
+    "authors": [
+      "V. Sydorenko",
+      "Y. Rychok",
+      "M. Oladko"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "01-06",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/icccis51004.2021.9397187",
+    "title": "Intrinsic Plagiarism Detection System Using Stylometric Features and DBSCAN",
+    "journal": "2021 International Conference on Computing, Communication, and Intelligent Systems (ICCCIS)",
+    "year": 2021,
+    "authors": [
+      "A. Saini",
+      "M. R. Sri",
+      "M. Thakur"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "13-18",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/citds70571.2026.11706810",
+    "title": "The Invisible Signature: A Stylometric and Probabilistic Approach to Detecting AI-Generated Text in Academic Thesis Introductions",
+    "journal": "2026 IEEE 4th Conference on Information Technology and Data Science (CITDS)",
+    "year": 2026,
+    "authors": [
+      "E. F. Andriantsialo",
+      "V. M. Ratianantitra",
+      "T. Mahatody"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "32-37",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/ic3ina60834.2023.10285761",
+    "title": "Using Linguistic and Stylometric Features for Satirical News Detection in Bahasa Indonesia",
+    "journal": "2023 International Conference on Computer, Control, Informatics and its Applications (IC3INA)",
+    "year": 2023,
+    "authors": [
+      "Y. Sari",
+      "R. P. Hastuti",
+      "G. B. Herwanto"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "388-393",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/icct.2015.7399852",
+    "title": "A video zero-watermarking algorithm based on text detection",
+    "journal": "2015 IEEE 16th International Conference on Communication Technology (ICCT)",
+    "year": 2015,
+    "authors": [
+      "Qishuai Xu",
+      "Jianfeng Lu",
+      "Xinxin Peng",
+      "Shijie Yuan",
+      "Li Li"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "328-333",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/iccet.2010.5486185",
+    "title": "Word length based zero-watermarking algorithm for tamper detection in text documents",
+    "journal": "2010 2nd International Conference on Computer Engineering and Technology",
+    "year": 2010,
+    "authors": [
+      "Z. Jalil",
+      "A. M. Mirza",
+      "H. Jabeen"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "V6-378-V6-382",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/etcs.2010.494",
+    "title": "Text Watermarking Using Combined Image-plus-Text Watermark",
+    "journal": "2010 Second International Workshop on Education Technology and Computer Science",
+    "year": 2010,
+    "authors": [
+      "Z. Jalil",
+      "A. M. Mirza"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "11-14",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/ngdn61651.2024.10744131",
+    "title": "Text Watermarking-Based Federated Learning Backdoor Attack Detection Scheme",
+    "journal": "2024 Sixth International Conference on Next Generation Data-driven Networks (NGDN)",
+    "year": 2024,
+    "authors": [
+      "Y. Zuo",
+      "Z. Yang",
+      "D. Chen",
+      "K. Gu",
+      "L. Jiang"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "109-112",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/bwcca.2014.49",
+    "title": "A Novel Text Watermarking Algorithm Based on Graphic Watermarking Framework",
+    "journal": "2014 Ninth International Conference on Broadband and Wireless Computing, Communication and Applications",
+    "year": 2014,
+    "authors": [
+      "X. Liu",
+      "J. Zhang",
+      "H. Wang",
+      "X. Gong",
+      "Y. Cheng"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "84-88",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/anthology.2013.6784740",
+    "title": "An active attack on chaotic based text zero-watermarking",
+    "journal": "IEEE Conference Anthology",
+    "year": 2013,
+    "authors": [
+      "L. He",
+      "X. Gui"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1-4",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/icsps.2009.28",
+    "title": "Farsi Text Watermarking Based on Character Coding",
+    "journal": "2009 International Conference on Signal Processing Systems",
+    "year": 2009,
+    "authors": [
+      "R. Davarzani",
+      "K. Yaghmaie"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "152-156",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/icspc.2007.4728524",
+    "title": "Text Watermarking against Ownership Rights Violation",
+    "journal": "2007 IEEE International Conference on Signal Processing and Communications",
+    "year": 2007,
+    "authors": [
+      "O. Vybornova",
+      "B. Macq"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1135-1138",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/icasid.2012.6325285",
+    "title": "An improved DCT based zero-watermarking algorithm for text image",
+    "journal": "Anti-counterfeiting, Security, and Identification",
+    "year": 2012,
+    "authors": [
+      "G. Feng",
+      "X. Huang"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1-4",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/iaecst60924.2023.10503359",
+    "title": "A Multi-Label Text Classification Model Combining Label Graph Embedding and Transformer Decoding",
+    "journal": "2023 5th International Academic Exchange Conference on Science and Technology Innovation (IAECST)",
+    "year": 2023,
+    "authors": [
+      "J. Li",
+      "J. Fu"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "375-379",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/gcce62371.2024.10761042",
+    "title": "Text Detection and Style Classification from Images Using Vision Transformer and Transformer Decoder",
+    "journal": "2024 IEEE 13th Global Conference on Consumer Electronics (GCCE)",
+    "year": 2024,
+    "authors": [
+      "H. Yajima",
+      "C. S. Leow",
+      "H. Nishizaki"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "619-623",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/ubmk52708.2021.9558906",
+    "title": "Improving Text Classification with Transformer",
+    "journal": "2021 6th International Conference on Computer Science and Engineering (UBMK)",
+    "year": 2021,
+    "authors": [
+      "G. Soyalp",
+      "A. Alar",
+      "K. Ozkanli",
+      "B. Yildiz"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "707-712",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/tpec63981.2025.10907193",
+    "title": "Enhancing Power System Component Classification with Transformer-Based Text Embeddings and OCR",
+    "journal": "2025 IEEE Texas Power and Energy Conference (TPEC)",
+    "year": 2025,
+    "authors": [
+      "N. Bayat",
+      "B. Ramos"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1-6",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/medai67139.2025.00015",
+    "title": "Fine-Tuning Pre-trained Transformer-Based Models for Sentence-Level Medical Text Classification",
+    "journal": "2025 IEEE International conference on Medical Artificial Intelligence (MedAI)",
+    "year": 2025,
+    "authors": [
+      "T. Kaiser",
+      "D. Wu"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "58-69",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/icrcv59470.2023.10329110",
+    "title": "Multimodal multi-label text classification based on bidirectional Transformer",
+    "journal": "2023 5th International Conference on Robotics and Computer Vision (ICRCV)",
+    "year": 2023,
+    "authors": [
+      "L. Wang",
+      "X. Chen",
+      "Z. Ye",
+      "S. Jiang"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "119-123",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/icetci58599.2023.10330958",
+    "title": "Performance Optimization for Transformer Models on Text Classification Tasks",
+    "journal": "2023 International Conference on Emerging Techniques in Computational Intelligence (ICETCI)",
+    "year": 2023,
+    "authors": [
+      "K. Malvankar",
+      "E. Fallon",
+      "P. Connolly",
+      "K. Flanagan"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "105-111",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/iciscn64258.2025.10934237",
+    "title": "Multi-Bidirectional Encoding Representations from Transformer Method for Russian Text Classification",
+    "journal": "2025 International Conference on Intelligent Systems and Computational Networks (ICISCN)",
+    "year": 2025,
+    "authors": [
+      "Y. Xu",
+      "L. Liu",
+      "S. Zhang"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1-5",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/siu66497.2025.11112276",
+    "title": "AviBERT: Transformer-based Aircraft Text Classification",
+    "journal": "2025 33rd Signal Processing and Communications Applications Conference (SIU)",
+    "year": 2025,
+    "authors": [
+      "M. C. \u00dcnal",
+      "G. Yurtalan",
+      "Y. B. Karata\u015f",
+      "A. Karamanlio\u011flu",
+      "B. Demirel"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1-4",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/clei.2012.6427167",
+    "title": "Automatic classification of academic documents using text mining techniques",
+    "journal": "2012 XXXVIII Conferencia Latinoamericana En Informatica (CLEI)",
+    "year": 2012,
+    "authors": [
+      "H. Nunez",
+      "E. Ramos"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1-7",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/bigdata62323.2024.10825505",
+    "title": "On Text Granularity and Metric Frameworks for Large Language Model Content Detection",
+    "journal": "2024 IEEE International Conference on Big Data (BigData)",
+    "year": 2024,
+    "authors": [
+      "L. Le",
+      "D. Tran"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "8301-8308",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/icicis66182.2025.11313124",
+    "title": "Detection of Large Language Model-Generated Text: A Comprehensive Review",
+    "journal": "2025 Twelfth International Conference on Intelligent Computing and Information Systems (ICICIS)",
+    "year": 2025,
+    "authors": [
+      "D. Mostafa",
+      "S. Ismail",
+      "M. Aref"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "97-104",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/eiect64462.2024.10866488",
+    "title": "Large Language Model (LLM) Text Generation Detection: A BERT-BiLSTM Approach with Attention Mechanisms",
+    "journal": "2024 4th International Conference on Electronic Information Engineering and Computer (EIECT)",
+    "year": 2024,
+    "authors": [
+      "J. Yan"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "404-407",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/gcce65946.2025.11275607",
+    "title": "Text Detection and Recognition in Document Images Using Large-scale Vision Language Model",
+    "journal": "2025 IEEE 14th Global Conference on Consumer Electronics (GCCE)",
+    "year": 2025,
+    "authors": [
+      "H. Yajima",
+      "C. S. Leow",
+      "H. Nishizaki"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1009-1013",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/esic60604.2024.10481602",
+    "title": "Detection of AI-Generated Text Using Large Language Model",
+    "journal": "2024 International Conference on Emerging Systems and Intelligent Computing (ESIC)",
+    "year": 2024,
+    "authors": [
+      "M. Prajapati",
+      "S. K. Baliarsingh",
+      "C. Dora",
+      "A. Bhoi",
+      "J. Hota",
+      "J. P. Mohanty"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "735-740",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/cei66465.2025.11398514",
+    "title": "Research on Large Language Model Text Source Detection Based on Domain Adaptive Fine-Tuning",
+    "journal": "2025 5th International Conference on Computer Science, Electronic Information Engineering and Intelligent Control Technology (CEI)",
+    "year": 2025,
+    "authors": [
+      "Z. Nan",
+      "Y. Wang"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "159-163",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/southeastcon63549.2026.11476572",
+    "title": "Developing a Vietnamese Text Summarization Large Language Model on Limited Hardware",
+    "journal": "SoutheastCon 2026",
+    "year": 2026,
+    "authors": [
+      "T. Pho",
+      "B. Flores"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1-8",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/lsp.2026.3742322",
+    "title": "Domain-Guided Mixture-of-Experts for Cross-Domain Large Language Model-Generated Text Detection",
+    "journal": "IEEE Signal Processing Letters",
+    "year": 2026,
+    "authors": [
+      "Y. Tian",
+      "B. Xu",
+      "Z. Chen",
+      "Z. Bai",
+      "H. Lin"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1-5",
+    "type": "journal-article"
+  },
+  {
+    "doi": "10.1109/tvt.2025.3595593/mm1",
+    "title": "Robust Transmission of Punctured Text with Large Language Model-based Recovery_supp1-3595593.pdf",
+    "journal": "",
+    "year": 2025,
+    "authors": [
+      "H. J. Yang"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "",
+    "type": "component"
+  },
+  {
+    "doi": "10.1109/icca69280.2026.11485794",
+    "title": "LSTM-Based Large Language Model for Text-to-Text Generation",
+    "journal": "2026 IEEE Conference on Computer Applications (ICCA)",
+    "year": 2026,
+    "authors": [
+      "N. N. Kyaw",
+      "P. Mitra",
+      "G. R. Sinha",
+      "P. M. Thwe"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1-7",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/ictech63197.2024.00092",
+    "title": "Research on Detecting ChatGPT Rewritten Text",
+    "journal": "2024 13th International Conference of Information and Communication Technology (ICTech)",
+    "year": 2024,
+    "authors": [
+      "Z. Wang",
+      "D. Li",
+      "X. Jin"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "473-477",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/compsac61105.2024.00027",
+    "title": "Detecting LLM-Generated Text in Computing Education: Comparative Study for ChatGPT Cases",
+    "journal": "2024 IEEE 48th Annual Computers, Software, and Applications Conference (COMPSAC)",
+    "year": 2024,
+    "authors": [
+      "M. S. Orenstrakh",
+      "O. Karnalim",
+      "C. A. Su\u00e1rez",
+      "M. Liut"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "121-126",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/fllm63129.2024.10852458",
+    "title": "Detecting Academic Misconduct: A BERT-Based Approach to Identifying ChatGPT-Generated Content",
+    "journal": "2024 2nd International Conference on Foundation and Large Language Models (FLLM)",
+    "year": 2024,
+    "authors": [
+      "A. Alshawabkeh",
+      "A. Hassooni",
+      "F. Kharbat",
+      "S. Alouneh"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "450-455",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/picmet.2016.7806689",
+    "title": "Detecting structural changes in the nanocarbon domain based on the time distribution of text information of academic papers",
+    "journal": "2016 Portland International Conference on Management of Engineering and Technology (PICMET)",
+    "year": 2016,
+    "authors": [
+      "Y. Nakashio",
+      "T. Hara",
+      "J. Mori",
+      "I. Sakata"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "694-700",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/icmla58977.2023.00089",
+    "title": "ChatGPT vs. Human Annotators: A Comprehensive Analysis of ChatGPT for Text Annotation",
+    "journal": "2023 International Conference on Machine Learning and Applications (ICMLA)",
+    "year": 2023,
+    "authors": [
+      "M. Aldeen",
+      "J. Luo",
+      "A. Lian",
+      "V. Zheng",
+      "A. Hong",
+      "P. Yetukuri",
+      "L. Cheng"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "602-609",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/ro-man60168.2024.10731460",
+    "title": "Enhancing Emotion Detection through ChatGPT-Augmented Text Transformation in Social Media Text",
+    "journal": "2024 33rd IEEE International Conference on Robot and Human Interactive Communication (ROMAN)",
+    "year": 2024,
+    "authors": [
+      "S. J. Lee",
+      "H. Tony Lee",
+      "K. Lee"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "872-879",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/icpr48806.2021.9413279",
+    "title": "Segmenting Messy Text: Detecting Boundaries in Text Derived from Historical Newspaper Images",
+    "journal": "2020 25th International Conference on Pattern Recognition (ICPR)",
+    "year": 2021,
+    "authors": [
+      "C. Anderson",
+      "P. Crone"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "5543-5550",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/sain.2018.8673342",
+    "title": "Detecting Emotion on Indonesian Online Chat Text Using Text Sequential Labeling",
+    "journal": "2018 International Symposium on Advanced Intelligent Informatics (SAIN)",
+    "year": 2018,
+    "authors": [
+      "R. J. Hasudungan",
+      "M. L. Kodhra"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "167-172",
+    "type": "proceedings-article"
+  },
+  {
+    "doi": "10.1109/icscna63714.2024.10864011",
+    "title": "Efficient English Text Comprehension and Pattern Understanding Model with ChatGPT",
+    "journal": "2024 International Conference on Sustainable Communication Networks and Application (ICSCNA)",
+    "year": 2024,
+    "authors": [
+      "W. Lin"
+    ],
+    "volume": "",
+    "issue": "",
+    "page": "1167-1171",
+    "type": "proceedings-article"
+  }
+]

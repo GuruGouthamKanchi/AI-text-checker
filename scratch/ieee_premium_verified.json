@@ -1,0 +1,113 @@
+[
+  {
+    "doi": "10.1109/tdsc.2025.3624268",
+    "title": "Alert-ME: An Explainability-Driven Defense Against Adversarial Examples in Transformer-Based Text Classification",
+    "journal": "IEEE Transactions on Dependable and Secure Computing",
+    "authors": [
+      "B. Sabir",
+      "Y. Gao",
+      "A. Abuadbba",
+      "M. A. Babar"
+    ],
+    "year": 2026,
+    "volume": "23",
+    "issue": "2",
+    "page": "2085-2099"
+  },
+  {
+    "doi": "10.1109/tnnls.2026.3727304",
+    "title": "Text-ADBench: Text Anomaly Detection Benchmark Based on LLM Embeddings",
+    "journal": "IEEE Transactions on Neural Networks and Learning Systems",
+    "authors": [
+      "F. Xiao",
+      "J. Fan"
+    ],
+    "year": 2026,
+    "volume": "",
+    "issue": "",
+    "page": "1-15"
+  },
+  {
+    "doi": "10.1109/tifs.2022.3155975",
+    "title": "Adversarial Detection by Latent Style Transformations",
+    "journal": "IEEE Transactions on Information Forensics and Security",
+    "authors": [
+      "S. Wang",
+      "S. Nepal",
+      "A. Abuadbba",
+      "C. Rudolph",
+      "M. Grobler"
+    ],
+    "year": 2022,
+    "volume": "17",
+    "issue": "",
+    "page": "1099-1114"
+  },
+  {
+    "doi": "10.1109/qpain69676.2026.11545549",
+    "title": "Robust Detection of AI-Generated Text Using Stylometric-Semantic Modeling Under Paraphrasing and Adversarial Rewriting",
+    "journal": "2026 IEEE 2nd International Conference on Quantum Photonics, Artificial Intelligence &amp;amp; Networking (QPAIN)",
+    "authors": [
+      "S. Tasnim",
+      "A. Z. Khondoker"
+    ],
+    "year": 2026,
+    "volume": "",
+    "issue": "",
+    "page": "1-6"
+  },
+  {
+    "doi": "10.1109/compsac65507.2025.00094",
+    "title": "AI-Generated Text Detection Using RoBERTa: A Generalizability and Explainability Analysis",
+    "journal": "2025 IEEE 49th Annual Computers, Software, and Applications Conference (COMPSAC)",
+    "authors": [
+      "K. Sch\u00e4fer",
+      "M. Steinebach"
+    ],
+    "year": 2025,
+    "volume": "",
+    "issue": "",
+    "page": "701-706"
+  },
+  {
+    "doi": "10.1109/icitsif69060.2026.11609156",
+    "title": "A Lightweight Hybrid Ensemble for Scalable Deepfake Text Detection",
+    "journal": "2026 IEEE 1st International Conference on Intelligent Technologies for a Sustainable and Inclusive Future (ICITSIF)",
+    "authors": [
+      "D. Dhanuk",
+      "R. Dubey"
+    ],
+    "year": 2026,
+    "volume": "",
+    "issue": "",
+    "page": "120-125"
+  },
+  {
+    "doi": "10.1109/ispras64596.2024.10899150",
+    "title": "N-Gram Perplexity-Based AI-Generated Text Detection",
+    "journal": "2024 Ivannikov Ispras Open Conference (ISPRAS)",
+    "authors": [
+      "P. Dmitrii",
+      "L. Mestetsky",
+      "A. Grabovoy"
+    ],
+    "year": 2024,
+    "volume": "",
+    "issue": "",
+    "page": "1-8"
+  },
+  {
+    "doi": "10.1109/ACCESS.2023.3294090",
+    "title": "Machine-Generated Text: A Comprehensive Survey of Threat Models and Detection Methods",
+    "journal": "IEEE Access",
+    "authors": [
+      "E. N. Crothers",
+      "N. Japkowicz",
+      "H. L. Viktor"
+    ],
+    "year": 2023,
+    "volume": "11",
+    "issue": "",
+    "page": "70977-71002"
+  }
+]

@@ -1,0 +1,1076 @@
+[
+  {
+    "doi": "10.1109/satc69565.2026.11542512",
+    "title": "A Hybrid Stylometric and Transformer-Based Framework for Detecting AI-Generated Text",
+    "journal": "2026 IEEE 2nd International Conference on Secure IoT, Assured and Trusted Computing (SATC)",
+    "year": 2026,
+    "authors": [
+      "R. Kanwal",
+      "Q. Mirza",
+      "H. Ashraf",
+      "N. Jhanjhi",
+      "T. Dewi"
+    ],
+    "page": "1-8",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/qpain69676.2026.11545549",
+    "title": "Robust Detection of AI-Generated Text Using Stylometric-Semantic Modeling Under Paraphrasing and Adversarial Rewriting",
+    "journal": "2026 IEEE 2nd International Conference on Quantum Photonics, Artificial Intelligence &amp;amp; Networking (QPAIN)",
+    "year": 2026,
+    "authors": [
+      "S. Tasnim",
+      "A. Khondoker"
+    ],
+    "page": "1-6",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/citds70571.2026.11706810",
+    "title": "The Invisible Signature: A Stylometric and Probabilistic Approach to Detecting AI-Generated Text in Academic Thesis Introductions",
+    "journal": "2026 IEEE 4th Conference on Information Technology and Data Science (CITDS)",
+    "year": 2026,
+    "authors": [
+      "E. Andriantsialo",
+      "V. Ratianantitra",
+      "T. Mahatody"
+    ],
+    "page": "32-37",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/iccnct68477.2026.11590321",
+    "title": "AI-Generated Phishing Email Detection using RoBERTa and Stylometric Ensemble Mode",
+    "journal": "2026 International Conference on Computer Networks and Inventive Communication Technologies (ICCNCT)",
+    "year": 2026,
+    "authors": [
+      "P. Anitha",
+      "R. Kayalvizhi",
+      "N. Prakash",
+      "A.Yoganathan",
+      "P. Kalyanasundaram",
+      "R. Geetha"
+    ],
+    "page": "1093-1098",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/icetci71772.2026.11710678",
+    "title": "Hybrid Ensemble Framework for AI Generated Text Detection: Combining Statistical, Transformer, Zero-Shot, and Watermark Methods with Adversarial Robustness and Explainability",
+    "journal": "2026 International Conference on Emerging Techniques in Computational Intelligence (ICETCI)",
+    "year": 2026,
+    "authors": [
+      "P. Gupta",
+      "M. Maji",
+      "T. Singh"
+    ],
+    "page": "1-8",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/ispras64596.2024.10899150",
+    "title": "N-Gram Perplexity-Based AI-Generated Text Detection",
+    "journal": "2024 Ivannikov Ispras Open Conference (ISPRAS)",
+    "year": 2024,
+    "authors": [
+      "P. Dmitrii",
+      "L. Mestetsky",
+      "A. Grabovoy"
+    ],
+    "page": "1-8",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/icccnt61001.2024.10724991",
+    "title": "Detection and Classification of AI-Generated Text",
+    "journal": "2024 15th International Conference on Computing Communication and Networking Technologies (ICCCNT)",
+    "year": 2024,
+    "authors": [
+      "S. Gupta",
+      "D. Gupta"
+    ],
+    "page": "1-6",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/fit67061.2025.11333793",
+    "title": "Detecting Human vs AI-Generated Text in Urdu: A Comparative Study of Deep Learning and Transformer Models",
+    "journal": "2025 International Conference on Frontiers of Information Technology (FIT)",
+    "year": 2025,
+    "authors": [
+      "S. Firdoos",
+      "M. Ul Hassan"
+    ],
+    "page": "1-5",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/icecco67619.2026.11488791",
+    "title": "AI-Generated Text Detection Methods: A Review",
+    "journal": "2026 18th International Conference on Electronics, Computer, and Computation (ICECCO)",
+    "year": 2026,
+    "authors": [
+      "B. Sharimbayev",
+      "C. Turan",
+      "A. Kazin"
+    ],
+    "page": "1-6",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/iciptm69057.2026.11466076",
+    "title": "AI Generated Text vs Human Written Text: An Efficient Detection Tool Using Machine Learning",
+    "journal": "2026 5th International Conference on Innovative Practices in Technology and Management (ICIPTM)",
+    "year": 2026,
+    "authors": [
+      "R. Singh",
+      "V. Singh",
+      "V. Puri"
+    ],
+    "page": "1-6",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/icmla66185.2025.00030",
+    "title": "A Feature-based Linguistic and Statistical Framework for AI-Generated Text Detection",
+    "journal": "2025 International Conference on Machine Learning and Applications (ICMLA)",
+    "year": 2025,
+    "authors": [
+      "V. Sen",
+      "R. Hasan"
+    ],
+    "page": "184-191",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/iccece69715.2026.11493065",
+    "title": "AI-Powered Mood Detection from User-Generated Text for Adaptive Music Recommendation",
+    "journal": "2026 International Conference on Computing, Electronics &amp;amp; Communications Engineering (ICCECE)",
+    "year": 2026,
+    "authors": [
+      "M. Kathiravan"
+    ],
+    "page": "1-7",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/icetci71772.2026.11710723",
+    "title": "Detection of AI-Generated Khasi Text Using Machine Learning Techniques",
+    "journal": "2026 International Conference on Emerging Techniques in Computational Intelligence (ICETCI)",
+    "year": 2026,
+    "authors": [
+      "M. Chadap",
+      "T. Singh"
+    ],
+    "page": "1-8",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/apsipaasc65261.2025.11249059",
+    "title": "Segment Transformer: AI-Generated Music Detection via Music Structural Analysis",
+    "journal": "2025 Asia Pacific Signal and Information Processing Association Annual Summit and Conference (APSIPA ASC)",
+    "year": 2025,
+    "authors": [
+      "Y. Kim",
+      "S. Go"
+    ],
+    "page": "664-669",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/wconf61366.2024.10692072",
+    "title": "Detection of AI Generated Text With BERT Model",
+    "journal": "2024 2nd World Conference on Communication &amp;amp; Computing (WCONF)",
+    "year": 2024,
+    "authors": [
+      "P. Javaji",
+      "P. Sreeya",
+      "S. Rajesh"
+    ],
+    "page": "1-6",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/compsac65507.2025.00094",
+    "title": "AI-Generated Text Detection Using RoBERTa: A Generalizability and Explainability Analysis",
+    "journal": "2025 IEEE 49th Annual Computers, Software, and Applications Conference (COMPSAC)",
+    "year": 2025,
+    "authors": [
+      "K. Sch\u00e4fer",
+      "M. Steinebach"
+    ],
+    "page": "701-706",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/ciees62939.2024.10811427",
+    "title": "AI-Generated Text Detection and Prevention of Unethical AI Use in Student Exams",
+    "journal": "2024 5th International Conference on Communications, Information, Electronic and Energy Systems (CIEES)",
+    "year": 2024,
+    "authors": [
+      "K. Nikiforova-Ilieva",
+      "T. Georgiev"
+    ],
+    "page": "1-4",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/mc.2026.3681589",
+    "title": "Multidomain Expert Ensembles for Robust AI-Generated Text Detection With Backdoor-Aware Continual Learning",
+    "journal": "Computer",
+    "year": 2026,
+    "authors": [
+      "I. Miller",
+      "D. Lin"
+    ],
+    "page": "22-33",
+    "volume": "59"
+  },
+  {
+    "doi": "10.1109/aic61668.2024.10731116",
+    "title": "Detection of AI-generated Text: An Experimental Study",
+    "journal": "2024 IEEE 3rd World Conference on Applied Intelligence and Computing (AIC)",
+    "year": 2024,
+    "authors": [
+      "M. Kalra",
+      "A. Mathur",
+      "C. Patvardhan"
+    ],
+    "page": "552-557",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/mc.2024.3445068",
+    "title": "Navigating the Landscape of AI-Generated Text Detection: Issues and Solutions for Upholding Academic Integrity",
+    "journal": "Computer",
+    "year": 2024,
+    "authors": [
+      "V. Gupta",
+      "C. Gupta"
+    ],
+    "page": "118-123",
+    "volume": "57"
+  },
+  {
+    "doi": "10.1109/synasc65383.2024.00043",
+    "title": "A Dual-Approach for AI-Generated Text Detection",
+    "journal": "2024 26th International Symposium on Symbolic and Numeric Algorithms for Scientific Computing (SYNASC)",
+    "year": 2024,
+    "authors": [
+      "C. Grecu",
+      "M. Breaban"
+    ],
+    "page": "206-214",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/icsccc69031.2026.11600308",
+    "title": "Efficient Detection of AI-Generated Text via Semantic Embeddings and Linear Optimization",
+    "journal": "2026 Fourth International Conference on Secure Cyber Computing and Communications (ICSCCC)",
+    "year": 2026,
+    "authors": [
+      "P. Raj",
+      "S. Singh"
+    ],
+    "page": "1055-1060",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/icses63760.2024.10910837",
+    "title": "Leveraging Deep Learning Models for Machine-Generated Text Detection Using Transformer-Based Models",
+    "journal": "2024 International Conference on Innovative Computing, Intelligent Communication and Smart Electrical Systems (ICSES)",
+    "year": 2024,
+    "authors": [
+      "P. Suthanthiradevi",
+      "G. Revathy",
+      "K. Rejini",
+      "M. Lakshmi.V"
+    ],
+    "page": "1-6",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/icpids65698.2024.00032",
+    "title": "Detection of AI-Generated Text",
+    "journal": "2024 International Conference on Progressive Innovations in Intelligent Systems and Data Science (ICPIDS)",
+    "year": 2024,
+    "authors": [
+      "R. Bharadwaj",
+      "R. Dugad",
+      "A. Gile",
+      "G. Patil",
+      "S. Hatyalikar"
+    ],
+    "page": "150-156",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/icetci61221.2024.10594194",
+    "title": "Enhancing Text Authenticity: A Novel Hybrid Approach for AI-Generated Text Detection",
+    "journal": "2024 IEEE 4th International Conference on Electronic Technology, Communication and Information (ICETCI)",
+    "year": 2024,
+    "authors": [
+      "Y. Zhang",
+      "Q. Leng",
+      "M. Zhu",
+      "R. Ding",
+      "Y. Wu",
+      "J. Song",
+      "Y. Gong"
+    ],
+    "page": "433-438",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/cisce65916.2025.11065851",
+    "title": "Machine-Human Boundary: A Systematic Survey of Machine-Generated Text Detection",
+    "journal": "2025 IEEE 7th International Conference on Communications, Information System and Computer Engineering (CISCE)",
+    "year": 2025,
+    "authors": [
+      "Q. Zhang"
+    ],
+    "page": "604-609",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/caibda65784.2025.11183470",
+    "title": "Dual-Supervision Collaborative Machine-Generated Text Detection Method",
+    "journal": "2025 5th International Conference on Artificial Intelligence, Big Data and Algorithms (CAIBDA)",
+    "year": 2025,
+    "authors": [
+      "Z. Yang"
+    ],
+    "page": "1304-1310",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/access.2026.3666781",
+    "title": "Human or Machine? A Survey on Machine-Generated Text Detection",
+    "journal": "IEEE Access",
+    "year": 2026,
+    "authors": [
+      "Z. Ahmad",
+      "M. Torres-Ruiz",
+      "A. Mahmood",
+      "R. Quintero",
+      "I. Ameer",
+      "N. B\u00f6l\u00fcc\u00fc"
+    ],
+    "page": "34113-34136",
+    "volume": "14"
+  },
+  {
+    "doi": "10.1109/icassp55912.2026.11460813",
+    "title": "DetectWild: In-The-Wild AI-Generated Text Detection Benchmark",
+    "journal": "ICASSP 2026 - 2026 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)",
+    "year": 2026,
+    "authors": [
+      "L. Zhang",
+      "X. Guo",
+      "Z. Zhao",
+      "S. Cai",
+      "Q. Wang",
+      "W. Xu",
+      "X. Lin",
+      "W. Cui"
+    ],
+    "page": "18512-18516",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/icecco67619.2026.11488773",
+    "title": "Cross-Lingual Detection of Machine-Generated Text Using Multilingual Transformers and Balanced Data",
+    "journal": "2026 18th International Conference on Electronics, Computer, and Computation (ICECCO)",
+    "year": 2026,
+    "authors": [
+      "B. Sharimbayev",
+      "S. Duisen"
+    ],
+    "page": "1-6",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/iccit64611.2024.11022406",
+    "title": "Fine-tuning Pretrained Language Models for Multigenerator, Multidomain Machine Generated Text Detection",
+    "journal": "2024 27th International Conference on Computer and Information Technology (ICCIT)",
+    "year": 2024,
+    "authors": [
+      "S. Ahsan",
+      "M. Fahmida",
+      "M. Arefin"
+    ],
+    "page": "2038-2043",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/icmisi69868.2026.11584229",
+    "title": "Towards Reliable Detection of LLM-Generated Text Using a Multi-Feature Adaptive Framework",
+    "journal": "2026 International Conference on Machine Intelligence and Smart Innovation (ICMISI)",
+    "year": 2026,
+    "authors": [
+      "D. Mostafa",
+      "S. Ismail",
+      "M. Aref"
+    ],
+    "page": "91-97",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/caibda65784.2025.11183347",
+    "title": "A Lightweight Detector: Zero-Shot Detection of Machine-Generated Text with Once Call",
+    "journal": "2025 5th International Conference on Artificial Intelligence, Big Data and Algorithms (CAIBDA)",
+    "year": 2025,
+    "authors": [
+      "J. Yan",
+      "W. Zhao",
+      "H. Guo"
+    ],
+    "page": "1331-1334",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/ficac65757.2025.11341850",
+    "title": "A Survey on AI-Generated Text Detection: Methods, Challenges, and Future Directions",
+    "journal": "2025 1st Future International Conference on Artificial Intelligence and Cybersecurity (FICAC)",
+    "year": 2025,
+    "authors": [
+      "A. Ismail",
+      "C. Ezzat",
+      "A. El-Korany"
+    ],
+    "page": "97-110",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/ippr66507.2025.11198205",
+    "title": "Efficient AI-Generated Text Detection Based on Contrastively Enhanced Hybrid Features and Support Vector Machine",
+    "journal": "2025 2nd International Conference on Intelligent Perception and Pattern Recognition (IPPR)",
+    "year": 2025,
+    "authors": [
+      "L. Zhi",
+      "L. Fang",
+      "M. Cai"
+    ],
+    "page": "386-391",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/trustcom66490.2025.00134",
+    "title": "Machine Learning-Based Detection of AI-Generated Text via Stylistic and Statistical Feature Modeling",
+    "journal": "2025 IEEE 24th International Conference on Trust, Security and Privacy in Computing and Communications (TrustCom)",
+    "year": 2025,
+    "authors": [
+      "K. Sch\u00e4fer",
+      "M. Steinebach"
+    ],
+    "page": "1166-1173",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/mlbdbi67855.2025.11331454",
+    "title": "MAF-Detect: A Multi-Scale Adaptive Fusion Framework for Zero-Shot Detection of LLM-Generated Text",
+    "journal": "2025 7th International Conference on Machine Learning, Big Data and Business Intelligence (MLBDBI)",
+    "year": 2025,
+    "authors": [
+      "Z. Bai",
+      "Y. Zheng"
+    ],
+    "page": "142-145",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/esic68176.2026.11495939",
+    "title": "Comparative Analysis of Machine Learning Approaches for Automated Detection of AI-Generated Text in Academic Content",
+    "journal": "2026 International Conference on Emerging Systems and Intelligent Computing (ESIC)",
+    "year": 2026,
+    "authors": [
+      "N. Sinha",
+      "S. Saravindu",
+      "T. Maitra",
+      "D. Giri"
+    ],
+    "page": "748-753",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/lsp.2024.3394264",
+    "title": "C-Net: A Compression-Based Lightweight Network for Machine-Generated Text Detection",
+    "journal": "IEEE Signal Processing Letters",
+    "year": 2024,
+    "authors": [
+      "Y. Zhou",
+      "J. Wen",
+      "J. Jia",
+      "L. Gao",
+      "Z. Zhang"
+    ],
+    "page": "1269-1273",
+    "volume": "31"
+  },
+  {
+    "doi": "10.1109/access.2024.3396820",
+    "title": "Enhancing Machine-Generated Text Detection: Adversarial Fine-Tuning of Pre-Trained Language Models",
+    "journal": "IEEE Access",
+    "year": 2024,
+    "authors": [
+      "D. Hee Lee",
+      "B. Jang"
+    ],
+    "page": "65333-65340",
+    "volume": "12"
+  },
+  {
+    "doi": "10.1109/access.2025.3538805",
+    "title": "A Comprehensive Survey of Fake Text Detection on Misinformation and LM-Generated Texts",
+    "journal": "IEEE Access",
+    "year": 2025,
+    "authors": [
+      "S. Kwon",
+      "B. Jang"
+    ],
+    "page": "25301-25324",
+    "volume": "13"
+  },
+  {
+    "doi": "10.1109/icmlt69916.2026.11688564",
+    "title": "Learning Spatial Organization Patterns in Text-to-Image Generated Architectural Plans Using Machine Learning",
+    "journal": "2026 11th International Conference on Machine Learning Technologies (ICMLT)",
+    "year": 2026,
+    "authors": [
+      "T. \u00c7elik"
+    ],
+    "page": "1-6",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/i-smac65734.2025.11597862",
+    "title": "Social Media Deep Fake Detection Using Deep Learning and Fast-Text Embeddings for Detecting Machine-Generated Tweets",
+    "journal": "2025 9th International Conference on I-SMAC (IoT in Social, Mobile, Analytics and Cloud) (I-SMAC)",
+    "year": 2025,
+    "authors": [
+      "C. Ramesh",
+      "A. Mohan Reddy",
+      "R. Noorullah"
+    ],
+    "page": "1552-1557",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/access.2026.3744279",
+    "title": "Bayesian Demonstration Selection for LLM-Based Dementia Detection from Patient-Generated Text",
+    "journal": "IEEE Access",
+    "year": 2026,
+    "authors": [
+      "M. Rahman",
+      "H. Babiker",
+      "M. Hossain",
+      "M. Kim",
+      "R. Goebel"
+    ],
+    "page": "1-1",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/ictai66417.2025.00123",
+    "title": "Detecting Machine-Generated Text using Grammatical Features",
+    "journal": "2025 IEEE 37th International Conference on Tools with Artificial Intelligence (ICTAI)",
+    "year": 2025,
+    "authors": [
+      "C. Ngouanfouo",
+      "A. Davoust"
+    ],
+    "page": "843-848",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/iscbi69404.2026.11495803",
+    "title": "Detecting AI Generated Text Using Support Vector Machine",
+    "journal": "2026 8th International Symposium on Computational and Business Intelligence (ISCBI)",
+    "year": 2026,
+    "authors": [
+      "R. Widjaya",
+      "K. Iskandar"
+    ],
+    "page": "76-80",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/iaict65714.2025.11100306",
+    "title": "The Precision of Model to Detect AI-generated Text: Comparison on AI Text Detectors and Impact of Paraphrasing",
+    "journal": "2025 IEEE International Conference on Industry 4.0, Artificial Intelligence, and Communications Technology (IAICT)",
+    "year": 2025,
+    "authors": [
+      "A. Jansen",
+      "J. Suwandy",
+      "Y. Muliono",
+      "Nadia",
+      "F. Junior"
+    ],
+    "page": "796-803",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/icaic67076.2026.11395730",
+    "title": "AI-Driven Detection of AI-Generated Cyber Attacks: A Framework for Defending Against Generative Adversarial Threats",
+    "journal": "2026 IEEE 5th International Conference on AI in Cybersecurity (ICAIC)",
+    "year": 2026,
+    "authors": [
+      "T. Sardar",
+      "B. Pandey",
+      "L. Aldasheva"
+    ],
+    "page": "1-5",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/aixset65682.2025.00008",
+    "title": "Kullback-Leibler Adversarial Training for Robustness Against Word-Substitution Attacks in Transformer-Based Arabic Text Classifier",
+    "journal": "2025 Conference on AI, Science, Engineering, and Technology (AIxSET)",
+    "year": 2025,
+    "authors": [
+      "H. Alshalan",
+      "B. Rekabdar"
+    ],
+    "page": "9-16",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/aiiot65859.2025.11105233",
+    "title": "Multi-Modal Adversarial Activity Detection Using Keyboard and Mouse Dynamics",
+    "journal": "2025 IEEE World AI IoT Congress (AIIoT)",
+    "year": 2025,
+    "authors": [
+      "J. Xiong",
+      "A. Belman"
+    ],
+    "page": "0340-0345",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/icaiii69475.2026.11521549",
+    "title": "Domain-Robust AI for Dental Disease Detection: Integrating Adversarial Feature Alignment, Adaptive Attention Fusion, and Class-Balanced Loss",
+    "journal": "2026 International Conference on AI Innovations and Industry (ICAIII)",
+    "year": 2026,
+    "authors": [
+      "A. Alfaqehi",
+      "H. Meshref"
+    ],
+    "page": "1-8",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/iccsic69301.2026.11521153",
+    "title": "Adversarial Attack Robustness of CNN Models for Arabic Traffic Panel Text Detection",
+    "journal": "2026 IEEE International Conference on Complex Systems and Intelligent Computing (ICCSIC)",
+    "year": 2026,
+    "authors": [
+      "H. Turki",
+      "M. Kherallah"
+    ],
+    "page": "116-123",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/icaic67076.2026.11395888",
+    "title": "Evaluating Adversarial Resilience of Deep Reinforcement Learning Algorithms for Network Intrusion Detection",
+    "journal": "2026 IEEE 5th International Conference on AI in Cybersecurity (ICAIC)",
+    "year": 2026,
+    "authors": [
+      "C. Rookard"
+    ],
+    "page": "1-6",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/iscs69371.2025.11386239",
+    "title": "Exposing AI-Generated Threat Reports through Semantic and Adversarial Detection Models",
+    "journal": "2025 2nd International Conference on Intelligent Systems for Cybersecurity (ISCS)",
+    "year": 2025,
+    "authors": [
+      "M. Breja",
+      "N. Dahiya"
+    ],
+    "page": "1-6",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/iitcee67948.2026.11394586",
+    "title": "LLM Cheat Prevention via Adversarial Question Paraphrasing",
+    "journal": "2026 International Conference on Intelligent and Innovative Technologies in Computing, Electrical and Electronics\u00a0(IITCEE)",
+    "year": 2026,
+    "authors": [
+      "B. Balaji",
+      "P. Pavankumar",
+      "S. Riyaz",
+      "M. Reddy",
+      "A. Munna",
+      "B. Sai"
+    ],
+    "page": "1-4",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/iccbd-ai65562.2024.00083",
+    "title": "Integrating CLIP with Dynamic Memory Generative Adversarial Networks to Enhance Semantic Consistency in Text-to-Image Generation",
+    "journal": "2024 5th International Conference on Computer, Big Data and Artificial Intelligence (ICCBD+AI)",
+    "year": 2024,
+    "authors": [
+      "D. Yan",
+      "X. Cheng"
+    ],
+    "page": "466-471",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/aiiot68874.2026.11569588",
+    "title": "Adversarial Robustness of CNN-Based Architectures for Deepfake Image Detection",
+    "journal": "2026 IEEE World AI IoT Congress (AIIoT)",
+    "year": 2026,
+    "authors": [
+      "D. Vagadiya",
+      "V. Tida",
+      "R. Qi",
+      "R. Hasan"
+    ],
+    "page": "0409-0415",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/access.2026.3689209",
+    "title": "A Comprehensive Evaluation of Fine-Tuned LLMs as AI-Generated Text Detectors Under Adversarial and Multi-Domain Conditions",
+    "journal": "IEEE Access",
+    "year": 2026,
+    "authors": [
+      "M. Murgia",
+      "D. Reforgiato Recupero",
+      "G. Spathoulas"
+    ],
+    "page": "66819-66837",
+    "volume": "14"
+  },
+  {
+    "doi": "10.1109/icoiact67584.2025.11345089",
+    "title": "Detecting the Invisible: Adversarial Strategies for AI-Generated Text in the LLM Era",
+    "journal": "2025 8th International Conference on Information and Communications Technology (ICOIACT)",
+    "year": 2025,
+    "authors": [
+      "K. Fredson",
+      "Y. Tjendra",
+      "L. Suryadi",
+      "P. Suri"
+    ],
+    "page": "172-177",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/icad65464.2025.11114047",
+    "title": "Parameter-Efficient Adversarial Example Detection and Robustness Enhancement Utilizing Optimized Reverse-Cross Entropy",
+    "journal": "2025 IEEE International Conference on AI and Data Analytics (ICAD)",
+    "year": 2025,
+    "authors": [
+      "Z. Fu",
+      "M. Donato"
+    ],
+    "page": "1-8",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/mitp.2026.3726735",
+    "title": "AI-Based SQL Injection Detection Through Adversarial CodeBERT Attacks",
+    "journal": "IT Professional",
+    "year": 2026,
+    "authors": [
+      "H. Chiang",
+      "J. Chen",
+      "C. Ahmadi"
+    ],
+    "page": "76-80",
+    "volume": "28"
+  },
+  {
+    "doi": "10.1109/wcnc61545.2025.10978796",
+    "title": "Leveraging Explainable AI for Adaptive Adversarial DoS Attack Detection in 6G IoT Networks",
+    "journal": "2025 IEEE Wireless Communications and Networking Conference (WCNC)",
+    "year": 2025,
+    "authors": [
+      "T. Hewa",
+      "Y. Siriwardhana",
+      "M. Ylianttila"
+    ],
+    "page": "1-7",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/bigdata62323.2024.10825691",
+    "title": "ConvNLP: Image-based AI Text Detection",
+    "journal": "2024 IEEE International Conference on Big Data (BigData)",
+    "year": 2024,
+    "authors": [
+      "S. Jambunathan",
+      "A. Shankarnarayan",
+      "P. Dube"
+    ],
+    "page": "6260-6268",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/aiei69164.2026.11497073",
+    "title": "Evaluating LoRA Adaptation and Fine-Tuning for Multi-Class Adversarial Prompt Detection in Transformer Models",
+    "journal": "2026 IEEE International Conference on AI Engineering and Innovations (AIEI)",
+    "year": 2026,
+    "authors": [
+      "S. Bajaj",
+      "K. Dutta"
+    ],
+    "page": "1-6",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/jcsse68839.2026.11596924",
+    "title": "Hybrid Large Language Models (LLM) with Adversarial Training for Robust AI-Generated Text Classification",
+    "journal": "2026 23rd International Joint Conference on Computer Science and Software Engineering (JCSSE)",
+    "year": 2026,
+    "authors": [
+      "N. Ahmad",
+      "A. Nasir",
+      "H. Khan",
+      "L. Perveen",
+      "M. Hayat",
+      "N. Sultan"
+    ],
+    "page": "841-846",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/aece62803.2024.10911168",
+    "title": "Mitigating Adversarial Threats: Safeguarding AI-Driven Fraud Detection Systems Against Malicious Exploits",
+    "journal": "2024 4th International Conference on Advancement in Electronics &amp;amp; Communication Engineering (AECE)",
+    "year": 2024,
+    "authors": [
+      "A. Kumar",
+      "K. Guleria"
+    ],
+    "page": "736-740",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/tai.2024.3516713",
+    "title": "AI-based Framework for Discriminating Human-authored and AI-generated Text",
+    "journal": "IEEE Transactions on Artificial Intelligence",
+    "year": 2025,
+    "authors": [
+      "M. Wani",
+      "A. Abd El-Latif",
+      "M. ELAffendi",
+      "A. Hussain"
+    ],
+    "page": "1-15",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/tensymp61132.2024.10752173",
+    "title": "A Framework for Enhancing Accuracy in AI Generated Text Detection Using Ensemble Modelling",
+    "journal": "2024 IEEE Region 10 Symposium (TENSYMP)",
+    "year": 2024,
+    "authors": [
+      "K. Aggarwal",
+      "S. Singh",
+      "Parul",
+      "V. Pal",
+      "S. Yadav"
+    ],
+    "page": "1-8",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/sist61674.2026.11596221",
+    "title": "Comparative Analysis of Neural Architectures and Hybrid Approach for AI-Generated Text Detection",
+    "journal": "2026 IEEE 6th International Conference on Smart Information Systems and Technologies (SIST)",
+    "year": 2026,
+    "authors": [
+      "A. Assylkhan",
+      "S. Biloshchytska"
+    ],
+    "page": "1-8",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/tg.2026.3693107",
+    "title": "Task and Data Complexity in Gamified Text Labelling: When Do Real and AI-Generated Images Help?",
+    "journal": "IEEE Transactions on Games",
+    "year": 2026,
+    "authors": [
+      "F. Althani",
+      "C. Madge",
+      "M. Poesio"
+    ],
+    "page": "1-13",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/tdsc.2026.3716942",
+    "title": "Reinforcement-Guided Adaptive Manifold Perturbation Framework for Robust AI-Generated Text Detection",
+    "journal": "IEEE Transactions on Dependable and Secure Computing",
+    "year": 2026,
+    "authors": [
+      "C. Li",
+      "T. Luo",
+      "K. Qiu",
+      "Z. Xu",
+      "J. Liu",
+      "W. Li",
+      "S. Wu",
+      "F. Li",
+      "P. Hu"
+    ],
+    "page": "1-16",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/smartblock4africa61928.2024.10779494",
+    "title": "AI-Generated and Human-Written Text Detection Using DistilBERT",
+    "journal": "2024 IEEE SmartBlock4Africa",
+    "year": 2024,
+    "authors": [
+      "J. Gakpetor",
+      "M. Doe",
+      "M. Damoah",
+      "D. Damoah",
+      "J. Arthur",
+      "M. Asare"
+    ],
+    "page": "1-7",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/iconat66879.2025.11362514",
+    "title": "Contrast First, Classify Later: Fine-Grained Self-Supervised Contrastive Pretraining for AI-Generated Text Detection",
+    "journal": "2025 IEEE 4th International Conference for Advancement in Technology (ICONAT)",
+    "year": 2025,
+    "authors": [
+      "S. Vaidya",
+      "J. Saini"
+    ],
+    "page": "1-7",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/raaicon69033.2025.11502163",
+    "title": "Stacking Ensemble Approach for AI Generated Text Detection with Appropriate Feature Selection",
+    "journal": "2025 IEEE 4th International Conference on Robotics, Automation, Artificial-Intelligence and Internet-of-Things (RAAICON)",
+    "year": 2025,
+    "authors": [
+      "M. Ansary"
+    ],
+    "page": "7-12",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/tmm.2026.3716041",
+    "title": "Incremental Learning for AI-Generated Image Detection",
+    "journal": "IEEE Transactions on Multimedia",
+    "year": 2026,
+    "authors": [
+      "Z. Cai",
+      "X. Song",
+      "X. Li",
+      "B. Li",
+      "H. Shan",
+      "J. Chen"
+    ],
+    "page": "1-10",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/qpain69676.2026.11546088",
+    "title": "A Hybrid Multi-Domain Framework for Automated Detection of AI-Generated Text",
+    "journal": "2026 IEEE 2nd International Conference on Quantum Photonics, Artificial Intelligence &amp;amp; Networking (QPAIN)",
+    "year": 2026,
+    "authors": [
+      "M. Iqbal",
+      "M. Kashem"
+    ],
+    "page": "1-6",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/ines69513.2026.11661283",
+    "title": "BERT-based Detection of AI-Generated Text: A Comparative Study of BERT Variants on the HC3 Dataset",
+    "journal": "2026 IEEE 30th International Conference on Intelligent Engineering Systems (INES)",
+    "year": 2026,
+    "authors": [
+      "V. Balara",
+      "K. Machov\u00e1"
+    ],
+    "page": "301-306",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/tai.2025.3544183",
+    "title": "AI-Generated Versus Human Text: Introducing a New Dataset for Benchmarking and Analysis",
+    "journal": "IEEE Transactions on Artificial Intelligence",
+    "year": 2025,
+    "authors": [
+      "A. Al Bataineh",
+      "R. Sickler",
+      "K. Kurcz",
+      "K. Pedersen"
+    ],
+    "page": "2241-2252",
+    "volume": "6"
+  },
+  {
+    "doi": "10.1109/tifs.2026.3744649",
+    "title": "CLIP-BCP: Generalizable AI-Generated Image Detection via CLIP Mid-layer Representations and Bright Channel Prior",
+    "journal": "IEEE Transactions on Information Forensics and Security",
+    "year": 2026,
+    "authors": [
+      "L. Chen",
+      "Y. Ding"
+    ],
+    "page": "1-1",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/tmm.2026.3712634",
+    "title": "Multi-Domain Feature Fusion: Leveraging Color, Noise, and Spatial Features for AI-generated Image Detection",
+    "journal": "IEEE Transactions on Multimedia",
+    "year": 2026,
+    "authors": [
+      "J. Zhu",
+      "H. Yao",
+      "C. Qin",
+      "X. Zhang"
+    ],
+    "page": "1-16",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/iaict65714.2025.11101692",
+    "title": "Human vs AI-Generated Text Detection Using IndoBERT Algorithm for Different Types of Text",
+    "journal": "2025 IEEE International Conference on Industry 4.0, Artificial Intelligence, and Communications Technology (IAICT)",
+    "year": 2025,
+    "authors": [
+      "G. Abadi",
+      "A. Amelia",
+      "Y. Muliono",
+      "I. Rachmawati",
+      "C. Siahaan",
+      "A. Kurniawan"
+    ],
+    "page": "578-582",
+    "volume": ""
+  },
+  {
+    "doi": "10.1109/access.2024.3522759",
+    "title": "Advanced Detection of AI-Generated Images Through Vision Transformers",
+    "journal": "IEEE Access",
+    "year": 2025,
+    "authors": [
+      "D. Lamichhane"
+    ],
+    "page": "3644-3652",
+    "volume": "13"
+  }
+]

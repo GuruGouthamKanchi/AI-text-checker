@@ -39,7 +39,7 @@ if exist .port3000.tmp del .port3000.tmp
 
 if defined FRONTEND_PID goto frontend_ok
 set /a RETRIES+=1
-if %RETRIES% geq 15 (
+if %RETRIES% geq 25 (
     echo [VeriPaper Frontend] Failed to start frontend or bind to port 3000.
     echo [VeriPaper Frontend] Please check frontend.log for details.
     exit /b 1
