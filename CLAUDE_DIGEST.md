@@ -1,13 +1,13 @@
-================================================================================
- AI-TEXT-CHECKER: COMPLETE REPOSITORY DIGEST FOR CLAUDE
-================================================================================
-Repository: https://github.com/GuruGouthamKanchi/AI-text-checker
+# AI-Text-Checker: Monolithic Repository Digest for Claude
 
+> **Repository:** https://github.com/GuruGouthamKanchi/AI-text-checker
+> **Architecture Guide:** See `CLAUDE.md` for complete architecture diagrams and system contracts.
 
+---
 
-================================================================================
-FILE: CLAUDE.md
-================================================================================
+## File: `CLAUDE.md`
+
+```markdown
 # CLAUDE.md: Complete Codebase Guide & System Index
 
 This file is the official entry point and comprehensive system index for Claude (Claude Code, Claude Projects, and Anthropic API models) to navigate and understand the entire `AI-text-checker` repository.
@@ -153,10 +153,11 @@ Any Claude model or user can read this entire repository in one prompt by replac
 👉 **`https://gitingest.com/GuruGouthamKanchi/AI-text-checker`**
 This produces a complete, token-optimized textual snapshot containing all directories, files, and code.
 
+```
 
-================================================================================
-FILE: PROJECT_SUMMARY.md
-================================================================================
+## File: `PROJECT_SUMMARY.md`
+
+```markdown
 # Master Technical Specification & Project Blueprint: AI-Generated Text Detector
 
 This document serves as the master technical summary, architectural design, and blueprint of the **Academic AI-Generated Text Detector** project. It outlines every decision, parameter, mathematical implementation, and dataset schema configured from initialization to Phase 6.
@@ -306,10 +307,11 @@ To elevate VeriPaper AI to publication-grade document integrity, we integrated t
 * **LLM Writing Fingerprint Watchdog**: Analyses the density and frequency of known model-specific transition and descriptor biases (e.g., *delve*, *testament*, *tapestry* for Claude; *crucial*, *leverage*, *demystify* for GPT) to display a stylistic fingerprint label.
 * **Semantic Citation Auditor**: Extracts academic references from PDF bibliographies (both APA-style alphabetical listings and IEEE-style double-column layouts) and cross-checks them asynchronously via the public **CrossRef API** to flag fabricated/hallucinated academic citations.
 
+```
 
-================================================================================
-FILE: README.md
-================================================================================
+## File: `README.md`
+
+```markdown
 # 🛡️ AI-Generated Text Detector: Dual-Scale Hybrid Ensemble & Adversarial Robustness Suite
 
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/)
@@ -568,10 +570,11 @@ If you use this codebase, models, or evaluation datasets in your research, pleas
 
 This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
 
+```
 
-================================================================================
-FILE: RUN_INSTRUCTIONS.md
-================================================================================
+## File: `RUN_INSTRUCTIONS.md`
+
+```markdown
 # VeriPaper AI Forensic Tool — Run Instructions
 
 This guide provides step-by-step instructions on how to set up and run the VeriPaper AI Forensic Tool (FastAPI backend + Next.js frontend). You can run the application either using the pre-built double-clickable Windows Batch (`.bat`) scripts or manually executing commands in your terminal.
@@ -666,10 +669,11 @@ Once both servers are running:
 - **Backend Console Log File**: Saved to `backend.log` (if started via `.bat` script).
 - **Frontend Console Log File**: Saved to `frontend.log` (if started via `.bat` script).
 
+```
 
-================================================================================
-FILE: ieee_paper.tex
-================================================================================
+## File: `ieee_paper.tex`
+
+```latex
 \documentclass[conference]{IEEEtran}
 \IEEEoverridecommandlockouts
 % Packages
@@ -951,10 +955,11 @@ G.~Sanyal, V.~S. Sadasivan, and S.~Feizi, ``Adversarial Paraphrasing: A Universa
 
 \end{document}
 
+```
 
-================================================================================
-FILE: install.bat
-================================================================================
+## File: `install.bat`
+
+```batch
 @echo off
 cd /d "%~dp0"
 
@@ -1066,10 +1071,11 @@ echo.
 echo  The app will be available at http://localhost:3000 once both are running.
 echo ===================================================
 
+```
 
-================================================================================
-FILE: install.sh
-================================================================================
+## File: `install.sh`
+
+```bash
 #!/bin/bash
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd "$DIR"
@@ -1186,10 +1192,11 @@ echo ""
 echo "  The app will be available at http://localhost:3000 once both are running."
 echo "==================================================="
 
+```
 
-================================================================================
-FILE: requirements.txt
-================================================================================
+## File: `requirements.txt`
+
+```text
 pandas>=2.0.0
 datasets>=2.12.0
 nltk>=3.8.0
@@ -1213,10 +1220,11 @@ requests
 # System Dependency (non-pip installable):
 # LibreOffice (required for legacy .doc conversion)
 
+```
 
-================================================================================
-FILE: start_all.bat
-================================================================================
+## File: `start_all.bat`
+
+```batch
 @echo off
 cd /d "%~dp0"
 
@@ -1247,10 +1255,11 @@ echo  - Backend API: http://localhost:8000
 echo  - Stop: Double-click stop_all.bat
 echo ==========================================
 
+```
 
-================================================================================
-FILE: start_all.sh
-================================================================================
+## File: `start_all.sh`
+
+```bash
 #!/bin/bash
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd "$DIR"
@@ -1284,10 +1293,11 @@ echo "  - Backend API: http://localhost:8000"
 echo "  - Stop: ./stop_all.sh"
 echo "=========================================="
 
+```
 
-================================================================================
-FILE: start_backend.bat
-================================================================================
+## File: `start_backend.bat`
+
+```batch
 @echo off
 cd /d "%~dp0"
 
@@ -1350,10 +1360,11 @@ echo %BACKEND_PID% > .backend.pid
 echo [VeriPaper Backend] Backend running at http://localhost:8000 (PID: %BACKEND_PID%).
 echo [VeriPaper Backend] Run stop_backend.bat to stop it.
 
+```
 
-================================================================================
-FILE: start_backend.sh
-================================================================================
+## File: `start_backend.sh`
+
+```bash
 #!/bin/bash
 # Get script directory
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
@@ -1419,10 +1430,11 @@ else
     exit 1
 fi
 
+```
 
-================================================================================
-FILE: start_frontend.bat
-================================================================================
+## File: `start_frontend.bat`
+
+```batch
 @echo off
 cd /d "%~dp0"
 
@@ -1478,10 +1490,11 @@ echo %FRONTEND_PID% > .frontend.pid
 echo [VeriPaper Frontend] Frontend running at http://localhost:3000 (PID: %FRONTEND_PID%).
 echo [VeriPaper Frontend] Run stop_frontend.bat to stop it.
 
+```
 
-================================================================================
-FILE: start_frontend.sh
-================================================================================
+## File: `start_frontend.sh`
+
+```bash
 #!/bin/bash
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd "$DIR"
@@ -1528,10 +1541,11 @@ else
     exit 1
 fi
 
+```
 
-================================================================================
-FILE: stop_all.bat
-================================================================================
+## File: `stop_all.bat`
+
+```batch
 @echo off
 cd /d "%~dp0"
 
@@ -1549,10 +1563,11 @@ echo ==========================================
 echo  All services stopped successfully!
 echo ==========================================
 
+```
 
-================================================================================
-FILE: stop_all.sh
-================================================================================
+## File: `stop_all.sh`
+
+```bash
 #!/bin/bash
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd "$DIR"
@@ -1573,10 +1588,11 @@ echo "=========================================="
 echo "  All services stopped successfully!"
 echo "=========================================="
 
+```
 
-================================================================================
-FILE: stop_backend.bat
-================================================================================
+## File: `stop_backend.bat`
+
+```batch
 @echo off
 cd /d "%~dp0"
 
@@ -1618,10 +1634,11 @@ if %STOPPED%==1 (
     echo [VeriPaper Backend] Backend doesn't appear to be running.
 )
 
+```
 
-================================================================================
-FILE: stop_backend.sh
-================================================================================
+## File: `stop_backend.sh`
+
+```bash
 #!/bin/bash
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd "$DIR"
@@ -1658,10 +1675,11 @@ else
     echo "[VeriPaper Backend] Backend doesn't appear to be running."
 fi
 
+```
 
-================================================================================
-FILE: stop_frontend.bat
-================================================================================
+## File: `stop_frontend.bat`
+
+```batch
 @echo off
 cd /d "%~dp0"
 
@@ -1703,10 +1721,11 @@ if %STOPPED%==1 (
     echo [VeriPaper Frontend] Frontend doesn't appear to be running.
 )
 
+```
 
-================================================================================
-FILE: stop_frontend.sh
-================================================================================
+## File: `stop_frontend.sh`
+
+```bash
 #!/bin/bash
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd "$DIR"
@@ -1743,10 +1762,11 @@ else
     echo "[VeriPaper Frontend] Frontend doesn't appear to be running."
 fi
 
+```
 
-================================================================================
-FILE: eval/ARCHITECTURE_FINDINGS.md
-================================================================================
+## File: `eval/ARCHITECTURE_FINDINGS.md`
+
+```markdown
 # Architecture Findings: Current Inference Pipeline Analysis
 
 **Date:** 2026-10-23  
@@ -1893,10 +1913,11 @@ After raw fusion across all sentences, a 3-sentence rolling average is applied:
 | **Ensemble Formula** | $P = w_1 P_{MB} + w_2 P_{max} + (1 - w_1 - w_2) g$ | Heuristic rules: $\max(P_{rob}, P_{mb})$ + transition/burstiness bonuses |
 | **Document Aggregation** | Gated combination of macro $P_{MB}$ and max sentence $P_{max}$ | Piecewise word-count weighted sum of smoothed sentence scores |
 
+```
 
-================================================================================
-FILE: eval/MIXED_DOCS.md
-================================================================================
+## File: `eval/MIXED_DOCS.md`
+
+```markdown
 # Synthetic Mixed-Authorship Evaluation Protocol (`eval/MIXED_DOCS.md`)
 
 This document details the methodology for constructing and evaluating synthetic mixed-authorship documents to rigorously test whether local smoothing (rolling averages) genuinely improves detection or merely exploits intra-document label homogeneity.
@@ -1955,10 +1976,11 @@ For each replacement level $k \in \{10\%, 25\%, 50\%\}$, we evaluate predictions
 
 All empirical results are saved to `results/mixed_authorship.csv` and plotted in `results/figures/mixed_authorship_tradeoff.png`.
 
+```
 
-================================================================================
-FILE: eval/run_ensemble_eval.py
-================================================================================
+## File: `eval/run_ensemble_eval.py`
+
+```python
 """
 eval/run_ensemble_eval.py
 Reproducible evaluation script for AI Text Checker detectors on test.parquet.
@@ -3002,10 +3024,11 @@ In strict accordance with Project Rule 1 and Rule 2, the following empirical wea
 if __name__ == "__main__":
     main()
 
+```
 
-================================================================================
-FILE: eval/run_eval_extensions.py
-================================================================================
+## File: `eval/run_eval_extensions.py`
+
+```python
 """
 eval/run_eval_extensions.py
 Comprehensive Evaluation Extensions Pipeline:
@@ -4036,10 +4059,11 @@ All analytical findings below are derived directly by code from the empirical ev
 if __name__ == "__main__":
     main()
 
+```
 
-================================================================================
-FILE: eval/run_ood_retraining_colab.py
-================================================================================
+## File: `eval/run_ood_retraining_colab.py`
+
+```python
 """
 eval/run_ood_retraining_colab.py
 Google Colab / Multi-GPU Training Script for Leave-One-Generator-Out (LOGO) and
@@ -4219,10 +4243,11 @@ def main():
 if __name__ == "__main__":
     main()
 
+```
 
-================================================================================
-FILE: eval/long_docs/README.md
-================================================================================
+## File: `eval/long_docs/README.md`
+
+```markdown
 # Long Document Evaluation Directory (`eval/long_docs/`)
 
 This directory is designed for evaluating long-context document detection across documents containing 1,000 to 8,000 tokens, comparing:
@@ -4240,10 +4265,11 @@ Per Project Rule 2:
 Once papers are populated in `human_papers/` and `ai_papers/`:
 Run `eval/long_docs/eval_long_docs.py` to benchmark ModernBERT 8k vs RoBERTa 512 sliding window.
 
+```
 
-================================================================================
-FILE: eval/long_docs/ai_paper_generation_template.py
-================================================================================
+## File: `eval/long_docs/ai_paper_generation_template.py`
+
+```python
 """
 eval/long_docs/ai_paper_generation_template.py
 Prompt template and generation utility for user to produce full-length AI research papers (1k-8k tokens).
@@ -4300,10 +4326,11 @@ def print_prompts():
 if __name__ == "__main__":
     print_prompts()
 
+```
 
-================================================================================
-FILE: eval/long_docs/download_arxiv.py
-================================================================================
+## File: `eval/long_docs/download_arxiv.py`
+
+```python
 """
 eval/long_docs/download_arxiv.py
 Downloader for Open-Access arXiv papers (CC-BY / Public Domain license).
@@ -4379,10 +4406,11 @@ if __name__ == "__main__":
     from typing import Optional
     main()
 
+```
 
-================================================================================
-FILE: eval/non_native/README.md
-================================================================================
+## File: `eval/non_native/README.md`
+
+```markdown
 # Non-Native English Writing Evaluation Directory (`eval/non_native/`)
 
 This directory is dedicated to evaluating false positive rates (FPR) on non-native English writing (e.g., TOEFL, IELTS, ICLE, or international student academic essays).
@@ -4398,10 +4426,11 @@ When providing data:
 
 The loader script is located at `eval/non_native/loader.py` and is automatically integrated into the evaluation suite.
 
+```
 
-================================================================================
-FILE: eval/non_native/loader.py
-================================================================================
+## File: `eval/non_native/loader.py`
+
+```python
 """
 eval/non_native/loader.py
 Loader for non-native English writing samples (e.g., TOEFL, IELTS, ICLE, or user-supplied essays).
@@ -4489,26 +4518,29 @@ if __name__ == "__main__":
     df = load_non_native_samples()
     print(f"Sample count: {len(df)}")
 
+```
 
-================================================================================
-FILE: frontend/AGENTS.md
-================================================================================
+## File: `frontend/AGENTS.md`
+
+```markdown
 <!-- BEGIN:nextjs-agent-rules -->
 # This is NOT the Next.js you know
 
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
+```
 
-================================================================================
-FILE: frontend/CLAUDE.md
-================================================================================
+## File: `frontend/CLAUDE.md`
+
+```markdown
 @AGENTS.md
 
+```
 
-================================================================================
-FILE: frontend/README.md
-================================================================================
+## File: `frontend/README.md`
+
+```markdown
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started
@@ -4546,10 +4578,11 @@ The easiest way to deploy your Next.js app is to use the [Vercel Platform](https
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
 
+```
 
-================================================================================
-FILE: frontend/next-env.d.ts
-================================================================================
+## File: `frontend/next-env.d.ts`
+
+```typescript
 /// <reference types="next" />
 /// <reference types="next/image-types/global" />
 import "./.next/dev/types/routes.d.ts";
@@ -4557,10 +4590,11 @@ import "./.next/dev/types/routes.d.ts";
 // NOTE: This file should not be edited
 // see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
 
+```
 
-================================================================================
-FILE: frontend/next.config.ts
-================================================================================
+## File: `frontend/next.config.ts`
+
+```typescript
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
@@ -4569,10 +4603,11 @@ const nextConfig: NextConfig = {
 
 export default nextConfig;
 
+```
 
-================================================================================
-FILE: frontend/package.json
-================================================================================
+## File: `frontend/package.json`
+
+```json
 {
   "name": "frontend",
   "version": "0.1.0",
@@ -4605,10 +4640,11 @@ FILE: frontend/package.json
   }
 }
 
+```
 
-================================================================================
-FILE: frontend/tsconfig.json
-================================================================================
+## File: `frontend/tsconfig.json`
+
+```json
 {
   "compilerOptions": {
     "target": "ES2017",
@@ -4644,10 +4680,11 @@ FILE: frontend/tsconfig.json
   "exclude": ["node_modules"]
 }
 
+```
 
-================================================================================
-FILE: frontend/src/app/globals.css
-================================================================================
+## File: `frontend/src/app/globals.css`
+
+```css
 @import "tailwindcss";
 
 @theme {
@@ -4735,10 +4772,11 @@ select, option {
 
 
 
+```
 
-================================================================================
-FILE: frontend/src/app/layout.tsx
-================================================================================
+## File: `frontend/src/app/layout.tsx`
+
+```tsx
 import type { Metadata } from "next";
 import { Fraunces, Source_Serif_4, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
@@ -4786,10 +4824,11 @@ export default function RootLayout({
 }
 
 
+```
 
-================================================================================
-FILE: frontend/src/app/page.tsx
-================================================================================
+## File: `frontend/src/app/page.tsx`
+
+```tsx
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
@@ -6140,10 +6179,11 @@ export default function AIAppDashboard() {
   );
 }
 
+```
 
-================================================================================
-FILE: frontend/src/app/closed-loop/page.tsx
-================================================================================
+## File: `frontend/src/app/closed-loop/page.tsx`
+
+```tsx
 'use client';
 
 import React, { useState } from 'react';
@@ -6500,10 +6540,11 @@ export default function ClosedLoopWorkspace() {
   );
 }
 
+```
 
-================================================================================
-FILE: frontend/src/app/humanizer/page.tsx
-================================================================================
+## File: `frontend/src/app/humanizer/page.tsx`
+
+```tsx
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -7260,10 +7301,11 @@ export default function AIHumanizerWorkspace() {
   );
 }
 
+```
 
-================================================================================
-FILE: frontend/src/components/CustomCursor.tsx
-================================================================================
+## File: `frontend/src/components/CustomCursor.tsx`
+
+```tsx
 'use client';
 
 import React, { useEffect, useState } from 'react';
@@ -7432,10 +7474,11 @@ export const CustomCursor: React.FC = () => {
 export default CustomCursor;
 
 
+```
 
-================================================================================
-FILE: frontend/src/components/PretextCanvasView.tsx
-================================================================================
+## File: `frontend/src/components/PretextCanvasView.tsx`
+
+```tsx
 'use client';
 
 import React, { useRef, useEffect, useState } from 'react';
@@ -7797,10 +7840,11 @@ export default function PretextCanvasView({
   );
 }
 
+```
 
-================================================================================
-FILE: frontend/src/components/StylometricGauges.tsx
-================================================================================
+## File: `frontend/src/components/StylometricGauges.tsx`
+
+```tsx
 'use client';
 
 import React, { useState } from 'react';
@@ -8022,10 +8066,11 @@ export const StylometricGauges: React.FC<StylometricGaugesProps> = ({
   );
 };
 
+```
 
-================================================================================
-FILE: frontend/src/components/ThinkingOrb.tsx
-================================================================================
+## File: `frontend/src/components/ThinkingOrb.tsx`
+
+```tsx
 'use client';
 
 import React from 'react';
@@ -8186,10 +8231,11 @@ export const ThinkingOrb: React.FC<ThinkingOrbProps> = ({
 
 export default ThinkingOrb;
 
+```
 
-================================================================================
-FILE: frontend/src/components/TubesCursor.tsx
-================================================================================
+## File: `frontend/src/components/TubesCursor.tsx`
+
+```tsx
 "use client";
 
 import { useEffect, useRef } from "react";
@@ -8323,10 +8369,11 @@ function randomColors(count: number) {
 export { TubesCursor };
 export default TubesCursor;
 
+```
 
-================================================================================
-FILE: frontend/src/utils/pretextEngine.ts
-================================================================================
+## File: `frontend/src/utils/pretextEngine.ts`
+
+```typescript
 import { prepareWithSegments, layoutWithLines, measureLineStats, PreparedTextWithSegments } from '@chenglou/pretext';
 
 export interface PretextParagraphLayout {
@@ -8407,10 +8454,11 @@ export function analyzeTextWithPretext(
   };
 }
 
+```
 
-================================================================================
-FILE: frontend/src/utils/referenceUtils.ts
-================================================================================
+## File: `frontend/src/utils/referenceUtils.ts`
+
+```typescript
 /**
  * Reference Intelligence & Multi-Format Citation Generator Utilities
  * Provides title extraction, Google Scholar / Semantic Scholar URL generation,
@@ -8598,10 +8646,11 @@ export function exportAllBibTeX(references: string[], filename: string = "refere
   exportAllReferencesFormat(references, 'bibtex', filename.replace(/\.bib$/, ''));
 }
 
+```
 
-================================================================================
-FILE: results/EVAL_SUMMARY.md
-================================================================================
+## File: `results/EVAL_SUMMARY.md`
+
+```markdown
 # Comprehensive Detector Evaluation & Statistical Validation Report
 
 **Date:** 2026-10-24 16:15:36  
@@ -8807,10 +8856,11 @@ All analytical findings below are derived directly by code from the empirical ev
 4. **Hardware and Latency Environment:**
    Latency metrics were measured on Intel 12-core CPU under batch size 1. On RTX 2050 CUDA fp16 hardware, throughput scales up significantly.
 
+```
 
-================================================================================
-FILE: results/HEURISTICS.md
-================================================================================
+## File: `results/HEURISTICS.md`
+
+```markdown
 # Comprehensive Audit of Hand-Written Heuristic Rules in `src/highlighter.py`
 
 This document details every hand-written heuristic, regex pattern, threshold boost, and suppression rule implemented in the current production inference pipeline (`src/highlighter.py:run_predictions`).
@@ -8886,10 +8936,11 @@ This document details every hand-written heuristic, regex pattern, threshold boo
 | **Gated Max-Pool** | Either model $\ge 0.38$ | $\max(\text{prob\_rob}, \text{prob\_mb})$ | Propagates single-model false positives |
 | **Metadata Guard** | Standalone author/institution/date regex | $\text{prob\_ai} = 0.02$ | Could suppress AI-generated author blocks if cloned verbatim |
 
+```
 
-================================================================================
-FILE: results/ROBUSTNESS_SUMMARY.md
-================================================================================
+## File: `results/ROBUSTNESS_SUMMARY.md`
+
+```markdown
 # Adversarial Robustness & Closed-Loop Retraining Report
 
 **Date:** 2026-10-24 22:30:30  
@@ -8947,10 +8998,11 @@ In strict compliance with Project Rules 1 and 2, the following empirical finding
 ### C. Commercial Tool Vulnerability (`commercial_manual`)
 - Ingested samples from commercial paraphrasers (QuillBot, Undetectable.ai) exhibit mixed evasion: simple fluency rewrites are easily caught by the retrained sentence model, but aggressive structural re-ordering with synonym replacement creates the largest detection margin drop.
 
+```
 
-================================================================================
-FILE: results/bootstrap_all_systems.csv
-================================================================================
+## File: `results/bootstrap_all_systems.csv`
+
+```csv
 system,val_threshold,acc_mean,acc_ci_low,acc_ci_high,f1_mean,f1_ci_low,f1_ci_high,auc_mean,auc_ci_low,auc_ci_high,fpr_mean,fpr_ci_low,fpr_ci_high
 RoBERTa Alone (Raw),0.61,0.8869685465939283,0.875731437117996,0.8973928949457431,0.8868343865413981,0.8754710676108157,0.897315464886644,0.9585472706226108,0.9520186603344849,0.964522708688024,0.11836330761214586,0.09354885071295245,0.14387372530583029
 RoBERTa Alone (Smoothed),0.61,0.9712702212931317,0.9660210763618597,0.9764158895334724,0.9712231623948627,0.9658802137585152,0.9763909953146737,0.9959772287468154,0.9943722799503433,0.9977473666789707,0.02698647697707165,0.013952764675052411,0.03986774363919284
@@ -8965,19 +9017,21 @@ ModernBERT Alone (Smoothed),0.33999999999999997,0.934923301162994,0.893788685658
 "Paper Formula (Top-K Pool, Raw)",0.7799999999999999,0.9668023649513382,0.9595468134273912,0.9737576018622575,0.9667512081988332,0.9594045819024934,0.9737249703737857,0.9950485703211486,0.9930433623287925,0.9971594583779296,0.03330441883559772,0.016060934474966586,0.05075212752965525
 "Paper Formula (Top-K Pool, Smoothed)",0.73,0.9806837856991362,0.9715321470797134,0.989480884742896,0.9806623615558062,0.9715195387650464,0.9894732640938763,0.9984793542603573,0.9975503403182427,0.9994049854361149,0.02983685910082684,0.01235734324188902,0.0477092196686264
 
+```
 
-================================================================================
-FILE: results/by_domain.csv
-================================================================================
+## File: `results/by_domain.csv`
+
+```csv
 domain,total_samples,human_samples,ai_samples,accuracy,precision,recall,macro_f1,roc_auc,fpr_on_human_text
 academic,9215,4749,4466,0.9817688551275094,0.9794734493529674,0.9829825347066726,0.9817535368286447,0.9977776451299007,0.019372499473573383
 essay,1891,1006,885,0.9513484928609202,0.9573241061130334,0.9378531073446328,0.9510841937152754,0.9882310655838977,0.036779324055666
 qa,898,408,490,0.9910913140311804,1.0,0.9836734693877551,0.9910304047305126,0.9999899959983993,0.0
 
+```
 
-================================================================================
-FILE: results/by_generator.csv
-================================================================================
+## File: `results/by_generator.csv`
+
+```csv
 generator,sample_count,detection_rate_recall,mean_ai_probability
 Claude,1279,0.9851446442533229,0.9772516763090187
 Gemini,1083,0.997229916897507,0.9836968176887351
@@ -8985,10 +9039,11 @@ GPT-5,1154,0.9462738301559792,0.9443724525884437
 Llama,200,0.925,0.9282696382793598
 ChatGPT,500,0.984,0.9659588032816909
 
+```
 
-================================================================================
-FILE: results/calibration_comparison.csv
-================================================================================
+## File: `results/calibration_comparison.csv`
+
+```csv
 system,uncal_val_th,uncal_acc,uncal_f1,uncal_fpr,uncal_ece,temp_val_th,temp_acc,temp_f1,temp_fpr,temp_ece,iso_val_th,iso_acc,iso_f1,iso_fpr,iso_ece,ece_reduction_pct
 RoBERTa Alone (Raw),0.61,0.8869543485504832,0.8869160190055793,0.1182865487587214,0.0674718639328791,0.3999999999999999,0.8871209596801066,0.8870840599874792,0.118448807398994,0.0161498824810584,0.4799999999999999,0.8873708763745418,0.8873212181427482,0.1153658932338147,0.013485201684402643,80.01359248379785
 RoBERTa Alone (Smoothed),0.61,0.9712595801399534,0.9712371790516336,0.02693493428525069,0.12972563784005398,0.61,0.9713428857047651,0.971319057372637,0.025961382443615122,0.005638346472595303,0.4599999999999999,0.9714261912695769,0.971402842761788,0.026123641083887716,0.0082017096055106,93.67764942838596
@@ -9003,10 +9058,11 @@ ModernBERT Alone (Smoothed),0.33999999999999997,0.9347717427524158,0.93455235536
 "Paper Formula (Top-K Pool, Raw)",0.7799999999999999,0.9667610796401199,0.966738753825149,0.033263021255881875,0.14815985905077958,0.3999999999999999,0.9667610796401199,0.966740993275899,0.03456109037806263,0.014062767932024295,0.4799999999999999,0.9667610796401199,0.9667393248028686,0.03358753853642706,0.005810581737451767,96.07816734257267
 "Paper Formula (Top-K Pool, Smoothed)",0.73,0.9807564145284905,0.9807517433911195,0.029693331169884797,0.15680076067837553,0.30999999999999994,0.9810063312229257,0.9810014708402559,0.02904429660879442,0.005883862426279052,0.33999999999999997,0.9810063312229257,0.9810014708402559,0.02904429660879442,0.005247930789735334,96.65312160028373
 
+```
 
-================================================================================
-FILE: results/ensemble_metrics.csv
-================================================================================
+## File: `results/ensemble_metrics.csv`
+
+```csv
 system_key,system_name,val_threshold,accuracy,accuracy_ci_95_low,accuracy_ci_95_high,precision,recall,macro_f1,f1_ci_95_low,f1_ci_95_high,roc_auc,roc_auc_ci_95_low,roc_auc_ci_95_high,pr_auc,fpr_at_val_thresh,tpr_at_1pct_fpr,tpr_at_5pct_fpr,ece
 A_RoBERTa_alone,RoBERTa Alone (Raw),0.61,0.8869543485504832,0.8756149401876171,0.8976305892701619,0.8773140356782229,0.8924841636706043,0.8869160190055793,0.8753747002744846,0.8975258774278922,0.958524152522233,0.9521614583956853,0.9647080612349415,0.9602298691422393,0.1182865487587214,0.6151343947954118,0.8012326656394453,0.0674718639328791
 A_RoBERTa_smoothed,RoBERTa Alone (Smoothed),0.58,0.9596801066311229,0.9519038333066212,0.9677516891631159,0.9546766253607197,0.9628488272556069,0.959659394334889,0.9518351662628813,0.9677224517818985,0.9937498616245759,0.9918212185688123,0.9962029835408214,0.993339007527519,0.04332305695278273,0.8856360212292416,0.9671289162814587,0.11710007990685535
@@ -9021,10 +9077,11 @@ D2_Paper_MeanPool_smoothed,"Paper Formula (Mean-Pool, Smoothed)",0.4799999999999
 D3_Paper_TopKPool,"Paper Formula (Top-K Pool, Raw)",0.49999999999999994,0.9765911362879041,,,0.9684866868891135,0.9839068652627975,0.9765826139763609,,,0.9957144662397717,,,0.9953502510474304,0.030342365730975176,0.8488272556069166,0.9907550077041603,0.03406219549916576
 D3_Paper_TopKPool_smoothed,"Paper Formula (Top-K Pool, Smoothed)",0.49999999999999994,0.9871709430189937,,,0.982685452384994,0.9910974148262284,0.9871643527429192,,,0.9987461554550001,,,0.9986360743938931,0.016550381307804642,0.9840780688238315,0.997431946584489,0.05155360699452373
 
+```
 
-================================================================================
-FILE: results/ensemble_metrics.json
-================================================================================
+## File: `results/ensemble_metrics.json`
+
+```json
 {
   "metadata": {
     "git_commit": "e338d64df2c18a8a572f7476623dddf82ffbab07",
@@ -9526,10 +9583,11 @@ FILE: results/ensemble_metrics.json
       "domain": "academic",
       "total_samples": 9215,
 ... [Truncated 110 additional lines for brevity]
+```
 
-================================================================================
-FILE: results/heuristic_ablation.csv
-================================================================================
+## File: `results/heuristic_ablation.csv`
+
+```csv
 ablation_condition,val_threshold,overall_accuracy,overall_macro_f1,overall_fpr,human_with_transitions_fpr,human_without_transitions_fpr,fpr_disparity_due_to_transitions
 All Heuristics ON (Production Ensemble),0.8999999999999999,0.943352215928024,0.943314897925261,0.056303748174590294,0.10619469026548672,0.05440458143843692,0.051790108827049805
 No Humanizer Transition Boost (Rule 1 OFF),0.8999999999999999,0.9440186604465178,0.9439763207702556,0.05386986857050138,0.03982300884955752,0.05440458143843692,-0.014581572588879398
@@ -9538,10 +9596,11 @@ No Metadata Guard (Rule 4 OFF),0.8999999999999999,0.943352215928024,0.9433148979
 No Non-Linear Gating (Pure Soft Voting),0.5099999999999999,0.9286904365211596,0.9286783912008245,0.0829141651792958,1.0,0.048004042445679636,0.9519959575543203
 All Heuristics OFF (Pure Neural Models),0.5099999999999999,0.9505998000666445,0.9505336413596367,0.038617556384877495,0.035398230088495575,0.038740104429846725,-0.0033418743413511504
 
+```
 
-================================================================================
-FILE: results/latency.json
-================================================================================
+## File: `results/latency.json`
+
+```json
 {
   "metadata": {
     "date": "2026-10-24 16:15:36",
@@ -9562,10 +9621,11 @@ FILE: results/latency.json
     "throughput_chunks_per_sec": 2.8755189017699303
   }
 }
+```
 
-================================================================================
-FILE: results/latency_detailed.json
-================================================================================
+## File: `results/latency_detailed.json`
+
+```json
 {
   "metadata": {
     "date": "2026-10-24 16:15:36",
@@ -9586,10 +9646,11 @@ FILE: results/latency_detailed.json
     "throughput_chunks_per_sec": 2.8755189017699303
   }
 }
+```
 
-================================================================================
-FILE: results/mixed_authorship.csv
-================================================================================
+## File: `results/mixed_authorship.csv`
+
+```csv
 system,k_percent_ai,window_size,decision_threshold,sentence_macro_f1,inserted_ai_recall,untouched_human_fpr,document_detection_rate
 RoBERTa Alone,10,1,0.61,0.6212197121761119,0.8961038961038961,0.2766955266955267,0.9756493506493507
 RoBERTa Alone,10,3,0.61,0.5005405405405405,0.3262987012987013,0.25306637806637805,0.4935064935064935
@@ -9619,19 +9680,21 @@ Paper Formula (Top-K Pool),50,1,0.7799999999999999,0.8684112815474172,0.97272727
 Paper Formula (Top-K Pool),50,3,0.7799999999999999,0.6001024546374805,0.5084415584415585,0.30097402597402595,0.9383116883116883
 Paper Formula (Top-K Pool),50,5,0.7799999999999999,0.5496028163395846,0.4253246753246753,0.3103896103896104,0.8051948051948052
 
+```
 
-================================================================================
-FILE: results/ood_domain.csv
-================================================================================
+## File: `results/ood_domain.csv`
+
+```csv
 domain,sample_count,accuracy,macro_f1,roc_auc,fpr,tpr_1fpr,threshold
 academic,9215,0.9887140531741725,0.9887048526468614,0.9992786564442303,0.013055380080016846,0.9881325570980743,0.73
 essay,1891,0.9328397673188789,0.932839091179847,0.9964877402253147,0.12027833001988071,0.9548022598870056,0.73
 qa,898,1.0,1.0,1.0,0.0,1.0,0.73
 
+```
 
-================================================================================
-FILE: results/ood_generator.csv
-================================================================================
+## File: `results/ood_generator.csv`
+
+```csv
 generator,sample_count,detection_recall,mean_ai_prob,threshold
 ChatGPT,500,1.0,0.9922940913935502,0.73
 Claude,1279,0.9960906958561376,0.9815731984013407,0.73
@@ -9645,10 +9708,11 @@ Mistral,89,0.9887640449438202,0.9860665442122056,0.73
 Other_AI,186,0.7258064516129032,0.8207877439385828,0.73
 PaLM,264,0.9962121212121212,0.9899748478912643,0.73
 
+```
 
-================================================================================
-FILE: results/paired_tests.csv
-================================================================================
+## File: `results/paired_tests.csv`
+
+```csv
 comparison,system_a,system_b,diff_acc_mean,diff_acc_ci_low,diff_acc_ci_high,diff_acc_p_val,diff_fpr_mean,diff_fpr_ci_low,diff_fpr_ci_high,diff_fpr_p_val,diff_tpr1_mean,diff_tpr1_ci_low,diff_tpr1_ci_high,diff_tpr1_p_val
 Ensemble vs RoBERTa (Smoothed),"Ensemble (Code Today, Smoothed)",RoBERTa Alone (Smoothed),0.008913467816242885,0.006341863093928554,0.011582483115296142,0.0,-0.000465539854071179,-0.009663273853792204,0.008502244852102612,0.938,0.03087947171330874,0.009750731741205318,0.0558184471539392,0.0
 Ensemble vs ModernBERT (Smoothed),"Ensemble (Code Today, Smoothed)",ModernBERT Alone (Smoothed),0.0452603879463806,0.017483623197105017,0.08293744866137108,0.0,-0.0067200697382861635,-0.017602752881262174,0.0041856078601343084,0.248,0.1098085875943764,0.036942324572392944,0.19661204257093842,0.0
@@ -9661,20 +9725,22 @@ RoBERTa (Smoothed vs Raw),RoBERTa Alone (Smoothed),RoBERTa Alone (Raw),0.0843016
 ModernBERT (Smoothed vs Raw),ModernBERT Alone (Smoothed),ModernBERT Alone (Raw),0.017303313392538378,0.0136356937964948,0.02089127318374403,0.0,-0.015256472240871772,-0.020620889563286223,-0.010331651723104216,0.0,0.08160059721093736,0.06508890430404428,0.10030500321701036,0.0
 Mean-Pool (Smoothed vs Raw),"Paper Formula (Mean-Pool, Smoothed)","Paper Formula (Mean-Pool, Raw)",0.0145467024602007,0.012308724758075299,0.016891532844837846,0.0,-0.01116366137994598,-0.014920488651641285,-0.00706071004656542,0.0,0.05039240216612565,0.031929796808870946,0.0778222614206518,0.0
 
+```
 
-================================================================================
-FILE: results/retrain_rounds.csv
-================================================================================
+## File: `results/retrain_rounds.csv`
+
+```csv
 round,condition,lambda,seen_attacks_recall_mean,seen_attacks_recall_std,held_out_recall_mean,held_out_recall_std,human_fpr_mean,human_fpr_std
 1,Cross-Entropy (lambda=0.0),0.0,0.9427777777777777,0.012272623352430305,0.945,0.01414213562373091,0.3133333333333333,0.03704351795148811
 2,Contrastive (lambda=0.1),0.1,0.9461111111111111,0.010213764617139074,0.9516666666666667,0.010274023338281637,0.3183333333333333,0.0339934634239519
 3,Contrastive (lambda=0.2),0.2,0.9505555555555555,0.006136311676215156,0.9533333333333333,0.008498365855987981,0.32666666666666666,0.032998316455372226
 4,Contrastive (lambda=0.5),0.5,0.96,0.006804138174397738,0.9616666666666666,0.008498365855987981,0.36333333333333334,0.03274480450731417
 
+```
 
-================================================================================
-FILE: results/robustness_metrics.csv
-================================================================================
+## File: `results/robustness_metrics.csv`
+
+```csv
 attack_family,is_held_out_family,metric_type,round0_baseline,round1_ce_mean,round1_ce_std,best_contrastive_mean,best_contrastive_std,absolute_recovery_gain
 clean_human,False,FPR,0.12,0.3133333333333333,0.03704351795148811,0.32666666666666666,0.032998316455372226,0.20666666666666667
 clean_ai,False,Detection_Recall,0.925,0.9883333333333333,0.0023570226039551605,0.9899999999999999,1.1102230246251565e-16,0.06499999999999984
@@ -9685,10 +9751,11 @@ llm_prompt_heavy,True,Detection_Recall,0.845,0.945,0.01414213562373091,0.9533333
 commercial_quillbot,True,Detection_Recall,0.0,0.6666666666666666,0.23570226039551584,0.8333333333333334,0.23570226039551584,0.8333333333333334
 commercial_undetectable.ai,True,Detection_Recall,0.0,0.0,0.0,0.0,0.0,0.0
 
+```
 
-================================================================================
-FILE: results/robustness_metrics.json
-================================================================================
+## File: `results/robustness_metrics.json`
+
+```json
 {
   "metadata": {
     "git_commit": "e338d64df2c18a8a572f7476623dddf82ffbab07",
@@ -9887,10 +9954,11 @@ FILE: results/robustness_metrics.json
     }
   ]
 }
+```
 
-================================================================================
-FILE: robustness_eval/README_FINDINGS.md
-================================================================================
+## File: `robustness_eval/README_FINDINGS.md`
+
+```markdown
 # Robustness Evaluation Suite: Architecture & Existing Capabilities
 
 **Date:** 2026-10-24  
@@ -10008,10 +10076,11 @@ The existing code contains four primary transformation mechanisms:
   - `POST /robustness/closed-loop-humanize/stream`: Dual-agent closed loop streaming with token locking.
 - Registered into the main FastAPI application in `src/app.py`.
 
+```
 
-================================================================================
-FILE: robustness_eval/__init__.py
-================================================================================
+## File: `robustness_eval/__init__.py`
+
+```python
 """
 Robustness Evaluation & AI Text Humanizer Suite.
 Provides adversarial evaluation metrics and state-of-the-art AI text humanization.
@@ -10076,10 +10145,11 @@ __all__ = [
     "robustness_router",
 ]
 
+```
 
-================================================================================
-FILE: robustness_eval/attack_generator.py
-================================================================================
+## File: `robustness_eval/attack_generator.py`
+
+```python
 """
 robustness_eval/attack_generator.py
 Implements legitimate, locally reproducible adversarial text attack families:
@@ -10571,10 +10641,11 @@ if __name__ == "__main__":
     print("Test attacks preview:")
     print(df_test['attack_family'].value_counts())
 
+```
 
-================================================================================
-FILE: robustness_eval/config.py
-================================================================================
+## File: `robustness_eval/config.py`
+
+```python
 from dataclasses import dataclass
 import os
 
@@ -10591,10 +10662,11 @@ class RobustnessConfig:
 
 DEFAULT_CONFIG = RobustnessConfig()
 
+```
 
-================================================================================
-FILE: robustness_eval/eval_closed_loop.py
-================================================================================
+## File: `robustness_eval/eval_closed_loop.py`
+
+```python
 """
 Benchmarking & Evaluation Script for AccaHumanize-CL.
 
@@ -10684,10 +10756,11 @@ def run_closed_loop_evaluation():
 if __name__ == "__main__":
     run_closed_loop_evaluation()
 
+```
 
-================================================================================
-FILE: robustness_eval/eval_tex_pipeline.py
-================================================================================
+## File: `robustness_eval/eval_tex_pipeline.py`
+
+```python
 r"""
 Evaluation Harness for AccaHumanize-Tex LaTeX Document Pipeline.
 
@@ -10803,10 +10876,11 @@ def test_latex_pipeline():
 if __name__ == "__main__":
     test_latex_pipeline()
 
+```
 
-================================================================================
-FILE: robustness_eval/finetune_appendix.py
-================================================================================
+## File: `robustness_eval/finetune_appendix.py`
+
+```python
 import os
 import argparse
 import torch
@@ -10951,19 +11025,21 @@ def main():
 if __name__ == "__main__":
     main()
 
+```
 
-================================================================================
-FILE: robustness_eval/requirements.txt
-================================================================================
+## File: `robustness_eval/requirements.txt`
+
+```text
 # Dedicated dependencies for robustness_eval module
 pydantic>=2.0.0
 scipy>=1.9.0
 dataclasses-json>=0.5.7
 
+```
 
-================================================================================
-FILE: robustness_eval/router.py
-================================================================================
+## File: `robustness_eval/router.py`
+
+```python
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 from typing import Dict, Any, Optional
@@ -11153,10 +11229,11 @@ async def humanize_tex_download_endpoint(payload: RobustnessEvalRequest):
 
 
 
+```
 
-================================================================================
-FILE: robustness_eval/run_robustness_study.py
-================================================================================
+## File: `robustness_eval/run_robustness_study.py`
+
+```python
 """
 robustness_eval/run_robustness_study.py
 Complete Reproducible Robustness Evaluation & Closed-Loop Adversarial Retraining Pipeline.
@@ -11797,10 +11874,11 @@ In strict compliance with Project Rules 1 and 2, the following empirical finding
 if __name__ == "__main__":
     main()
 
+```
 
-================================================================================
-FILE: robustness_eval/datasets/__init__.py
-================================================================================
+## File: `robustness_eval/datasets/__init__.py`
+
+```python
 """
 Datasets subpackage for managing adversarial text pairs.
 """
@@ -11814,10 +11892,11 @@ __all__ = [
     "load_ai_training_samples",
 ]
 
+```
 
-================================================================================
-FILE: robustness_eval/datasets/adversarial_pairs.py
-================================================================================
+## File: `robustness_eval/datasets/adversarial_pairs.py`
+
+```python
 import json
 import uuid
 from datetime import datetime, timezone
@@ -11934,10 +12013,11 @@ class AdversarialDataset:
         pairs = [AdversarialPair.from_dict(d) for d in data]
         return cls(pairs=pairs)
 
+```
 
-================================================================================
-FILE: robustness_eval/datasets/build_dataset.py
-================================================================================
+## File: `robustness_eval/datasets/build_dataset.py`
+
+```python
 import os
 import argparse
 from typing import List
@@ -12051,10 +12131,11 @@ if __name__ == "__main__":
         max_samples=args.max_samples
     )
 
+```
 
-================================================================================
-FILE: robustness_eval/eval/__init__.py
-================================================================================
+## File: `robustness_eval/eval/__init__.py`
+
+```python
 """
 Eval subpackage for running evaluation harness and generating robustness reports.
 """
@@ -12068,10 +12149,11 @@ __all__ = [
     "generate_report",
 ]
 
+```
 
-================================================================================
-FILE: robustness_eval/eval/harness.py
-================================================================================
+## File: `robustness_eval/eval/harness.py`
+
+```python
 import os
 import argparse
 from typing import List, Callable, Optional, Dict, Any
@@ -12187,10 +12269,11 @@ def main():
 if __name__ == "__main__":
     main()
 
+```
 
-================================================================================
-FILE: robustness_eval/eval/report.py
-================================================================================
+## File: `robustness_eval/eval/report.py`
+
+```python
 import os
 import json
 from dataclasses import dataclass, field, asdict
@@ -12387,10 +12470,11 @@ def generate_report(dataset: AdversarialDataset, output_dir: str = "robustness_e
     report.save_reports(output_dir=output_dir)
     return report
 
+```
 
-================================================================================
-FILE: robustness_eval/humanizer/__init__.py
-================================================================================
+## File: `robustness_eval/humanizer/__init__.py`
+
+```python
 from robustness_eval.humanizer.humanizer_engine import (
     AIHumanizerEngine,
     get_humanizer_engine,
@@ -12406,10 +12490,11 @@ __all__ = [
     "load_training_pairs",
 ]
 
+```
 
-================================================================================
-FILE: robustness_eval/humanizer/humanizer_engine.py
-================================================================================
+## File: `robustness_eval/humanizer/humanizer_engine.py`
+
+```python
 import os
 import re
 import torch
@@ -12702,10 +12787,11 @@ def humanize_text(text: str, tone: str = "resume") -> Dict[str, Any]:
     engine = get_humanizer_engine()
     return engine.humanize(text, tone=tone)
 
+```
 
-================================================================================
-FILE: robustness_eval/humanizer/train_humanizer.py
-================================================================================
+## File: `robustness_eval/humanizer/train_humanizer.py`
+
+```python
 import os
 import argparse
 import torch
@@ -12869,10 +12955,11 @@ def main():
 if __name__ == "__main__":
     main()
 
+```
 
-================================================================================
-FILE: robustness_eval/manual_inputs/ingest_manual_attacks.py
-================================================================================
+## File: `robustness_eval/manual_inputs/ingest_manual_attacks.py`
+
+```python
 """
 robustness_eval/manual_inputs/ingest_manual_attacks.py
 Ingestion script for manual inputs from commercial tools (QuillBot, Undetectable.ai, etc.).
@@ -12969,10 +13056,11 @@ if __name__ == "__main__":
         print("Usage: python ingest_manual_attacks.py --orig '...' --rewritten '...' --tool 'QuillBot' --split test")
         print("   or: python ingest_manual_attacks.py --batch-file samples.json")
 
+```
 
-================================================================================
-FILE: robustness_eval/reports/robustness_report_v1.json
-================================================================================
+## File: `robustness_eval/reports/robustness_report_v1.json`
+
+```json
 {
   "total_evaluations": 1,
   "accuracy_original": 100.0,
@@ -13003,10 +13091,11 @@ FILE: robustness_eval/reports/robustness_report_v1.json
     }
   ]
 }
+```
 
-================================================================================
-FILE: robustness_eval/reports/robustness_report_v1.md
-================================================================================
+## File: `robustness_eval/reports/robustness_report_v1.md`
+
+```markdown
 # Adversarial Robustness Evaluation Report
 
 ## Overview Metrics
@@ -13027,10 +13116,11 @@ FILE: robustness_eval/reports/robustness_report_v1.md
 ## Sentence-Level Fooling Patterns
 - **LLM Cliché Term Substitution (Vocabulary)** (Occurrences: 1, Impact: -50.0% AI score)
   *Description*: Replacing high-signal LLM indicator terms ('delve', 'crucial', 'leverage') with human synonyms.
+```
 
-================================================================================
-FILE: robustness_eval/rewriters/__init__.py
-================================================================================
+## File: `robustness_eval/rewriters/__init__.py`
+
+```python
 from typing import Optional
 from robustness_eval.rewriters.perplexity_rewriter import perplexity_rewriter, rewrite_perplexity, PerplexityRewriter
 from robustness_eval.rewriters.burstiness_rewriter import burstiness_rewriter, rewrite_burstiness, BurstinessRewriter
@@ -13066,10 +13156,11 @@ __all__ = [
     "VocabularyRewriter",
 ]
 
+```
 
-================================================================================
-FILE: robustness_eval/rewriters/burstiness_rewriter.py
-================================================================================
+## File: `robustness_eval/rewriters/burstiness_rewriter.py`
+
+```python
 import re
 import random
 from typing import Optional
@@ -13141,10 +13232,11 @@ def rewrite_burstiness(text: str, seed: Optional[int] = 42, tone: str = "academi
     rewriter = BurstinessRewriter(seed=seed)
     return rewriter.rewrite(text, tone=tone)
 
+```
 
-================================================================================
-FILE: robustness_eval/rewriters/perplexity_rewriter.py
-================================================================================
+## File: `robustness_eval/rewriters/perplexity_rewriter.py`
+
+```python
 import re
 import random
 from typing import Optional
@@ -13213,10 +13305,11 @@ def rewrite_perplexity(text: str, boost_factor: float = 1.25, seed: Optional[int
     rewriter = PerplexityRewriter(seed=seed)
     return rewriter.rewrite(text, boost_factor=boost_factor)
 
+```
 
-================================================================================
-FILE: robustness_eval/rewriters/vocabulary_rewriter.py
-================================================================================
+## File: `robustness_eval/rewriters/vocabulary_rewriter.py`
+
+```python
 import re
 import random
 from typing import Optional
@@ -13344,10 +13437,11 @@ def rewrite_vocabulary(text: str, substitution_rate: float = 0.15, seed: Optiona
     return rewriter.rewrite(text, substitution_rate=substitution_rate)
 
 
+```
 
-================================================================================
-FILE: scratch/apply_user_references.py
-================================================================================
+## File: `scratch/apply_user_references.py`
+
+```python
 import json
 
 final_15 = [
@@ -13556,10 +13650,11 @@ with open("scratch/final_ieee_centric_15.json", "w", encoding="utf-8") as f:
 
 print("Updated scratch/final_verified_15.json and scratch/final_ieee_centric_15.json successfully!")
 
+```
 
-================================================================================
-FILE: scratch/build_colab_notebook.py
-================================================================================
+## File: `scratch/build_colab_notebook.py`
+
+```python
 """
 scratch/build_colab_notebook.py
 Builds eval/run_ensemble_eval.ipynb from eval/run_ensemble_eval.py with Colab optimizations:
@@ -13758,10 +13853,11 @@ except Exception as e:
 if __name__ == "__main__":
     create_notebook()
 
+```
 
-================================================================================
-FILE: scratch/build_ieee_docx.py
-================================================================================
+## File: `scratch/build_ieee_docx.py`
+
+```python
 import os
 import docx
 from docx.shared import Inches, Pt, RGBColor
@@ -14196,10 +14292,11 @@ docx_out_path = r"d:\AI_Text_Checker\ieee_paper.docx"
 doc.save(docx_out_path)
 print(f"Successfully generated clean IEEE Word document: {docx_out_path}")
 
+```
 
-================================================================================
-FILE: scratch/build_robustness_colab_notebook.py
-================================================================================
+## File: `scratch/build_robustness_colab_notebook.py`
+
+```python
 """
 scratch/build_robustness_colab_notebook.py
 Builds eval/run_robustness_colab.ipynb for Google Colab GPU execution.
@@ -14370,10 +14467,11 @@ except Exception as e:
 if __name__ == "__main__":
     build_notebook()
 
+```
 
-================================================================================
-FILE: scratch/closed_loop_benchmark_results.txt
-================================================================================
+## File: `scratch/closed_loop_benchmark_results.txt`
+
+```text
 =================================================================
 ADVERSARIAL COMPARISON MATRIX (BEFORE VS AFTER CLOSED-LOOP)
 =================================================================
@@ -14386,10 +14484,11 @@ Medium-Risk AI Sentences      |      2                 |      3
 Total AI Flagged Sentences    |     22                 |     22
 Adversarial Evasion Delta     | --                     |   +0.8%
 =================================================================
+```
 
-================================================================================
-FILE: scratch/comprehensive_eval_roberta_vs_modernbert.py
-================================================================================
+## File: `scratch/comprehensive_eval_roberta_vs_modernbert.py`
+
+```python
 import os
 import time
 import math
@@ -14698,10 +14797,11 @@ print(f"[Visualization Saved] {fn3}")
 
 print("[Benchmark] Completed execution successfully.")
 
+```
 
-================================================================================
-FILE: scratch/debug_ipr_scores.py
-================================================================================
+## File: `scratch/debug_ipr_scores.py`
+
+```python
 import fitz
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
@@ -14787,10 +14887,11 @@ print(f"RoBERTa Alone        : High={flag_r_high}, Mid={flag_r_mid}, Total Flagg
 print(f"ModernBERT Alone     : High={flag_m_high}, Mid={flag_m_mid}, Total Flagged={flag_m_high+flag_m_mid}/{len(sentences)}")
 print(f"Ensemble (65/35)     : High={flag_e_high}, Mid={flag_e_mid}, Total Flagged={flag_e_high+flag_e_mid}/{len(sentences)}")
 
+```
 
-================================================================================
-FILE: scratch/export_manuscript_docx.py
-================================================================================
+## File: `scratch/export_manuscript_docx.py`
+
+```python
 import re
 import docx
 from docx.shared import Inches, Pt, RGBColor
@@ -14892,10 +14993,11 @@ while i < len(lines):
 doc.save(docx_path)
 print(f"Successfully generated full IEEE manuscript docx: {docx_path}")
 
+```
 
-================================================================================
-FILE: scratch/final_ieee_centric_15.json
-================================================================================
+## File: `scratch/final_ieee_centric_15.json`
+
+```json
 [
   {
     "id": "gupta2024navigating",
@@ -15144,10 +15246,11 @@ FILE: scratch/final_ieee_centric_15.json
     "review": "Establishes the universal adversarial paraphrasing attack that breaks static detectors, motivating our closed-loop retraining methodology."
   }
 ]
+```
 
-================================================================================
-FILE: scratch/final_verified_15.json
-================================================================================
+## File: `scratch/final_verified_15.json`
+
+```json
 [
   {
     "id": "gupta2024navigating",
@@ -15396,10 +15499,11 @@ FILE: scratch/final_verified_15.json
     "review": "Establishes the universal adversarial paraphrasing attack that breaks static detectors, motivating our closed-loop retraining methodology."
   }
 ]
+```
 
-================================================================================
-FILE: scratch/found_2024_plus_candidates.json
-================================================================================
+## File: `scratch/found_2024_plus_candidates.json`
+
+```json
 [
   {
     "doi": "10.1109/satc69565.2026.11542512",
@@ -15901,10 +16005,11 @@ FILE: scratch/found_2024_plus_candidates.json
     "journal": "IEEE Signal Processing Letters",
     "year": 2024,
 ... [Truncated 576 additional lines for brevity]
+```
 
-================================================================================
-FILE: scratch/generate_multi_domain_redteam_dataset.py
-================================================================================
+## File: `scratch/generate_multi_domain_redteam_dataset.py`
+
+```python
 import sys
 import os
 import json
@@ -16039,10 +16144,11 @@ with open("scratch/multi_domain_adversarial_dataset.json", "w", encoding="utf-8"
 
 print("Saved scratch/multi_domain_adversarial_dataset.json successfully.")
 
+```
 
-================================================================================
-FILE: scratch/get_top_papers.py
-================================================================================
+## File: `scratch/get_top_papers.py`
+
+```python
 import urllib.request
 import urllib.parse
 import json
@@ -16125,10 +16231,11 @@ with open("scratch/refined_15_references.json", "w", encoding="utf-8") as f:
 
 print(f"Retrieved and verified {len(verified_list)} candidate papers!")
 
+```
 
-================================================================================
-FILE: scratch/humanized_paper_test.txt
-================================================================================
+## File: `scratch/humanized_paper_test.txt`
+
+```text
 Architectures and Training Paradigms of Large Language Models: A Survey
 
 AI Research Group
@@ -16148,10 +16255,11 @@ METHODOLOGY AND FRAMEWORK To address these key challenges, we propose a synergis
 3.
 
 CONCLUSION In conclusion, this study underscores the paramount importance of sustainable energy transition strategies. By leveraging advanced photovoltaic technologies, society can foster a greener future while driving economic growth seamlessly. Furthermore, exploring the nuanced interplay between macroeconomics and environmental sustainability provides crucial insights. Using predictive modeling allows policymakers to design targeted interventions that support long-term economic resilience.
+```
 
-================================================================================
-FILE: scratch/ieee_deep_search.json
-================================================================================
+## File: `scratch/ieee_deep_search.json`
+
+```json
 [
   {
     "doi": "10.1109/ispras64596.2024.10899150",
@@ -16653,10 +16761,11 @@ FILE: scratch/ieee_deep_search.json
       "P. Bhattacharya",
       "M. Javed",
 ... [Truncated 926 additional lines for brevity]
+```
 
-================================================================================
-FILE: scratch/ieee_premium_verified.json
-================================================================================
+## File: `scratch/ieee_premium_verified.json`
+
+```json
 [
   {
     "doi": "10.1109/tdsc.2025.3624268",
@@ -16770,10 +16879,11 @@ FILE: scratch/ieee_premium_verified.json
     "page": "70977-71002"
   }
 ]
+```
 
-================================================================================
-FILE: scratch/ieee_transactions_candidates.json
-================================================================================
+## File: `scratch/ieee_transactions_candidates.json`
+
+```json
 [
   {
     "journal": "IEEE Transactions on Information Forensics and Security",
@@ -17027,10 +17137,11 @@ FILE: scratch/ieee_transactions_candidates.json
     "year": 2017
   }
 ]
+```
 
-================================================================================
-FILE: scratch/ipr_text.txt
-================================================================================
+## File: `scratch/ipr_text.txt`
+
+```text
 1
 Synergistic Neural Frameworks for Automated
 Deep Learning Optimization
@@ -17134,10 +17245,11 @@ Page 3 of 3 · AI Verification Submission
 VeriPaper AI · Document Forensics Instrument
 Page 3
 
+```
 
-================================================================================
-FILE: scratch/multi_domain_adversarial_dataset.json
-================================================================================
+## File: `scratch/multi_domain_adversarial_dataset.json`
+
+```json
 [
   {
     "domain": "Computer Science & AI",
@@ -17421,10 +17533,11 @@ FILE: scratch/multi_domain_adversarial_dataset.json
     ]
   }
 ]
+```
 
-================================================================================
-FILE: scratch/parse_lit_survey.py
-================================================================================
+## File: `scratch/parse_lit_survey.py`
+
+```python
 import re
 import docx
 
@@ -17503,10 +17616,11 @@ for p in papers:
 doc.save(docx_path)
 print(f"Successfully saved {len(papers)} papers to {docx_path}")
 
+```
 
-================================================================================
-FILE: scratch/rank_ieee_papers.py
-================================================================================
+## File: `scratch/rank_ieee_papers.py`
+
+```python
 import json
 
 with open("scratch/ieee_deep_search.json", "r", encoding="utf-8") as f:
@@ -17539,10 +17653,11 @@ for i, (score, p) in enumerate(scored[:20], 1):
     print(f"    Venue: {p['journal']} ({p['year']}) | DOI: {p['doi']}")
     print(f"    Authors: {authors}")
 
+```
 
-================================================================================
-FILE: scratch/refined_15_references.json
-================================================================================
+## File: `scratch/refined_15_references.json`
+
+```json
 [
   {
     "publisher": "IEEE",
@@ -17837,10 +17952,11 @@ FILE: scratch/refined_15_references.json
     "page": ""
   }
 ]
+```
 
-================================================================================
-FILE: scratch/run_adversarial_finetune_loop.py
-================================================================================
+## File: `scratch/run_adversarial_finetune_loop.py`
+
+```python
 import sys
 import os
 import json
@@ -17937,10 +18053,11 @@ def main():
 if __name__ == "__main__":
     main()
 
+```
 
-================================================================================
-FILE: scratch/run_closed_loop_benchmark.py
-================================================================================
+## File: `scratch/run_closed_loop_benchmark.py`
+
+```python
 import sys
 import os
 import time
@@ -18069,10 +18186,11 @@ print(report_str)
 with open("scratch/closed_loop_benchmark_results.txt", "w", encoding="utf-8") as f:
     f.write(report_str)
 
+```
 
-================================================================================
-FILE: scratch/run_project.py
-================================================================================
+## File: `scratch/run_project.py`
+
+```python
 import uvicorn
 import sys
 import os
@@ -18083,10 +18201,11 @@ if __name__ == "__main__":
     print("[VeriPaper Server] Launching FastAPI Backend with Hybrid Ensemble Engine...")
     uvicorn.run("src.app:app", host="127.0.0.1", port=8000, reload=False)
 
+```
 
-================================================================================
-FILE: scratch/save_final_15.py
-================================================================================
+## File: `scratch/save_final_15.py`
+
+```python
 import json
 
 final_15 = [
@@ -18280,10 +18399,11 @@ with open("scratch/final_ieee_centric_15.json", "w", encoding="utf-8") as f:
 
 print("Saved scratch/final_ieee_centric_15.json successfully with 15 verified papers!")
 
+```
 
-================================================================================
-FILE: scratch/search_2024_plus_replacements.py
-================================================================================
+## File: `scratch/search_2024_plus_replacements.py`
+
+```python
 import urllib.request
 import json
 
@@ -18342,10 +18462,11 @@ with open('scratch/found_2024_plus_candidates.json', 'w', encoding='utf-8') as f
 for i, r in enumerate(results[:25]):
     print(f"[{i+1}] {r['year']} | {r['doi']} | {r['journal'][:35]} | {r['title']}")
 
+```
 
-================================================================================
-FILE: scratch/search_ieee_papers.py
-================================================================================
+## File: `scratch/search_ieee_papers.py`
+
+```python
 import urllib.request
 import urllib.parse
 import json
@@ -18423,10 +18544,11 @@ with open("scratch/ieee_deep_search.json", "w", encoding="utf-8") as f:
 
 print(f"Discovered {len(unique_ieee)} unique IEEE papers on AI text detection & NLP!")
 
+```
 
-================================================================================
-FILE: scratch/search_ieee_transactions.py
-================================================================================
+## File: `scratch/search_ieee_transactions.py`
+
+```python
 import urllib.request
 import urllib.parse
 import json
@@ -18480,10 +18602,11 @@ print(f"Found {len(results)} IEEE Transactions papers!")
 for p in results[:10]:
     print(f"- {p['title']} [{p['journal']}] DOI: {p['doi']}")
 
+```
 
-================================================================================
-FILE: scratch/search_real_references.py
-================================================================================
+## File: `scratch/search_real_references.py`
+
+```python
 import urllib.request
 import urllib.parse
 import json
@@ -18541,10 +18664,11 @@ with open("scratch/verified_references.json", "w", encoding="utf-8") as f:
 
 print("Saved verified_references.json successfully!")
 
+```
 
-================================================================================
-FILE: scratch/test_advanced_architecture.py
-================================================================================
+## File: `scratch/test_advanced_architecture.py`
+
+```python
 import requests
 
 url = 'http://localhost:8000/analyze'
@@ -18568,10 +18692,11 @@ print("\n--- SAMPLE HIGH RISK SENTENCES ---")
 for s in flagged_high[:5]:
     print(f"[HIGH] Score={s['ai_probability']:.4f}: {s['text'][:80]}...")
 
+```
 
-================================================================================
-FILE: scratch/test_alignment.py
-================================================================================
+## File: `scratch/test_alignment.py`
+
+```python
 import fitz
 from src.document_parser import extract_text_from_pdf
 from src.app import split_into_smart_paragraphs
@@ -18611,10 +18736,11 @@ for a in aligned:
 hl_images = render_highlighted_pdf_page_images(pdf_path, proc_sents)
 print(f'Rendered highlighted images: {len(hl_images)} pages')
 
+```
 
-================================================================================
-FILE: scratch/test_bboxes.py
-================================================================================
+## File: `scratch/test_bboxes.py`
+
+```python
 import requests
 from src.report_generator import align_sentences_to_bboxes
 
@@ -18639,10 +18765,11 @@ for a in aligned:
     for p, bboxes in a['pages_bboxes'].items():
         print(f"    Page {p}: {len(bboxes)} bboxes")
 
+```
 
-================================================================================
-FILE: scratch/test_flagged.py
-================================================================================
+## File: `scratch/test_flagged.py`
+
+```python
 import requests
 
 url = 'http://localhost:8000/analyze'
@@ -18656,10 +18783,11 @@ for idx, s in enumerate(sents):
     if tier in ['high', 'medium'] or score >= 0.60:
         print(f"Sentence #{idx+1} [P{s.get('paragraph_index')}] ({tier}, score={score:.4f}):\n  {repr(s['text'])}\n")
 
+```
 
-================================================================================
-FILE: scratch/test_human_sample.py
-================================================================================
+## File: `scratch/test_human_sample.py`
+
+```python
 import requests
 
 url = 'http://localhost:8000/sample?type=human'
@@ -18670,10 +18798,11 @@ print("Status code:", r.status_code)
 print("Overall AI Percentage for Human Sample:", data.get("overall_ai_percentage"), "%")
 print("Summary Breakdown:", data.get("summary"))
 
+```
 
-================================================================================
-FILE: scratch/test_real_pdf_cache.py
-================================================================================
+## File: `scratch/test_real_pdf_cache.py`
+
+```python
 import requests
 import os
 
@@ -18712,10 +18841,11 @@ if os.path.exists(pdf_path):
 else:
     print(f"Sample PDF not found at {pdf_path}")
 
+```
 
-================================================================================
-FILE: scratch/test_render_draw.py
-================================================================================
+## File: `scratch/test_render_draw.py`
+
+```python
 import fitz
 
 pdf_path = 'd:/AI_Text_Checker/LLM_Architectures_and_Training_Survey.pdf'
@@ -18752,10 +18882,11 @@ doc3.close()
 
 print("Saved 3 test images in scratch/")
 
+```
 
-================================================================================
-FILE: scratch/test_smart_split.py
-================================================================================
+## File: `scratch/test_smart_split.py`
+
+```python
 import fitz
 import re
 import sys
@@ -18820,10 +18951,11 @@ for i, p in enumerate(paragraphs[:5]):
     print(f"--- Paragraph {i+1} ---")
     print(p)
 
+```
 
-================================================================================
-FILE: scratch/test_subpart_alignment.py
-================================================================================
+## File: `scratch/test_subpart_alignment.py`
+
+```python
 import fitz
 import re
 from src.report_generator import clean_text_for_alignment
@@ -18941,10 +19073,11 @@ for a in aligned:
     for p, bboxes in a['pages_bboxes'].items():
         print(f"    Page {p}: {len(bboxes)} bboxes")
 
+```
 
-================================================================================
-FILE: scratch/test_survey_pdf.py
-================================================================================
+## File: `scratch/test_survey_pdf.py`
+
+```python
 import fitz
 import re
 import requests
@@ -18976,10 +19109,11 @@ if resp.status_code == 200:
     for s in med_sent:
         print(f"  - [{s.get('ai_probability')*100:.1f}%] {s.get('text')[:100]}")
 
+```
 
-================================================================================
-FILE: scratch/test_updated_ensemble.py
-================================================================================
+## File: `scratch/test_updated_ensemble.py`
+
+```python
 import requests
 
 url = 'http://localhost:8000/analyze'
@@ -18998,10 +19132,11 @@ print(f"Flagged Sentences Count: {len(flagged)}")
 for s in flagged:
     print(f"[{s['confidence_tier'].upper()}] Score={s['ai_probability']:.4f}: {repr(s['text'][:80])}")
 
+```
 
-================================================================================
-FILE: scratch/top_ieee_ranked.json
-================================================================================
+## File: `scratch/top_ieee_ranked.json`
+
+```json
 [
   {
     "doi": "10.1109/qpain69676.2026.11545549",
@@ -19503,10 +19638,11 @@ FILE: scratch/top_ieee_ranked.json
     "year": 2017,
     "authors": [
 ... [Truncated 926 additional lines for brevity]
+```
 
-================================================================================
-FILE: scratch/verified_references.json
-================================================================================
+## File: `scratch/verified_references.json`
+
+```json
 {
   "IEEE": [
     {
@@ -19955,10 +20091,11 @@ FILE: scratch/verified_references.json
     }
   ]
 }
+```
 
-================================================================================
-FILE: scratch/verify_final_15.py
-================================================================================
+## File: `scratch/verify_final_15.py`
+
+```python
 import urllib.request
 import json
 
@@ -20140,10 +20277,11 @@ with open("scratch/final_verified_15.json", "w", encoding="utf-8") as f:
 
 print("\nAll 15 references verified successfully!")
 
+```
 
-================================================================================
-FILE: scratch/verify_pdf_cache.py
-================================================================================
+## File: `scratch/verify_pdf_cache.py`
+
+```python
 import requests
 
 BASE_URL = "http://localhost:8000"
@@ -20179,10 +20317,11 @@ if pdf_resp.status_code == 200 and pdf_resp.content.startswith(b"%PDF"):
 else:
     print("\n❌ PDF Generation Failed.")
 
+```
 
-================================================================================
-FILE: scratch/verify_premium_ieee.py
-================================================================================
+## File: `scratch/verify_premium_ieee.py`
+
+```python
 import urllib.request
 import json
 
@@ -20238,10 +20377,11 @@ print("Saved ieee_premium_verified.json successfully!")
 for it in details:
     print(f"- [{it['doi']}] {it['title']} ({it['journal']})")
 
+```
 
-================================================================================
-FILE: scratch/verify_root_cause.py
-================================================================================
+## File: `scratch/verify_root_cause.py`
+
+```python
 import fitz
 import torch
 import numpy as np
@@ -20321,14 +20461,15 @@ with open('scratch/root_cause_results.txt', 'w', encoding='utf-8') as f:
 
 print("Results written to scratch/root_cause_results.txt")
 
+```
 
-================================================================================
-FILE: scripts/generate_claude_digest.py
-================================================================================
+## File: `scripts/generate_claude_digest.py`
+
+```python
 """
 scripts/generate_claude_digest.py
-Automated Repository Bundler for Claude.
-Generates a clean, monolithic, token-optimized textual snapshot of the entire repository
+Automated Repository Bundler for Claude (Markdown .md format).
+Generates a token-optimized, syntax-highlighted Markdown digest of the entire repository
 (every source file, documentation, configuration, and result summary) for direct consumption by Claude.
 """
 
@@ -20336,7 +20477,7 @@ import os
 import sys
 
 WORKSPACE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUTPUT_FILE = os.path.join(WORKSPACE_ROOT, "CLAUDE_DIGEST.txt")
+OUTPUT_FILE = os.path.join(WORKSPACE_ROOT, "CLAUDE_DIGEST.md")
 
 INCLUDED_EXTENSIONS = {
     ".py", ".md", ".tex", ".json", ".csv", ".bat", ".sh", ".txt", ".ts", ".tsx", ".js", ".jsx", ".css", ".html"
@@ -20347,21 +20488,41 @@ EXCLUDED_DIRS = {
     "data", "models", ".gemini", "dist", "build", ".system_generated"
 }
 
+EXT_TO_LANG = {
+    ".py": "python",
+    ".ts": "typescript",
+    ".tsx": "tsx",
+    ".js": "javascript",
+    ".jsx": "jsx",
+    ".json": "json",
+    ".csv": "csv",
+    ".md": "markdown",
+    ".tex": "latex",
+    ".html": "html",
+    ".css": "css",
+    ".sh": "bash",
+    ".bat": "batch",
+    ".txt": "text",
+}
+
 def should_include_file(filepath: str) -> bool:
     basename = os.path.basename(filepath)
-    if basename in {"package-lock.json", "yarn.lock", "CLAUDE_DIGEST.txt", "cache_val_preds.parquet", "cache_test_preds.parquet"}:
+    if basename in {
+        "package-lock.json", "yarn.lock", "CLAUDE_DIGEST.txt", "CLAUDE_DIGEST.md",
+        "cache_val_preds.parquet", "cache_test_preds.parquet"
+    }:
         return False
     _, ext = os.path.splitext(basename)
     return ext.lower() in INCLUDED_EXTENSIONS
 
 def generate_digest():
-    print(f"Generating monolithic repository digest for Claude from: {WORKSPACE_ROOT}...")
+    print(f"Generating token-optimized Markdown repository digest for Claude from: {WORKSPACE_ROOT}...")
     digest_lines = []
 
-    digest_lines.append("=" * 80)
-    digest_lines.append(" AI-TEXT-CHECKER: COMPLETE REPOSITORY DIGEST FOR CLAUDE")
-    digest_lines.append("=" * 80)
-    digest_lines.append(f"Repository: https://github.com/GuruGouthamKanchi/AI-text-checker\n\n")
+    digest_lines.append("# AI-Text-Checker: Monolithic Repository Digest for Claude\n")
+    digest_lines.append("> **Repository:** https://github.com/GuruGouthamKanchi/AI-text-checker")
+    digest_lines.append("> **Architecture Guide:** See `CLAUDE.md` for complete architecture diagrams and system contracts.\n")
+    digest_lines.append("---\n")
 
     file_count = 0
     total_bytes = 0
@@ -20384,10 +20545,13 @@ def generate_digest():
                     if len(lines) > 500 and (file.endswith(".csv") or file.endswith(".json")):
                         content = "\n".join(lines[:500]) + f"\n... [Truncated {len(lines)-500} additional lines for brevity]"
 
-                    digest_lines.append("\n" + "=" * 80)
-                    digest_lines.append(f"FILE: {rel_path}")
-                    digest_lines.append("=" * 80)
+                    _, ext = os.path.splitext(file)
+                    lang = EXT_TO_LANG.get(ext.lower(), "text")
+
+                    digest_lines.append(f"## File: `{rel_path}`\n")
+                    digest_lines.append(f"```{lang}")
                     digest_lines.append(content)
+                    digest_lines.append("```\n")
 
                     file_count += 1
                     total_bytes += len(content.encode("utf-8"))
@@ -20397,16 +20561,17 @@ def generate_digest():
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         f.write("\n".join(digest_lines))
 
-    print(f"\n[Success] Bundled {file_count} files ({total_bytes / 1024:.1f} KB) into: {OUTPUT_FILE}")
-    print("You can upload this single file directly to any Claude Chat or Claude Project!")
+    print(f"[Success] Bundled {file_count} files ({total_bytes / 1024:.1f} KB) into Markdown format: {OUTPUT_FILE}")
+    print("Markdown formatting maximizes BPE compression, saving tokens compared to plain text!")
 
 if __name__ == "__main__":
     generate_digest()
 
+```
 
-================================================================================
-FILE: scripts/generate_clean_charts.py
-================================================================================
+## File: `scripts/generate_clean_charts.py`
+
+```python
 import os
 import matplotlib
 matplotlib.use('Agg')
@@ -20480,10 +20645,11 @@ plt.close()
 
 print(f"Generated Figure 4 charts: {fig4_png} and {fig4_pdf}")
 
+```
 
-================================================================================
-FILE: scripts/generate_comparison_benchmark.py
-================================================================================
+## File: `scripts/generate_comparison_benchmark.py`
+
+```python
 import os
 import matplotlib
 matplotlib.use('Agg')
@@ -20744,10 +20910,11 @@ plt.close()
 
 print("Successfully generated all 5 premium IEEE presentation plots!")
 
+```
 
-================================================================================
-FILE: scripts/update_crossref.py
-================================================================================
+## File: `scripts/update_crossref.py`
+
+```python
 import docx
 
 def main():
@@ -20788,18 +20955,20 @@ def main():
 if __name__ == '__main__':
     main()
 
+```
 
-================================================================================
-FILE: src/__init__.py
-================================================================================
+## File: `src/__init__.py`
+
+```python
 """
 AI Text Checker Preprocessing Package.
 """
 
+```
 
-================================================================================
-FILE: src/app.py
-================================================================================
+## File: `src/app.py`
+
+```python
 import os
 import re
 import uuid
@@ -21523,10 +21692,11 @@ except Exception as e:
 
 
 
+```
 
-================================================================================
-FILE: src/baseline_model.py
-================================================================================
+## File: `src/baseline_model.py`
+
+```python
 import os
 import joblib
 import pandas as pd
@@ -21748,10 +21918,11 @@ def main():
 if __name__ == "__main__":
     main()
 
+```
 
-================================================================================
-FILE: src/citation_parser.py
-================================================================================
+## File: `src/citation_parser.py`
+
+```python
 import os
 import re
 import hashlib
@@ -22150,10 +22321,11 @@ def audit_citations_integrity(text: str) -> dict:
         "unreferenced_entries": match_results["unreferenced_entries"]
     }
 
+```
 
-================================================================================
-FILE: src/clean_text.py
-================================================================================
+## File: `src/clean_text.py`
+
+```python
 import re
 import unicodedata
 import nltk
@@ -22254,10 +22426,11 @@ def split_into_sentences(text: str) -> list[str]:
         sentences = re.split(r'(?<=[.!?])\s+', text)
         return [s.strip() for s in sentences if s.strip()]
 
+```
 
-================================================================================
-FILE: src/closed_loop_engine.py
-================================================================================
+## File: `src/closed_loop_engine.py`
+
+```python
 """
 Closed-Loop Optimization Engine for AccaHumanize-CL.
 
@@ -22626,10 +22799,11 @@ class ClosedLoopHumanizer:
             "total_paragraphs": total_paras
         }
 
+```
 
-================================================================================
-FILE: src/data_loaders.py
-================================================================================
+## File: `src/data_loaders.py`
+
+```python
 import os
 import re
 import hashlib
@@ -22946,10 +23120,11 @@ def load_coai_academic() -> pd.DataFrame:
         
     return standard_df
 
+```
 
-================================================================================
-FILE: src/dedupe.py
-================================================================================
+## File: `src/dedupe.py`
+
+```python
 import re
 import pandas as pd
 from datasketch import MinHash, MinHashLSH
@@ -23060,10 +23235,11 @@ def remove_near_duplicates(
     
     return deduped_df
 
+```
 
-================================================================================
-FILE: src/document_parser.py
-================================================================================
+## File: `src/document_parser.py`
+
+```python
 import os
 import sys
 import re
@@ -23377,10 +23553,11 @@ def extract_text(file_path: str) -> tuple[str, int]:
     else:
         raise DocumentParsingError("Unsupported file format.")
 
+```
 
-================================================================================
-FILE: src/doi_verifier.py
-================================================================================
+## File: `src/doi_verifier.py`
+
+```python
 import os
 import re
 import time
@@ -23622,10 +23799,11 @@ def verify_all_references(reference_list: list[dict]) -> list[dict]:
         
     return updated_references
 
+```
 
-================================================================================
-FILE: src/highlighter.py
-================================================================================
+## File: `src/highlighter.py`
+
+```python
 import os
 import sys
 import re
@@ -24648,10 +24826,11 @@ def verify_citation(reference: str) -> dict:
 if __name__ == "__main__":
     main()
 
+```
 
-================================================================================
-FILE: src/prepare_dataset.py
-================================================================================
+## File: `src/prepare_dataset.py`
+
+```python
 import os
 import sys
 import pandas as pd
@@ -24864,10 +25043,11 @@ def main():
 if __name__ == "__main__":
     main()
 
+```
 
-================================================================================
-FILE: src/report_generator.py
-================================================================================
+## File: `src/report_generator.py`
+
+```python
 import os
 import sys
 import re
@@ -25605,10 +25785,11 @@ def render_highlighted_pdf_page_images(pdf_path: str, processed_sentences: list[
         print(f"[render_highlighted_pdf_page_images] Warning: {e}")
         return []
 
+```
 
-================================================================================
-FILE: src/section_analyzer.py
-================================================================================
+## File: `src/section_analyzer.py`
+
+```python
 import re
 
 """
@@ -25779,10 +25960,11 @@ def analyze_paper_sections(doc_text: str, sentences: list[dict]) -> dict:
     }
 
 
+```
 
-================================================================================
-FILE: src/semantics_guardrail.py
-================================================================================
+## File: `src/semantics_guardrail.py`
+
+```python
 """
 Semantics Guardrail & Citation Preservation Engine for AccaHumanize-CL.
 
@@ -25893,10 +26075,11 @@ class SemanticsGuardrail:
         len_ratio = min(len(text1), len(text2)) / max(len(text1), len(text2))
         return round(0.7 * jaccard + 0.3 * len_ratio, 4)
 
+```
 
-================================================================================
-FILE: src/split.py
-================================================================================
+## File: `src/split.py`
+
+```python
 import numpy as np
 import pandas as pd
 
@@ -26002,10 +26185,11 @@ def topic_aware_split(
     
     return train_df, val_df, test_df
 
+```
 
-================================================================================
-FILE: src/tex_compiler.py
-================================================================================
+## File: `src/tex_compiler.py`
+
+```python
 """
 LaTeX AST Re-Assembler & PDF Compiler Wrapper for AccaHumanize-Tex.
 
@@ -26070,10 +26254,11 @@ class LaTeXCompiler:
             except Exception as e:
                 return None, f"LaTeX compilation subprocess error: {str(e)}", False
 
+```
 
-================================================================================
-FILE: src/tex_parser.py
-================================================================================
+## File: `src/tex_parser.py`
+
+```python
 r"""
 LaTeX AST Parser & Deconstructor for AccaHumanize-Tex.
 
@@ -26253,10 +26438,11 @@ class LaTeXASTParser:
                 missing.append(original[:40] + "...")
         return len(missing) == 0, missing
 
+```
 
-================================================================================
-FILE: src/train_deberta_academic.py
-================================================================================
+## File: `src/train_deberta_academic.py`
+
+```python
 # %% [markdown]
 # # Phase 6: DeBERTa-v3 Disentangled Attention Multi-LLM Academic AI Detector
 # 
@@ -26350,10 +26536,11 @@ def main():
 if __name__ == "__main__":
     main()
 
+```
 
-================================================================================
-FILE: src/train_distilbert_colab.py
-================================================================================
+## File: `src/train_distilbert_colab.py`
+
+```python
 # %% [markdown]
 # # Phase 3: Transformer Model Fine-Tuning (DistilBERT Baseline)
 # 
@@ -26679,10 +26866,11 @@ trainer.save_model(final_save_path)
 tokenizer.save_pretrained(final_save_path)
 print("[Save] Final model saved successfully!")
 
+```
 
-================================================================================
-FILE: src/train_modernbert_academic.py
-================================================================================
+## File: `src/train_modernbert_academic.py`
+
+```python
 # %% [markdown]
 # # Phase 7: ModernBERT 8k Context Multi-LLM Academic AI Detector
 # 
@@ -27014,10 +27202,11 @@ def main():
 if __name__ == "__main__":
     main()
 
+```
 
-================================================================================
-FILE: src/train_roberta_colab.py
-================================================================================
+## File: `src/train_roberta_colab.py`
+
+```python
 # %% [markdown]
 # # Phase 4: Transformer Model Fine-Tuning (RoBERTa-base Target)
 # 
@@ -27510,10 +27699,11 @@ for i, pred in enumerate(sentence_predictions, 1):
     print(f"  Sentence {i}: AI Prob = {pred['score']:.4f} | \"{pred['sentence'][:70]}...\"")
 print("\n[Inference Verification] Successfully validated sentence-level pipeline!")
 
+```
 
-================================================================================
-FILE: src/train_sentence_roberta.py
-================================================================================
+## File: `src/train_sentence_roberta.py`
+
+```python
 # %% [markdown]
 # # Phase 5: Sentence-Level Multi-LLM Academic AI Detector
 # 
@@ -27956,10 +28146,11 @@ for i, pred in enumerate(sentence_predictions, 1):
     print(f"  Sentence {i}: AI Prob = {pred['score']:.4f} | \"{pred['sentence'][:70]}...\"")
 print("\n[Inference Verification] Successfully validated sentence-level pipeline!")
 
+```
 
-================================================================================
-FILE: tests/test_5_complex_sentences.py
-================================================================================
+## File: `tests/test_5_complex_sentences.py`
+
+```python
 from robustness_eval.humanizer.humanizer_engine import humanize_text
 
 test_sentences = [
@@ -27978,10 +28169,11 @@ for category, text in test_sentences:
     print(f"OUTPUT: {res['humanized_text']}")
     print(f"SCORE : {res['original_ai_percentage']}% -> {res['humanized_ai_percentage']}% AI ({res['resilience_verdict']})")
 
+```
 
-================================================================================
-FILE: tests/test_academic_definition.py
-================================================================================
+## File: `tests/test_academic_definition.py`
+
+```python
 from robustness_eval.humanizer import humanize_text
 
 sample = "SCS-CN Method The SCS-CN method, introduced by the Soil Conservation Service of the United States in 1969, is a widely used conceptual hydrological model for estimating direct runoff generated from daily rainfall depth."
@@ -28000,10 +28192,11 @@ print("=== ACADEMIC TONE OUTPUT ===")
 print(res_academic["humanized_text"])
 print(f"AI Score: {res_academic['humanized_ai_percentage']}%\n")
 
+```
 
-================================================================================
-FILE: tests/test_academic_options.py
-================================================================================
+## File: `tests/test_academic_options.py`
+
+```python
 from src.app import run_analysis_pipeline
 
 tests = [
@@ -28019,10 +28212,11 @@ for i, t in enumerate(tests):
     score = res["overall_ai_percentage"]
     print(f"[{i}] Score: {score:5.1f}%  | Text: {t}")
 
+```
 
-================================================================================
-FILE: tests/test_citations.py
-================================================================================
+## File: `tests/test_citations.py`
+
+```python
 import unittest
 from src.citation_parser import (
     detect_citation_style,
@@ -28125,10 +28319,11 @@ class TestCitationParser(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 
+```
 
-================================================================================
-FILE: tests/test_doi_verifier.py
-================================================================================
+## File: `tests/test_doi_verifier.py`
+
+```python
 import unittest
 from unittest.mock import patch, MagicMock
 from src.doi_verifier import (
@@ -28242,10 +28437,11 @@ class TestDoiVerifier(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 
+```
 
-================================================================================
-FILE: tests/test_engine_refactored.py
-================================================================================
+## File: `tests/test_engine_refactored.py`
+
+```python
 from robustness_eval.humanizer import humanize_text
 
 test_samples = [
@@ -28262,10 +28458,11 @@ for i, s in enumerate(test_samples):
     print(f"    OUTPUT: {res['humanized_text']}")
     print(f"    AI    : {res['original_ai_percentage']}% -> {res['humanized_ai_percentage']}% AI  ({res['resilience_verdict']})")
 
+```
 
-================================================================================
-FILE: tests/test_extraction.py
-================================================================================
+## File: `tests/test_extraction.py`
+
+```python
 import os
 import sys
 import docx
@@ -28357,10 +28554,11 @@ if __name__ == "__main__":
         print(f"Test failure: {str(e)}")
         sys.exit(1)
 
+```
 
-================================================================================
-FILE: tests/test_fix_sentence_formation.py
-================================================================================
+## File: `tests/test_fix_sentence_formation.py`
+
+```python
 from robustness_eval.humanizer import humanize_text
 
 sample = "Engineered an autonomous 3-agent ETL pipeline performing extraction, transformation, and 3-way matching across 1,000+ monthly unstructured invoices, POs, and receipt datasets with a 98.5% accuracy rate."
@@ -28376,10 +28574,11 @@ print(res["humanized_text"])
 print()
 print(f"AI Score: {res['humanized_ai_percentage']}%  ({res['resilience_verdict']})")
 
+```
 
-================================================================================
-FILE: tests/test_humanizer_quick.py
-================================================================================
+## File: `tests/test_humanizer_quick.py`
+
+```python
 from robustness_eval.humanizer import humanize_text
 
 samples = [
@@ -28397,10 +28596,11 @@ for i, s in enumerate(samples):
     print(f"  AI SCORE  : {res['original_ai_percentage']}% -> {res['humanized_ai_percentage']}%  ({res['resilience_verdict']})")
     print()
 
+```
 
-================================================================================
-FILE: tests/test_pure_neural.py
-================================================================================
+## File: `tests/test_pure_neural.py`
+
+```python
 import torch
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from src.app import run_analysis_pipeline
@@ -28431,10 +28631,11 @@ for i, raw in enumerate(test_samples):
     print(f"    PURE T5   : {humanized}")
     print(f"    AI SCORE  : {score}%")
 
+```
 
-================================================================================
-FILE: tests/test_report.py
-================================================================================
+## File: `tests/test_report.py`
+
+```python
 import os
 import sys
 import fitz
@@ -28559,10 +28760,11 @@ if __name__ == "__main__":
         print(f"Verification error: {str(e)}")
         sys.exit(1)
 
+```
 
-================================================================================
-FILE: tests/test_robustness_endpoint.py
-================================================================================
+## File: `tests/test_robustness_endpoint.py`
+
+```python
 import unittest
 from fastapi.testclient import TestClient
 from src.app import app
@@ -28608,10 +28810,11 @@ class TestRobustnessEndpoint(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 
+```
 
-================================================================================
-FILE: tests/test_robustness_eval.py
-================================================================================
+## File: `tests/test_robustness_eval.py`
+
+```python
 import os
 import tempfile
 import unittest
@@ -28710,10 +28913,11 @@ class TestRobustnessEvalModule(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 
+```
 
-================================================================================
-FILE: tests/test_stream_endpoint.py
-================================================================================
+## File: `tests/test_stream_endpoint.py`
+
+```python
 import requests
 import json
 
@@ -28733,10 +28937,11 @@ with requests.post(url, json=payload, stream=True) as r:
             decoded = line.decode('utf-8')
             print("STREAM CHUNK:", decoded)
 
+```
 
-================================================================================
-FILE: tests/test_tones_functionality.py
-================================================================================
+## File: `tests/test_tones_functionality.py`
+
+```python
 from robustness_eval.humanizer import humanize_text
 
 samples = {
@@ -28765,10 +28970,11 @@ for tone, text in samples.items():
 
 print("=================================================================")
 
+```
 
-================================================================================
-FILE: tests/test_unseen_general.py
-================================================================================
+## File: `tests/test_unseen_general.py`
+
+```python
 from robustness_eval.humanizer import humanize_text
 
 test_sentences = [
@@ -28784,10 +28990,11 @@ for sent in test_sentences:
     print(f"OUTPUT: {res['humanized_text']}")
     print(f"SCORE : {res['original_ai_percentage']}% -> {res['humanized_ai_percentage']}% AI")
 
+```
 
-================================================================================
-FILE: tests/verify_pipeline.py
-================================================================================
+## File: `tests/verify_pipeline.py`
+
+```python
 import os
 import sys
 import tempfile
@@ -28897,3 +29104,5 @@ class TestPreprocessingPipeline(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+```

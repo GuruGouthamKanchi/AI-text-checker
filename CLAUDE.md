@@ -142,3 +142,10 @@ AI_Text_Checker/
 Any Claude model or user can read this entire repository in one prompt by replacing `github.com` with `gitingest.com`:
 👉 **`https://gitingest.com/GuruGouthamKanchi/AI-text-checker`**
 This produces a complete, token-optimized textual snapshot containing all directories, files, and code.
+
+---
+
+## 6. Direct Monolithic Markdown Digest Link
+To load the full repository codebase directly in token-optimized Markdown format:
+👉 **`https://raw.githubusercontent.com/GuruGouthamKanchi/AI-text-checker/main/CLAUDE_DIGEST.md`**
+This file compiles all 185 source files into fenced Markdown code blocks, minimizing token consumption for Claude's BPE tokenizer.
