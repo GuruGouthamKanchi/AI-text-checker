@@ -1,0 +1,198 @@
+{
+  "metadata": {
+    "git_commit": "e338d64df2c18a8a572f7476623dddf82ffbab07",
+    "date": "2026-10-24 22:30:30",
+    "seeds": [
+      42,
+      43,
+      44
+    ],
+    "base_model": "models/roberta-sentence-academic-v2",
+    "held_out_family": "llm_prompt_heavy (Conversational voice) & commercial_manual"
+  },
+  "round0_baseline": {
+    "clean_ai": {
+      "sample_count": 200,
+      "detection_recall": 0.925,
+      "evasion_rate": 0.075,
+      "mean_ai_prob": 0.9148608446121216
+    },
+    "clean_human": {
+      "sample_count": 200,
+      "fpr": 0.12,
+      "mean_ai_prob": 0.2073693424463272
+    },
+    "commercial_quillbot": {
+      "sample_count": 2,
+      "detection_recall": 0.0,
+      "evasion_rate": 1.0,
+      "mean_ai_prob": 0.2948319613933563
+    },
+    "commercial_undetectable.ai": {
+      "sample_count": 2,
+      "detection_recall": 0.0,
+      "evasion_rate": 1.0,
+      "mean_ai_prob": 0.08424091339111328
+    },
+    "llm_prompt_heavy": {
+      "sample_count": 200,
+      "detection_recall": 0.845,
+      "evasion_rate": 0.155,
+      "mean_ai_prob": 0.8355839252471924
+    },
+    "llm_prompt_light": {
+      "sample_count": 200,
+      "detection_recall": 0.84,
+      "evasion_rate": 0.16,
+      "mean_ai_prob": 0.8403013348579407
+    },
+    "rule_based": {
+      "sample_count": 200,
+      "detection_recall": 0.875,
+      "evasion_rate": 0.125,
+      "mean_ai_prob": 0.8686068654060364
+    },
+    "t5_paraphrase": {
+      "sample_count": 200,
+      "detection_recall": 0.83,
+      "evasion_rate": 0.17,
+      "mean_ai_prob": 0.8269421458244324
+    }
+  },
+  "robustness_metrics": [
+    {
+      "attack_family": "clean_human",
+      "is_held_out_family": false,
+      "metric_type": "FPR",
+      "round0_baseline": 0.12,
+      "round1_ce_mean": 0.3133333333333333,
+      "round1_ce_std": 0.03704351795148811,
+      "best_contrastive_mean": 0.32666666666666666,
+      "best_contrastive_std": 0.032998316455372226,
+      "absolute_recovery_gain": 0.20666666666666667
+    },
+    {
+      "attack_family": "clean_ai",
+      "is_held_out_family": false,
+      "metric_type": "Detection_Recall",
+      "round0_baseline": 0.925,
+      "round1_ce_mean": 0.9883333333333333,
+      "round1_ce_std": 0.0023570226039551605,
+      "best_contrastive_mean": 0.9899999999999999,
+      "best_contrastive_std": 1.1102230246251565e-16,
+      "absolute_recovery_gain": 0.06499999999999984
+    },
+    {
+      "attack_family": "rule_based",
+      "is_held_out_family": false,
+      "metric_type": "Detection_Recall",
+      "round0_baseline": 0.875,
+      "round1_ce_mean": 0.9566666666666666,
+      "round1_ce_std": 0.006236095644623242,
+      "best_contrastive_mean": 0.9616666666666666,
+      "best_contrastive_std": 0.004714045207910321,
+      "absolute_recovery_gain": 0.08666666666666656
+    },
+    {
+      "attack_family": "t5_paraphrase",
+      "is_held_out_family": false,
+      "metric_type": "Detection_Recall",
+      "round0_baseline": 0.83,
+      "round1_ce_mean": 0.93,
+      "round1_ce_std": 0.018708286933869674,
+      "best_contrastive_mean": 0.9383333333333334,
+      "best_contrastive_std": 0.012472191289246433,
+      "absolute_recovery_gain": 0.10833333333333339
+    },
+    {
+      "attack_family": "llm_prompt_light",
+      "is_held_out_family": false,
+      "metric_type": "Detection_Recall",
+      "round0_baseline": 0.84,
+      "round1_ce_mean": 0.9416666666666668,
+      "round1_ce_std": 0.012472191289246433,
+      "best_contrastive_mean": 0.9516666666666667,
+      "best_contrastive_std": 0.0023570226039551605,
+      "absolute_recovery_gain": 0.11166666666666669
+    },
+    {
+      "attack_family": "llm_prompt_heavy",
+      "is_held_out_family": true,
+      "metric_type": "Detection_Recall",
+      "round0_baseline": 0.845,
+      "round1_ce_mean": 0.945,
+      "round1_ce_std": 0.01414213562373091,
+      "best_contrastive_mean": 0.9533333333333333,
+      "best_contrastive_std": 0.008498365855987981,
+      "absolute_recovery_gain": 0.10833333333333328
+    },
+    {
+      "attack_family": "commercial_quillbot",
+      "is_held_out_family": true,
+      "metric_type": "Detection_Recall",
+      "round0_baseline": 0.0,
+      "round1_ce_mean": 0.6666666666666666,
+      "round1_ce_std": 0.23570226039551584,
+      "best_contrastive_mean": 0.8333333333333334,
+      "best_contrastive_std": 0.23570226039551584,
+      "absolute_recovery_gain": 0.8333333333333334
+    },
+    {
+      "attack_family": "commercial_undetectable.ai",
+      "is_held_out_family": true,
+      "metric_type": "Detection_Recall",
+      "round0_baseline": 0.0,
+      "round1_ce_mean": 0.0,
+      "round1_ce_std": 0.0,
+      "best_contrastive_mean": 0.0,
+      "best_contrastive_std": 0.0,
+      "absolute_recovery_gain": 0.0
+    }
+  ],
+  "retrain_rounds": [
+    {
+      "round": 1,
+      "condition": "Cross-Entropy (lambda=0.0)",
+      "lambda": 0.0,
+      "seen_attacks_recall_mean": 0.9427777777777777,
+      "seen_attacks_recall_std": 0.012272623352430305,
+      "held_out_recall_mean": 0.945,
+      "held_out_recall_std": 0.01414213562373091,
+      "human_fpr_mean": 0.3133333333333333,
+      "human_fpr_std": 0.03704351795148811
+    },
+    {
+      "round": 2,
+      "condition": "Contrastive (lambda=0.1)",
+      "lambda": 0.1,
+      "seen_attacks_recall_mean": 0.9461111111111111,
+      "seen_attacks_recall_std": 0.010213764617139074,
+      "held_out_recall_mean": 0.9516666666666667,
+      "held_out_recall_std": 0.010274023338281637,
+      "human_fpr_mean": 0.3183333333333333,
+      "human_fpr_std": 0.0339934634239519
+    },
+    {
+      "round": 3,
+      "condition": "Contrastive (lambda=0.2)",
+      "lambda": 0.2,
+      "seen_attacks_recall_mean": 0.9505555555555555,
+      "seen_attacks_recall_std": 0.006136311676215156,
+      "held_out_recall_mean": 0.9533333333333333,
+      "held_out_recall_std": 0.008498365855987981,
+      "human_fpr_mean": 0.32666666666666666,
+      "human_fpr_std": 0.032998316455372226
+    },
+    {
+      "round": 4,
+      "condition": "Contrastive (lambda=0.5)",
+      "lambda": 0.5,
+      "seen_attacks_recall_mean": 0.96,
+      "seen_attacks_recall_std": 0.006804138174397738,
+      "held_out_recall_mean": 0.9616666666666666,
+      "held_out_recall_std": 0.008498365855987981,
+      "human_fpr_mean": 0.36333333333333334,
+      "human_fpr_std": 0.03274480450731417
+    }
+  ]
+}

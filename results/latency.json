@@ -1,0 +1,20 @@
+{
+  "metadata": {
+    "date": "2026-10-24 16:15:36",
+    "hardware": "Windows 10, RTX 2050 4GB (Driver 592.82, CUDA 13.1)",
+    "pytorch_device": "CPU",
+    "pip_command_for_cuda": "pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124"
+  },
+  "sentence_level_latency_ms": {
+    "mean": 36.5871049996349,
+    "std": 2.2455919592268825,
+    "min": 32.45480000623502,
+    "max": 40.69500000332482,
+    "throughput_sentences_per_sec": 27.332034059813665
+  },
+  "512_token_chunk_latency_ms": {
+    "mean": 347.7633199992124,
+    "std": 6.488691471423155,
+    "throughput_chunks_per_sec": 2.8755189017699303
+  }
+}
