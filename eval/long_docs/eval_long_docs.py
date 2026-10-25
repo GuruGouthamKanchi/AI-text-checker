@@ -246,8 +246,31 @@ def main():
     preds_pipeline_3sent = []
     preds_combination = []
 
+    # Checkpoint cache for reliable resumption and inspection
+    import json
+    cache_file = os.path.join(LONG_DOCS_DIR, "eval_cache.cache.json")
+    cache = {}
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, "r", encoding="utf-8") as fp:
+                cache = json.load(fp)
+            print(f"[LongContext] Loaded {len(cache)} existing cached document scores from {cache_file}.")
+        except Exception as e:
+            print(f"[Warning] Failed loading cache: {e}")
+
     start_time = time.time()
     for idx, row in df_papers.iterrows():
+        doc_id = row["id"]
+        if doc_id in cache:
+            entry = cache[doc_id]
+            preds_pipeline_3sent.append(entry["pred_3sent_pipeline"])
+            preds_sliding_rob_512.append(entry["pred_sliding_rob_512"])
+            preds_full_mb_8k.append(entry["pred_full_mb_8k"])
+            preds_combination.append(entry["pred_combination"])
+            if (idx + 1) % 10 == 0 or (idx + 1) == len(df_papers):
+                print(f" -> Resumed {idx + 1}/{len(df_papers)} docs [{doc_id}] from cache", flush=True)
+            continue
+
         text = row["text"]
         
         # (a) Existing 3-sentence sliding window pipeline
@@ -269,8 +292,18 @@ def main():
         score_comb = score_document_combination(score_mb, score_rob, 0.50, 0.50)
         preds_combination.append(score_comb)
 
+        # Save to cache immediately
+        cache[doc_id] = {
+            "pred_3sent_pipeline": score_pipe,
+            "pred_sliding_rob_512": score_rob,
+            "pred_full_mb_8k": score_mb,
+            "pred_combination": score_comb
+        }
+        with open(cache_file, "w", encoding="utf-8") as fp:
+            json.dump(cache, fp, indent=2)
+
         if (idx + 1) % 5 == 0 or (idx + 1) == len(df_papers) or (idx + 1) <= 5:
-            print(f" -> Processed {idx + 1}/{len(df_papers)} docs [{row['id']}]: MB={score_mb:.3f}, Rob={score_rob:.3f}, Pipe={score_pipe:.3f} (Elapsed: {time.time() - start_time:.1f}s)", flush=True)
+            print(f" -> Processed {idx + 1}/{len(df_papers)} docs [{doc_id}]: MB={score_mb:.3f}, Rob={score_rob:.3f}, Pipe={score_pipe:.3f} (Elapsed: {time.time() - start_time:.1f}s)", flush=True)
 
     df_papers["pred_3sent_pipeline"] = preds_pipeline_3sent
     df_papers["pred_sliding_rob_512"] = preds_sliding_rob_512

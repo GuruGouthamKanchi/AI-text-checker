@@ -35,3 +35,7 @@ models/
 # Scratch scripts
 scratch/
 
+# Evaluation checkpoints
+eval/**/*.cache.json
+
+

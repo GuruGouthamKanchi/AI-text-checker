@@ -28,6 +28,9 @@ class LongContextModelManager:
     
     def __init__(self):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        if self.device == "cpu":
+            import os
+            torch.set_num_threads(os.cpu_count() or 4)
         self.mb_model = None
         self.mb_tokenizer = None
         self.rob_model = None
