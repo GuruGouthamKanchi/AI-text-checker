@@ -20,7 +20,7 @@
 
 | Resolution Action | Count | Action Required |
 |---|:---:|---|
-| **`KEEP`** | 42 | Keep as-is; statement is accurate, implemented, and fully evidenced. |
+| **`KEEP`** | 41 | Keep as-is; statement is accurate, implemented, and fully evidenced. |
 | **`FIX_TEXT`** | 0 | Rewrite claim text to match actual code capabilities and verified empirical values. |
 | **`BUILD_AND_TEST`** | 7 | Build an empirical benchmark under `eval/` and log evidence under `results/` to validate the feature. |
 | **`REMOVE`** | 0 | Remove completely; statement is fabricated, misleading, or mathematically invalid. |
@@ -110,9 +110,9 @@ The following 20 items represent the most severe violations of Project Rules, in
 ### 10. [CLM-058] ieee_paper.tex:140-143 — `TRUE` -> `RESOLVED`
 - **Claim:** "P_ensemble(D) = w1 * P_MB(D) + w2 * P_max + (1 - w1 - w2) * g where calibrated weights w1 = 0.55 and w2 = 0.45"
 - **Claim Type:** `architecture`
-- **Code Location:** `src/highlighter.py:187-197`
-- **Evidence Reference:** `None` (Value: `None`)
-- **Audit Finding & Failure Mode:** Replaced degenerate gating formula with actual max-pooling and heuristic gating logic.
+- **Code Location:** `src/gated_fusion.py, ieee_paper.tex:127-144`
+- **Evidence Reference:** `results/GATED_FUSION_REPORT.md` (Value: `Learned fusion does not beat simplest baseline (p=0.068 vs Mean; Top-K +1.21% over fusion)`)
+- **Audit Finding & Failure Mode:** Formal empirical evaluation in results/GATED_FUSION_REPORT.md showed learned gating provides no statistically significant gain. Manuscript describes competitive max-pooling / top-k pooling.
 
 ### 11. [CLM-060] ieee_paper.tex:188 — `TRUE` -> `RESOLVED`
 - **Claim:** "multi-domain corpus of 12,000 academic papers comprising 6,000 human-authored manuscripts (harvested from ArXiv, PubMed, and IEEE Xplore) and 6,000 LLM-generated papers (synthesized using GPT-4o, Claude 3.5 Sonnet, LLaMA-3-70B, and Mixtral-8x7B) across six academic disciplines"

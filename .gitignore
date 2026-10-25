@@ -27,7 +27,8 @@ data/processed/*
 *.log
 
 # Large Model directory (transferred separately)
-models/
+models/*
+!models/*.json
 
 # Office temporary lock files
 ~$*

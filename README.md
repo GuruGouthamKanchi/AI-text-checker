@@ -19,7 +19,7 @@ graph TD
     B --> C[Sentence Segmentation]
     C --> D1[Micro-Syntax Engine: RoBERTa-512]
     C --> D2[Surrounding Context Engine: ModernBERT-512 Window]
-    D1 --> E[Fusion: Heuristic Gated Max-Pooling]
+    D1 --> E[Fusion: Competitive Max-Pooling & Top-k]
     D2 --> E
     E --> F[Post-Hoc Calibration: Temperature Scaling & Isotonic]
     F --> G[Next.js Dashboard: Pretext Canvas View]
@@ -30,8 +30,8 @@ graph TD
 ### Architecture Inventory:
 1. **Micro-Syntax Sentence Analysis:** Custom fine-tuned `roberta-sentence-academic-v2` evaluates local sentence syntax and token distributions within each sentence up to 512 tokens (`src/highlighter.py:176-180`). **`[IMPLEMENTED]`**
 2. **Surrounding-Window Context Modeling:** Fine-tuned `modernbert-academic` evaluates surrounding 3-sentence paragraph windows ($s_{i-1}, s_i, s_{i+1}$) truncated to 512 tokens (`src/highlighter.py:170`). **`[IMPLEMENTED]`**
-3. **Full 8,192-Token Un-truncated Document Context:** Single-pass evaluation of full multi-page manuscripts up to 8,192 tokens natively. **`[NOT IMPLEMENTED — inference currently truncates to 512 tokens on a 3-sentence sliding window]`**
-4. **Adaptive Pooling & Gating:** Production inference combines models via gated max-pooling (`max(prob_rob, prob_mb)`) supplemented by hand-written regex transition indicators and low-burstiness document bonuses (`src/highlighter.py:187-197`). Benchmark studies also evaluate soft-voting Top-$k$ and Mean-pooling formulas (`results/ensemble_metrics.csv`). **`[IMPLEMENTED]`**
+3. **Full 8,192-Token Native Document Context:** Single-pass evaluation of full multi-page manuscripts up to 8,192 tokens natively (`src/long_context.py:93-184`), validated on 200 full papers in `results/long_context.csv` and `results/LONG_CONTEXT_REPORT.md` (99.50% accuracy vs 63.00% for sliding RoBERTa). **`[IMPLEMENTED]`**
+4. **Competitive Top-k & Mean Pooling:** Production inference combines models via competitive pooling (window Top-$k$ pooling and equal-weighted averaging; `src/highlighter.py:187-197`). Benchmark studies also evaluate soft-voting Top-$k$ and Mean-pooling formulas (`results/ensemble_metrics.csv`). Empirical comparison in `results/GATED_FUSION_REPORT.md` ($n=12,004$) showed learned parametric gating offers no statistically significant advantage over simple mean pooling ($p=0.068$), while window Top-$k$ pooling achieves 96.68% raw accuracy and 89.35% TPR@1%FPR ($p < 0.001$), establishing the statistical superiority and parsimony of parameter-free competitive pooling over learned gating. **`[IMPLEMENTED]`**
 5. **LaTeX Math & Reference Masking:** Automatically masks inline (`$...$`) and display math blocks (`$$...$$`, `\[...\]`) prior to sentence segmentation and extracts bibliography blocks (`src/highlighter.py:24-32`). **`[IMPLEMENTED]`**
 6. **Bibliographic CrossRef DOI Verification:** Automated reference segmentation and asynchronous CrossRef REST API querying to verify citation metadata (`src/doi_verifier.py`). **`[IMPLEMENTED]`**
 7. **Empirical Citation Hallucination Benchmark:** Formal statistical evaluation of citation hallucination detection precision and recall on a labeled benchmark dataset. **`[NOT IMPLEMENTED — feature exists in code, but no benchmark evaluation file exists in results/]`**

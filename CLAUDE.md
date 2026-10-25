@@ -11,8 +11,8 @@ This file is the official entry point and comprehensive system index for Claude 
 ### Dual-Scale Ensemble Architecture:
 - **Micro-Syntax Engine (RoBERTa):** Evaluates local sentence syntax and token distributions up to 512 tokens using fine-tuned `roberta-sentence-academic-v2`. **`[IMPLEMENTED]`**
 - **Surrounding-Window Context Engine (ModernBERT):** Evaluates surrounding 3-sentence paragraph windows ($s_{i-1}, s_i, s_{i+1}$) truncated to 512 tokens using fine-tuned `modernbert-academic` (`src/highlighter.py:170`). **`[IMPLEMENTED]`**
-- **Full 8,192-Token Document Processing:** Single-pass evaluation of full multi-page documents up to 8,192 tokens natively. **`[NOT IMPLEMENTED — inference currently truncates to 512 tokens on a 3-sentence window]`**
-- **Adaptive Pooling & Gating:** Production inference applies gated max-pooling (`max(prob_rob, prob_mb)`) with heuristic transition regex indicators and document-level burstiness bonuses (`src/highlighter.py:187-197`). Empirical metrics for Raw, Smoothed, Top-$k$, and Mean-Pool configurations are documented programmatically in [results/EVAL_SUMMARY.md](results/EVAL_SUMMARY.md) and [results/ensemble_metrics.csv](results/ensemble_metrics.csv). **`[IMPLEMENTED]`**
+- **Full 8,192-Token Document Processing:** Single-pass evaluation of full multi-page manuscripts up to 8,192 tokens natively (`src/long_context.py:93-184`), validated on 200 full papers in `results/long_context.csv` and `results/LONG_CONTEXT_REPORT.md` (99.50% accuracy vs 63.00% sliding RoBERTa). **`[IMPLEMENTED]`**
+- **Competitive Top-k & Mean Pooling:** Production inference applies competitive pooling (window Top-$k$ pooling and equal-weighted averaging; `src/highlighter.py:187-197`). Rigorous empirical comparison in `results/GATED_FUSION_REPORT.md` ($n=12,004$) showed that learned parametric gating provides no statistically significant benefit over simple mean pooling ($p=0.068$), while window Top-$k$ pooling yields statistically superior raw accuracy (96.68% vs 95.48% for learned fusion, $p < 0.001$). Terminology updated to competitive pooling; 'gating' dropped. **`[IMPLEMENTED]`**
 - **Reference Guardrail:** Automated bibliographic reference segmentation and CrossRef API DOI lookup (`src/doi_verifier.py`). **`[IMPLEMENTED; empirical hallucination benchmark NOT IMPLEMENTED]`**
 
 ---
@@ -104,7 +104,7 @@ AI_Text_Checker/
 - **Rules & Heuristics:**
   - `HUMANIZER_TRANSITIONS_REGEX`: Matches 54 formal transition markers.
   - `is_low_burstiness`: Document-level sentence length variance check ($\sigma < 4.0$).
-  - Adaptive Non-Linear Pooling: Combines ModernBERT and RoBERTa via gated max-pooling.
+  - Competitive Non-Linear Pooling: Combines ModernBERT and RoBERTa via competitive window Top-$k$ and mean pooling; learned gating dropped following empirical validation in `results/GATED_FUSION_REPORT.md`.
 
 ### 2. Document Parsing (`src/document_parser.py`)
 - Handles `.pdf`, `.docx`, and legacy `.doc` (via background LibreOffice conversion). Raw text inputs are ingested directly via the web UI and REST API.

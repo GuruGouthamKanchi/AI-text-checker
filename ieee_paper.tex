@@ -40,7 +40,7 @@ Detecting AI-generated text in scholarly literature requires capturing discourse
 \end{abstract}
 
 \begin{IEEEkeywords}
-AI-Generated Text Detection, ModernBERT, RoBERTa, Multi-Scale Ensembles, Gated Pooling, Adversarial Training.
+AI-Generated Text Detection, ModernBERT, RoBERTa, Multi-Scale Ensembles, Competitive Pooling, Adversarial Training.
 \end{IEEEkeywords}
 
 \section{INTRODUCTION}
@@ -50,7 +50,7 @@ Developing effective, scalable AI-generated text detectors for academic manuscri
 
 Existing AI text detection tools exhibit an extreme trade-off: macro-context models evaluate global document flow but fail to detect isolated AI-generated sentence insertions, whereas micro-sentence classifiers identify localized synthetic sentences but trigger excessive false alarms on technical jargon. Furthermore, fixed static detectors quickly become obsolete as new commercial humanizers emerge. This paper is motivated by the critical need for a unified multi-scale architecture that pairs long-context macro evaluation with fine-grained sentence-level inspection, reinforced by an active closed-loop retraining loop.
 
-To address these challenges, this paper presents a Multi-Scale Hybrid Ensemble framework. Our primary technical contributions are summarized as follows. We design a Dual-Branch Hybrid Ensemble Architecture pairing ModernBERT (evaluating surrounding 3-sentence sliding window context up to 512 tokens) with RoBERTa's 512-token micro-sentence classifier. We formulate a non-linear Gated Max-Pooling Aggregation Layer that dynamically weights macro-context representations against sentence-level probability spikes. We integrate interpretable Stylometric Entropy Gauges featuring 100-word window Mean Segmental Type-Token Ratio (MSTTR) and sentence length burstiness Coefficient of Variation ($CV_L$) as diagnostic explainability aids. We implement an interactive Closed-Loop Adversarial Retraining Workbench utilizing contrastive embedding alignment ($\mathcal{L}_{\text{contrastive}}$) to evaluate defense against evolving paraphraser tools, while measuring human specificity trade-offs. Finally, we conduct extensive empirical evaluations across 12,004 topic-held-out test sentences, demonstrating that our framework achieves 98.08\% macro-F1 (Top-K pool) and 98.59\% (Mean-pool) with post-hoc calibration reducing Expected Calibration Error by over 90\%.
+To address these challenges, this paper presents a Multi-Scale Hybrid Ensemble framework. Our primary technical contributions are summarized as follows. We design a Dual-Branch Hybrid Ensemble Architecture pairing ModernBERT (evaluating surrounding 3-sentence sliding window context up to 512 tokens) with RoBERTa's 512-token micro-sentence classifier. We formulate an empirical Competitive Max-Pooling and Top-$K$ Aggregation Layer that effectively fuses macro-context representations with sentence-level probability spikes. We integrate interpretable Stylometric Entropy Gauges featuring 100-word window Mean Segmental Type-Token Ratio (MSTTR) and sentence length burstiness Coefficient of Variation ($CV_L$) as diagnostic explainability aids. We implement an interactive Closed-Loop Adversarial Retraining Workbench utilizing contrastive embedding alignment ($\mathcal{L}_{\text{contrastive}}$) to evaluate defense against evolving paraphraser tools, while measuring human specificity trade-offs. Finally, we conduct extensive empirical evaluations across 12,004 topic-held-out test sentences, demonstrating that our framework achieves 98.08\% macro-F1 (Top-K pool) and 98.59\% (Mean-pool) with post-hoc calibration reducing Expected Calibration Error by over 90\%.
 
 \section{LITERATURE SURVEY}
 AI-generated text detection has transitioned through three major technological paradigms: token probability feature fusion, long-context sequence modeling, and adversarial defense frameworks. Early machine-generated text detection relied on token-level probability analysis, perplexity divergence, and log-rank entropy metrics computed from open-source language models. Gupta and Gupta \cite{gupta2024navigating} surveyed detection paradigms and academic integrity in IEEE Computer, outlining the systemic challenges of identifying machine-generated text in scientific research. Sharimbayev et al. \cite{sharimbayev2026aigenerated} reviewed contemporary zero-shot and neural detection paradigms across modern LLMs in IEEE ICECCO. Kalra et al. \cite{kalra2024detection} presented an extensive empirical evaluation in IEEE AIC demonstrating feature degradation across single-scale classifiers on scholarly corpora.
@@ -64,7 +64,7 @@ Adversarial evasion attacks present the most severe operational threat to AI tex
 \subsection{2.1 Research Gap}
 Despite significant advances in neural sequence classification, existing literature exhibits three critical research gaps:
 \begin{itemize}
-    \item Existing frameworks operate either strictly at the macro document level (8k tokens) or strictly at the sentence chunk level (512 tokens). No current architecture dynamically fuses long-range discourse trees with localized sentence-level anomaly spikes via gated max-pooling.
+    \item Existing frameworks operate either strictly at the macro document level (8k tokens) or strictly at the sentence chunk level (512 tokens). Few architectures empirically evaluate whether complex learned gating networks provide meaningful statistical improvements over parsimonious parameter-free pooling mechanisms.
     \item Pure neural detectors function as uncalibrated black-box models, lacking verifiable stylometric gauges (such as length-invariant 100-word MSTTR and burstiness $CV_L$) to explain predictions to human academic editors.
     \item Operational detectors deploy static pretrained weights that quickly lose efficacy when exposed to novel zero-shot commercial humanizer tools without an automated closed-loop fine-tuning pipeline.
 \end{itemize}
@@ -95,7 +95,7 @@ He et al. \cite{he2024mgtbench} & ACM CCS 2024 & Multi-Model & Representation Sh
 \section{PROPOSED METHODOLOGY}
 
 \subsection{3.1 System Overview}
-The proposed Multi-Scale Hybrid Ensemble framework processes academic text through a dual-branch sentence and contextual evaluation pipeline. Fig.~1 illustrates the architecture, which integrates ModernBERT (sliding 3-sentence context window, truncated to 512 tokens), RoBERTa (individual sentence syntax branch, 512 tokens), adaptive max-pooling and heuristic gating, stylometric gauges, and the closed-loop retraining workbench.
+The proposed Multi-Scale Hybrid Ensemble framework processes academic text through a dual-branch sentence and contextual evaluation pipeline. Fig.~1 illustrates the architecture, which integrates ModernBERT (sliding 3-sentence context window, truncated to 512 tokens), RoBERTa (individual sentence syntax branch, 512 tokens), adaptive competitive pooling, stylometric gauges, and the closed-loop retraining workbench.
 
 \begin{figure}[htbp]
 \centerline{\fbox{\parbox{0.45\textwidth}{\centering \vspace{0.8cm} \textbf{[FIGURE 1: System Overview Architecture Blueprint]}\\\small (Refer to \texttt{diagrams\_and\_visualizations\_guide.md} for TikZ code \& vector spec) \vspace{0.8cm}}}}
@@ -129,18 +129,20 @@ At the sentence level, the base confidence score is computed via competitive max
 \begin{equation}
     P_{\text{base}}(s_i) = \max\left( P_{\text{RoBERTa}}(s_i),\, P_{\text{MB}}(w_i) \right)
 \end{equation}
-A calibrated heuristic gating logic adjusts $P(s_i)$ based on stylometric indicators: if humanizer transition artifacts are matched, $P(s_i) = \min(0.99, \max(P_{\text{base}}, 0.65) + 0.15)$; if document sentence length burstiness is low ($\sigma_L < 4.0$ with $N \ge 5$) and $P_{\text{base}} \ge 0.35$, $P(s_i) = \min(0.99, P_{\text{base}} + 0.10)$; if either model exceeds the activation threshold 0.38, $P(s_i) = P_{\text{base}}$; otherwise, soft averaging $0.50 P_{\text{MB}} + 0.50 P_{\text{RoBERTa}}$ is applied.
+A calibrated heuristic logic adjusts $P(s_i)$ based on stylometric indicators: if humanizer transition artifacts are matched, $P(s_i) = \min(0.99, \max(P_{\text{base}}, 0.65) + 0.15)$; if document sentence length burstiness is low ($\sigma_L < 4.0$ with $N \ge 5$) and $P_{\text{base}} \ge 0.35$, $P(s_i) = \min(0.99, P_{\text{base}} + 0.10)$; if either model exceeds the activation threshold 0.38, $P(s_i) = P_{\text{base}}$; otherwise, soft averaging $0.50 P_{\text{MB}} + 0.50 P_{\text{RoBERTa}}$ is applied.
+
+To determine whether a learned parametric gating network could outperform parameter-free pooling, we implemented a 13-feature logistic gating model trained with topic-grouped cross-validation on validation data (\texttt{models/fusion.json}). When evaluated on held-out test data ($n=12,004$), learned gating (95.48\% accuracy, 3.54\% FPR) achieved no statistically significant improvement over simple equal-weighted mean pooling (95.06\% accuracy, $p = 0.068$), and was statistically significantly outperformed by window Top-$k$ pooling (96.68\% accuracy, $p < 0.001$). Guided by Occam's razor and empirical validation, we discard learned gating and adopt competitive pooling as the primary aggregation mechanism.
 
 For document-level evaluation, the system pools individual sentence scores across the document. We evaluate both Top-$K$ max pooling ($K=3$) and mean pooling:
 \begin{equation}
     P_{\text{doc}} = \frac{1}{K} \sum_{k=1}^K P_{(k)}
 \end{equation}
-where $P_{(k)}$ represents the $k$-th highest sentence score in the document. Classification decisions are calibrated against thresholds optimized strictly on validation data. Fig.~2 illustrates the max-pooling fusion mechanism. Algorithm~1 details the inference pipeline.
+where $P_{(k)}$ represents the $k$-th highest sentence score in the document. Classification decisions are calibrated against thresholds optimized strictly on validation data. Fig.~2 illustrates the competitive max-pooling fusion mechanism. Algorithm~1 details the inference pipeline.
 
 \begin{figure}[htbp]
-\centerline{\fbox{\parbox{0.45\textwidth}{\centering \vspace{0.8cm} \textbf{[FIGURE 2: Soft-Voting Gated Max-Pooling Mechanism]}\\\small (Refer to \texttt{diagrams\_and\_visualizations\_guide.md} for TikZ vector schematic) \vspace{0.8cm}}}}
-\caption{Soft-Voting Gated Max-Pooling Fusion Mechanism.}
-\label{fig_gated_pooling}
+\centerline{\fbox{\parbox{0.45\textwidth}{\centering \vspace{0.8cm} \textbf{[FIGURE 2: Soft-Voting Competitive Max-Pooling Mechanism]}\\\small (Refer to \texttt{diagrams\_and\_visualizations\_guide.md} for TikZ vector schematic) \vspace{0.8cm}}}}
+\caption{Soft-Voting Competitive Max-Pooling Fusion Mechanism.}
+\label{fig_competitive_pooling}
 \end{figure}
 
 \subsection{3.4 Stylometric Entropy and Metric Gauges}
