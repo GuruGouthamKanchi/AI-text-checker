@@ -254,9 +254,9 @@ def score_document_3sent_pipeline(
     if not mgr.loaded:
         mgr.load_models()
 
-    from src.highlighter import split_into_sentences, run_predictions
+    from src.highlighter import segment_sentences, run_predictions
 
-    sentences = split_into_sentences(text)
+    sentences = segment_sentences(text)
     if not sentences:
         return {"score": 0.02, "num_sentences": 0, "sentence_scores": []}
 
