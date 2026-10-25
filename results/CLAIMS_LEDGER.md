@@ -9,18 +9,18 @@
 
 | Status | Count | Description |
 |---|:---:|---|
-| **`TRUE`** | 80 | Code implements the feature and evidence in `results/` directly supports the claim. |
+| **`TRUE`** | 82 | Code implements the feature and evidence in `results/` directly supports the claim. |
 | **`TRUE_BUT_QUALIFY`** | 0 | True statement but missing crucial caveats (e.g. human FPR inflation, anecdotal sample size $n < 30$, or slight threshold mismatch across scripts). |
 | **`UNTESTED`** | 7 | Code feature exists in `src/`, but zero empirical evaluation or benchmark file exists under `results/`. |
 | **`UNSUPPORTED`** | 0 | Claim is made without any supporting data file or evidence artifact in `results/`. |
 | **`FALSE`** | 0 | Statement is directly contradicted by actual code implementation or empirical findings in `results/`. |
-| **Total Claims Audited** | **95** | Complete inventory across repository. |
+| **Total Claims Audited** | **97** | Complete inventory across repository. |
 
 ### Summary Counts by Resolution Action
 
 | Resolution Action | Count | Action Required |
 |---|:---:|---|
-| **`KEEP`** | 41 | Keep as-is; statement is accurate, implemented, and fully evidenced. |
+| **`KEEP`** | 43 | Keep as-is; statement is accurate, implemented, and fully evidenced. |
 | **`FIX_TEXT`** | 0 | Rewrite claim text to match actual code capabilities and verified empirical values. |
 | **`BUILD_AND_TEST`** | 7 | Build an empirical benchmark under `eval/` and log evidence under `results/` to validate the feature. |
 | **`REMOVE`** | 0 | Remove completely; statement is fabricated, misleading, or mathematically invalid. |
@@ -29,7 +29,7 @@
 
 | Claim Type | Count |
 |---|:---:|
-| `performance_number` | 34 |
+| `performance_number` | 36 |
 | `architecture` | 20 |
 | `capability` | 20 |
 | `dataset_size` | 9 |
@@ -75,9 +75,9 @@ The following 20 items represent the most severe violations of Project Rules, in
 ### 5. [CLM-018] README.md:82-90 — `TRUE` -> `RESOLVED`
 - **Claim:** "Table 3 Out-of-Distribution Generalization across LLM Generators: ChatGPT (n=500, 100%), Claude (n=1279, 99.61%), Gemini (n=1083, 99.72%), GPT-5 (n=1154, 97.14%), Llama (n=200, 100%), Mistral (n=89, 98.88%), Cohere Command (n=27, 100%)."
 - **Claim Type:** `performance_number`
-- **Code Location:** `eval/run_eval_extensions.py`
-- **Evidence Reference:** `results/ood_generator.csv:2-12` (Value: `Exact match for listed generators`)
-- **Audit Finding & Failure Mode:** Renamed table to Per-Generator Breakdown (In-Distribution Test Split) and included all generators with n, including Other_AI (n=186, 72.58%).
+- **Code Location:** `eval/run_ood_leave_one_out.py`
+- **Evidence Reference:** `results/ood_leave_one_out.csv:2-7, results/OOD_REPORT.md` (Value: `Claude: 90.23% rec (ALLOWED), Gemini: 91.17% rec (ALLOWED); GPT-5: 39.46% rec (LIMITATION), GPT-OSS-120B: 74.58% rec (LIMITATION), ChatGPT: 18.73% rec (LIMITATION), Llama: 76.33% rec, 17.77% FPR (LIMITATION)`)
+- **Audit Finding & Failure Mode:** Leave-One-Generator-Out (LOGO) retraining (3 seeds from roberta-base, val-tuned threshold) evaluated in results/ood_leave_one_out.csv. Generalization claim ALLOWED only for Claude (90.23% rec) and Gemini (91.17% rec). GPT-5, GPT-OSS-120B, ChatGPT, and Llama fail stated tolerances and are designated explicit LIMITATIONS.
 
 ### 6. [CLM-022] CLAUDE.md:13 — `TRUE` -> `KEEP`
 - **Claim:** "Macro-Context Engine (ModernBERT): Captures long-range document cohesion, discourse transitions, and semantic consistency up to 8,192 tokens (models/modernbert-academic)."
@@ -152,9 +152,9 @@ The following 20 items represent the most severe violations of Project Rules, in
 ### 16. [CLM-066] ieee_paper.tex:227 — `REMOVED` -> `RESOLVED`
 - **Claim:** "Evaluated across held-out academic disciplines (such as Law and Philosophy), the multi-scale hybrid ensemble maintained a 97.4% F1 score"
 - **Claim Type:** `performance_number`
-- **Code Location:** `None`
-- **Evidence Reference:** `results/ood_domain.csv` (Value: `Academic, Essay, QA only`)
-- **Audit Finding & Failure Mode:** Removed Law and Philosophy domain claims; reported Academic, Essay, and QA domains from results/ood_domain.csv.
+- **Code Location:** `eval/run_ood_leave_one_out.py`
+- **Evidence Reference:** `results/ood_leave_one_out.csv:8-10, results/OOD_REPORT.md` (Value: `Academic: 76.10% FPR (+64.40% delta, LIMITATION); Essay: 65.20% rec (-14.95% delta, LIMITATION); QA: 28.64% rec (-46.12% delta, LIMITATION)`)
+- **Audit Finding & Failure Mode:** Removed Law/Philosophy claims. Leave-One-Domain-Out (LODO) 3-seed retraining proves cross-domain transfer fails across all domains: holding out academic inflates human academic FPR to 76.10%; holding out essay drops recall to 65.20%; holding out QA drops recall to 28.64%. All held-out domains are designated explicit LIMITATIONS.
 
 ### 17. [CLM-068] frontend/src/app/page.tsx:156-159 — `REMOVED` -> `RESOLVED`
 - **Claim:** "multi_model_consensus: { modernbert_score, deberta_v3_score, roberta_v2_score, consensus: '98.4% High Agreement' }"

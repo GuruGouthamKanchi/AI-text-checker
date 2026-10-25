@@ -87,7 +87,27 @@ All metrics are evaluated exclusively on `data/processed/test.parquet` (12,004 t
 
 *Note: Per Rule 8, sample sizes below 30 are designated anecdotal. Detection recall on the mixed/unspecified open LLM category (`Other_AI`) drops to 72.58%.*
 
-### 4. Adversarial Attack Evasion & Retraining Recovery
+### 4. True Out-of-Distribution (OOD) Generalization (Leave-One-Out)
+
+To rigorously test generalization to unseen AI generators and domains without data leakage, models were retrained from `roberta-base` across 3 seeds (`[42, 43, 44]`) with all samples from the target group completely held out from training, and decision thresholds selected strictly on the remaining training validation split (see [`results/ood_leave_one_out.csv`](file:///results/ood_leave_one_out.csv) and [`results/OOD_REPORT.md`](file:///results/OOD_REPORT.md)).
+
+**Generalization Claim Standard:** Claims of generalizability are permitted only if held-out recall drops by $\le 10.0\%$ (or remains $\ge 85.0\%$) and FPR inflation remains $\le +5.0\%$ (or FPR $\le 10.0\%$). All other groups are documented as **explicit limitations**.
+
+| Target Group | Group Type | $n_{\text{AI}}$ | $n_{\text{Human}}$ | Held-out Recall (95% CI) | In-Dist Recall | $\Delta\text{Rec}$ | Held-out FPR (95% CI) | In-Dist FPR | $\Delta\text{FPR}$ | Generalization Verdict |
+|---|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **Claude** | Generator | 1,279 | 6,163 | **90.23%** ([88.84%, 91.61%]) | 88.30% | +1.93% | **15.54%** ([13.54%, 17.55%]) | 12.20% | +3.35% | `ALLOWED` (Generalizes) |
+| **Gemini** | Generator | 1,083 | 6,163 | **91.17%** ([90.85%, 91.49%]) | 91.81% | -0.65% | **14.59%** ([11.09%, 18.09%]) | 12.20% | +2.40% | `ALLOWED` (Generalizes) |
+| **GPT-5** | Generator | 1,154 | 6,163 | **39.46%** ([33.91%, 45.01%]) | 50.78% | -11.32% | **10.41%** ([9.38%, 11.43%]) | 12.20% | -1.79% | `LIMITATION` (Recall drops) |
+| **GPT-OSS-120B** | Generator | 1,062 | 6,163 | **74.58%** ([69.31%, 79.84%]) | 85.37% | -10.80% | **13.92%** ([9.05%, 18.78%]) | 12.20% | +1.72% | `LIMITATION` (Fails 85% threshold) |
+| **ChatGPT** | Generator | 500 | 6,163 | **18.73%** ([4.91%, 32.56%]) | 74.87% | -56.13% | **12.50%** ([9.95%, 15.06%]) | 12.20% | +0.31% | `LIMITATION` (Severe recall drop) |
+| **Llama** | Generator | 200 | 6,163 | **76.33%** ([64.77%, 87.89%]) | 73.67% | +2.67% | **17.77%** ([15.55%, 19.98%]) | 12.20% | +5.57% | `LIMITATION` (FPR inflates > 5%) |
+| **Academic** | Domain | 4,466 | 4,749 | **94.15%** ([90.65%, 97.64%]) | 79.21% | +14.94% | **76.10%** ([65.76%, 86.44%]) | 11.70% | +64.40% | `LIMITATION` (Severe FPR surge) |
+| **Essay** | Domain | 885 | 1,006 | **65.20%** ([54.14%, 76.25%]) | 80.15% | -14.95% | **9.21%** ([7.02%, 11.41%]) | 17.56% | -8.35% | `LIMITATION` (Recall drops > 10%) |
+| **QA** | Domain | 490 | 408 | **28.64%** ([14.60%, 42.68%]) | 74.76% | -46.12% | **5.15%** ([0.48%, 9.81%]) | 4.74% | +0.41% | `LIMITATION` (Severe recall drop) |
+
+*Key Findings: Generalization to unseen generators is empirically supported ONLY for Claude and Gemini. Transfer fails for GPT-5, GPT-OSS-120B, ChatGPT, and Llama. Crucially, all held-out domains fail cross-domain transfer—excluding academic text from training causes human academic false positives to surge to 76.10% (n=4,749), proving that domain-specific supervision is indispensable.*
+
+### 5. Adversarial Attack Evasion & Retraining Recovery
 
 | Evaluation Setting | Attack Family | Sample Size ($n$) | Baseline Recall / FPR | Contrastive (λ=0.2) Recall / FPR | Net Shift |
 |---|---|:---:|:---:|:---:|:---:|
@@ -102,7 +122,7 @@ All metrics are evaluated exclusively on `data/processed/test.parquet` (12,004 t
 
 *Important Trade-off: While closed-loop adversarial retraining with contrastive loss regularizes representation invariance and recovers +10.83% recall on held-out heavy rewrites, it simultaneously inflates the False Positive Rate on clean human text from 12.00% to 32.67% (± 3.30%). Commercial paraphraser evaluations (QuillBot, Undetectable.ai) are strictly anecdotal ($n=2$). Undetectable.ai achieved 0.0% detection recall across all rounds.*
 
-### 5. Measured Hardware Inference Latency
+### 6. Measured Hardware Inference Latency
 
 - **Hardware Environment:** Windows 10, RTX 2050 4GB (Driver 592.82, CUDA 13.1) (PyTorch Device: `CPU`)
 - **Single-Sentence Inference:** 36.59 ms ± 2.25 ms (27.3 sentences/sec)

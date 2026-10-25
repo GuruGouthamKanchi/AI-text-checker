@@ -55,10 +55,9 @@ AI_Text_Checker/
 ├── eval/                          <- Comprehensive Empirical Evaluation Suite
 │   ├── run_ensemble_eval.py       # Primary detector evaluation runner on test.parquet
 │   ├── run_eval_extensions.py     # 1,000-resample bootstrap CIs, paired tests, calibration
-│   ├── run_ensemble_eval.ipynb    # Google Colab notebook for detector evaluation
-│   ├── run_robustness_colab.ipynb # Google Colab notebook for adversarial retraining
-│   ├── run_ood_retraining_colab.py# Colab Leave-One-Out OOD retraining script
-│   ├── run_ood_retraining.ipynb   # Colab notebook for Leave-One-Out OOD experiments
+│   ├── run_ood_leave_one_out.py   # Leave-One-Generator-Out and Leave-One-Domain-Out OOD suite
+│   ├── run_ood_leave_one_out_colab.py # Google Colab unconstrained OOD retraining script
+│   ├── run_ood_leave_one_out.ipynb# Google Colab interactive notebook for OOD suite
 │   ├── MIXED_DOCS.md              # Synthetic mixed-authorship benchmark methodology
 │   ├── non_native/                # Loader and README for verified non-native writing samples
 │   └── long_docs/                 # arXiv paper downloader and 8k-token prompt templates
@@ -125,6 +124,11 @@ AI_Text_Checker/
 - Evaluates 4 attack families: T5 Paraphrase, LLM Light Rewrite, LLM Heavy Rewrite (Held-out), and Rule-based.
 - Retraining loop across 3 random seeds (42, 43, 44) sweeping contrastive invariance weight $\lambda \in \{0.0, 0.1, 0.2, 0.5\}$.
 
+### 6. True Out-of-Distribution Generalization (`eval/run_ood_leave_one_out.py`)
+- Leave-One-Generator-Out (LOGO) across 6 models and Leave-One-Domain-Out (LODO) across 3 domains.
+- Retrains `roberta-base` across 3 seeds (`[42, 43, 44]`), thresholds tuned strictly on remaining validation groups.
+- Generalization permitted only for Claude (90.23% rec) and Gemini (91.17% rec). All other generators (GPT-5, GPT-OSS-120B, ChatGPT, Llama) and all cross-domain transfers (academic 76.10% FPR, essay 65.20% rec, qa 28.64% rec) are documented as explicit **LIMITATIONS** in `results/ood_leave_one_out.csv` and `results/OOD_REPORT.md`.
+
 ---
 
 ## 4. Execution Cheat Sheet
@@ -135,6 +139,7 @@ AI_Text_Checker/
 | **Start Frontend Dashboard** | `cd frontend && npm run dev` |
 | **Run Detector Evaluation** | `python eval/run_eval_extensions.py` |
 | **Run Adversarial Retraining** | `python robustness_eval/run_robustness_study.py` |
+| **Run Leave-One-Out OOD Suite** | `python eval/run_ood_leave_one_out.py` |
 | **Run Preprocessing Pipeline** | `python src/prepare_dataset.py` |
 
 ---
