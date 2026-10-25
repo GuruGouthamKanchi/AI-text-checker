@@ -123,7 +123,11 @@ def score_document_full_modernbert_8k(
             inputs = {k: v.to(device) for k, v in inputs.items()}
             
             try:
-                logits = mgr.mb_model(**inputs).logits
+                if device == "cuda":
+                    with torch.autocast("cuda", dtype=torch.float16):
+                        logits = mgr.mb_model(**inputs).logits
+                else:
+                    logits = mgr.mb_model(**inputs).logits
             except torch.cuda.OutOfMemoryError:
                 # Rule 10: Windows 10 RTX 2050 (4GB) safety fallback to CPU if 8k attention spikes VRAM
                 print("[LongContext] CUDA OOM during 8k attention forward pass; falling back to CPU.")
@@ -133,7 +137,7 @@ def score_document_full_modernbert_8k(
                 logits = mgr.mb_model(**inputs_cpu).logits
                 mgr.mb_model.to(device)
             
-            prob_ai = float(torch.softmax(logits, dim=-1).cpu().numpy()[0][1])
+            prob_ai = float(torch.softmax(logits.float(), dim=-1).cpu().numpy()[0][1])
 
         return {
             "score": prob_ai,
@@ -161,7 +165,11 @@ def score_document_full_modernbert_8k(
             inputs = {"input_ids": input_tensor.to(mgr.device), "attention_mask": attention_mask.to(mgr.device)}
 
             try:
-                logits = mgr.mb_model(**inputs).logits
+                if mgr.device == "cuda":
+                    with torch.autocast("cuda", dtype=torch.float16):
+                        logits = mgr.mb_model(**inputs).logits
+                else:
+                    logits = mgr.mb_model(**inputs).logits
             except torch.cuda.OutOfMemoryError:
                 torch.cuda.empty_cache()
                 inputs_cpu = {k: v.to("cpu") for k, v in inputs.items()}
@@ -169,7 +177,7 @@ def score_document_full_modernbert_8k(
                 logits = mgr.mb_model(**inputs_cpu).logits
                 mgr.mb_model.to(mgr.device)
 
-            prob = float(torch.softmax(logits, dim=-1).cpu().numpy()[0][1])
+            prob = float(torch.softmax(logits.float(), dim=-1).cpu().numpy()[0][1])
             chunk_scores.append(prob)
 
     # Document-level aggregation across 8k chunks: top-1 max pool and mean pool
@@ -218,20 +226,33 @@ def score_document_sliding_roberta_512(
             "num_chunks": 1
         }
 
-    chunk_scores = []
+    chunk_list = []
+    for start_idx in range(0, total_tokens, stride):
+        c_ids = all_input_ids[start_idx : start_idx + max_length]
+        if len(c_ids) < 32 and chunk_list:
+            break
+        chunk_list.append(c_ids)
+
+    if not chunk_list:
+        return {"score": 0.02, "top_k_score": 0.02, "chunk_scores": [], "num_tokens": total_tokens, "num_chunks": 0}
+
+    max_c_len = max(len(c) for c in chunk_list)
+    pad_id = mgr.rob_tokenizer.pad_token_id or 1
+    padded_chunks = [c + [pad_id] * (max_c_len - len(c)) for c in chunk_list]
+
     with torch.inference_mode():
-        for start_idx in range(0, total_tokens, stride):
-            chunk_ids = all_input_ids[start_idx : start_idx + max_length]
-            if len(chunk_ids) < 32 and chunk_scores:
-                break
-            
-            input_tensor = torch.tensor([chunk_ids], dtype=torch.long).to(mgr.device)
-            attention_mask = torch.ones_like(input_tensor).to(mgr.device)
-            inputs = {"input_ids": input_tensor, "attention_mask": attention_mask}
-            
+        input_tensor = torch.tensor(padded_chunks, dtype=torch.long).to(mgr.device)
+        attention_mask = (input_tensor != pad_id).long().to(mgr.device)
+        inputs = {"input_ids": input_tensor, "attention_mask": attention_mask}
+
+        if mgr.device == "cuda":
+            with torch.autocast("cuda", dtype=torch.float16):
+                logits = mgr.rob_model(**inputs).logits
+        else:
             logits = mgr.rob_model(**inputs).logits
-            prob = float(torch.softmax(logits, dim=-1).cpu().numpy()[0][1])
-            chunk_scores.append(prob)
+
+        probs = torch.softmax(logits.float(), dim=-1)[:, 1].cpu().numpy()
+        chunk_scores = [float(p) for p in probs]
 
     # Standard sliding window aggregation: mean and top-k pool
     mean_score = float(np.mean(chunk_scores))
