@@ -1,0 +1,771 @@
+BrickWright: Agentic Creation of Physically Feasible Brick Builds
+Ava Pun1
+Kevin Dai1
+Sally Chen1
+Maxwell Jones1
+Ruixuan Liu1
+Kangle Deng2
+Changliu Liu1
+Maneesh Agrawala3
+Deva Ramanan1
+Jun-Yan Zhu1
+1Carnegie Mellon University
+2Independent Researcher
+3Stanford University
+“A lighthouse besieged by a sea serpent.”
+(a) Physically feasible brick build creation
+Scenes and large-scale builds
+Articulated builds
+User
+“A poseable crab…”
+         Write generation code 
+import bricklayer 
+def create_build(): … 
+def run_tests(): …
+Image conditions
+        Compile 
+& run tests
+Checks 
+pass
+Checks 
+fail
+Inspect results & revise
+(b) Improving builds created by off-the-shelf agents
+Colliding
+Colliding
+Colliding
+Colliding
+Valid
+Valid
+Valid
+Valid
+Codex/Claude Code
+BrickWright
+GPT-6 
+Astra
+GPT-6.1 
+Sol
+GPT-6 
+Luna
+Claude 
+Haiku 
+5.5
+“…white and black LEGO spaceship with a blue tinted canopy…”
+✓Real LEGO© parts 
+✓No collisions 
+✓No floating parts 
+✓Connected
+Assembly sequence
+“Hong Kong’s Victoria Harbour…” 
+15,067 parts
+Figure 1. BrickWright overview. BrickWright instructs pre-trained LLM agents to generate physically feasible brick builds by writing code
+using a Python SDK, BrickLayer, in a plan-execute-validate loop utilizing BrickLayer’s physical validation tools (a). BrickWright accepts
+text or image inputs and can produce articulated and large-scale builds, all physically valid. Agents equipped with BrickWright produce
+higher-quality builds with fewer physical violations (b). Red outlines in insets indicate mesh intersections.
+Abstract
+Frontier coding agents are becoming increasingly adept at
+3D modeling. Yet, they still face challenges when building
+objects meant to be assembled in the physical world, often
+creating invalid assemblies with floating, colliding, or dis-
+connected parts. We argue that providing agents with tools
+for assembling builds and verifying their physical feasibility
+is sufficient for them to produce physically valid assemblies
+that still adhere to input prompts. Focusing on the domain
+of LEGO® brick builds, we present BrickWright, a frame-
+work for generating physically feasible brick builds from
+text or image prompts using pre-trained agents, where a
+build is physically feasible if it uses only real parts, has
+no colliding or floating parts, and forms a connected struc-
+ture if possible. BrickWright guides agents to create builds
+by writing code with BrickLayer, a Python toolkit with two
+main components: an ergonomic brick assembly API that
+halves inference cost compared to working in raw LDraw,
+and a validator that provides feedback on physical feasi-
+bility. Whereas baseline agents achieve physical validity
+rates ranging from only 9% (GPT-6 Luna) to 69% (GPT-6
+Astra), BrickWright-guided agents achieve 100% validity on
+a sample of 512 prompts, while improving prompt adher-
+ence for lightweight agents and maintaining it for stronger
+agents. Additionally, they outperform specialized models on
+the text-to-brick task. Code is available on our project page:
+avalovelace1.github.io/brickwright.
+1. Introduction
+Large language model (LLM) agents are becoming increas-
+ingly adept at 3D modeling. Without additional fine-tuning,
+commercially available agents can successfully produce ar-
+ticulated objects [45, 59], scenes [52], and constructive solid
+geometry models [27]. However, they still face challenges
+1
+arXiv:2610.31651v1  [cs.CV]  22 Oct 2026
+
+
+Colliding
+Colliding
+Floating
+Figure 2. Physical violations in builds by Codex (GPT-6 Astra,
+high reasoning). Red outlines in insets show mesh intersections.
+when building objects for the physical world. We focus on
+the task of creating multi-part assemblies: real-world objects
+made from a set of prefabricated parts joined by fixed con-
+nectors, such as LEGO® builds. Multi-part assemblies must
+obey multiple constraints: all parts must be drawn from a
+preset library, parts must not collide or float, and the joined
+parts typically form a single connected component.
+We argue that designing a toolkit for multi-part assembly
+creation is sufficient to enable agents to create physically
+valid builds. This toolkit should include (1) an assembly API,
+which provides an ergonomic programmatic interface for 3D
+creation; and (2) a validator, which provides feedback on
+a finished build’s physical validity. The need for a toolkit
+is independent of how powerful a coding agent is. We ob-
+serve that GPT-6 Astra with Codex, when asked to make
+brick builds, already writes scripts to generate and validate
+its output more than 80% of the time (Sec. D). For complex
+physical domains, this self-validation is often not enough,
+resulting in builds that do not satisfy physical constraints,
+containing colliding, floating, or disconnected parts (Fig. 2).
+Even if an agent is powerful enough to write a perfect toolkit,
+separately developing a toolkit remains important to reduce
+token usage and avoid repeated work. Existing toolkits for
+agentic 3D generation [45, 59] are usually intended for digi-
+tal asset creation; as they do not consider physical constraints,
+they cannot be repurposed as-is to create real-world objects.
+We focus on the domain of LEGO® generation as it is
+a commonly available yet complex system, consisting of
+thousands of parts that connect in dozens of ways. Our
+key insight is to merge agentic code-as-3D-models with the
+regularity of brick parts. Parts can be modeled as geometries
+with localized connectors that have programmatic rules for
+assembly (e.g., studs interlock with antistuds). From this
+perspective, we leverage the physical production rules for
+snap-fit brick builds [6] to create an ergonomic assembly API.
+Then, given an image or text prompt, our task is to generate
+a program using this API that, when compiled, produces a
+LEGO® brick build in the standard LDraw format [21]. This
+build should include a list of library part placements, and it
+must be physically feasible, having no intersecting or floating
+parts and forming a connected structure if possible. While
+there are several specialized brick generation methods [10,
+11, 19, 36, 37, 48, 50, 53], some of which consider physical
+constraints, they generally exhibit worse generalization and
+lower fidelity than commercial LLM agents on the same task.
+Hence, we wish to achieve this task agentically.
+Toward this goal, we introduce BrickLayer, a Python
+package for assembling and validating brick builds, along-
+side BrickWright, a framework that guides LLM agents
+through creating validated brick builds with BrickLayer.
+Agents equipped with BrickWright create higher-quality
+builds with fewer physical violations; on a test set of 512
+prompts, all agents—including lightweight models like
+GPT-6 Luna and Claude Haiku 5.5—achieve a 100% va-
+lidity score without a significant cost increase or drop in
+fidelity. BrickWright is especially useful for lightweight
+models: it improves Luna’s performance from 9% to 100%
+valid builds and boosts its prompt adherence at 2% the
+price of frontier models.
+BrickWright additionally out-
+performs specialized brick generation models on valid-
+ity and fidelity.
+Code is available on our project page:
+avalovelace1.github.io/brickwright.
+2. Related work
+Brick Build Generation. Early work treats brick build
+generation as an optimization problem over a target shape.
+Legolization [34] voxelizes a 3D mesh, merges voxels into
+standard bricks, and iteratively re-merges regions identi-
+fied as unstable. Subsequent work captures finer geometric
+detail through feature-aware shape approximation and non-
+rectangular bricks [57, 58], assembles bricks sequentially via
+Bayesian optimization [17], or optimizes Technic assemblies
+to match annotated sketches [49]. Retrieval-based methods
+map images to figurines assembled from prebuilt templates
+[9, 56]. These methods are limited by small brick vocabular-
+ies, explicit geometric guidance, or fixed templates.
+Learning-based methods generate brick structures directly
+from data. These approaches adapt graph generative mod-
+els [41], predict voxel representations that are assembled
+into bricks algorithmically [4, 24], learn sequential construc-
+tion policies [7], or use diffusion to predict labeled voxels
+within a single category [10]. Autoregressive methods gen-
+erate bricks conditioned on text or images. BrickGPT [37]
+fine-tunes an LLM to generate stable structures, but is re-
+stricted to eight rectangular brick types across 21 object
+categories. LEGO-Maker [11] generates builds from im-
+ages, but supports only axis-aligned orientations and two
+categories. LegoACE [50] and BrickNet [19] scale to open-
+vocabulary generation by training on large collections of
+human-designed builds. However, LegoACE learns connec-
+tivity implicitly and can produce disconnected components,
+while BrickNet represents assemblies as connector graphs
+but accumulates collisions over longer build sequences.
+Brick-Composer [30] instead approaches assembly from tar-
+get views as sequential brick selection and pose estimation,
+2
+
+
+(b) BrickWright brick build creation loop
+Tests 
+pass
+(a) BrickLayer SDK functions
+         Discover parts 
+search_parts( 
+  keywords, fields, filters 
+)
+         Assemble geometry 
+b = LegoBuild()   p = Element(ldraw_id, color) 
+b.add(p, position, rotation, relative_to, name, …) 
+b.connect(p1, p1.find_connector(…), p2.find_connector(…))
+        Input 
+User ▪ Text and/or image prompt 
+System ▪ BrickLayer documentation; 
+create-execute-validate instructions
+         Write build.py 
+import bricklayer 
+def create_build(): … 
+def run_tests(): …
+         validate() 
+Compiles, no collisions/floaters, 
+expected # components, passes 
+custom tests?
+         render() 
+Multi-view or 
+custom view
+         finalize() 
+Completed brick 
+build
+Tests 
+fail
+OK
+Not OK
+Inspect results & revise
+         Check physical feasibility 
+b.colliding_placements 
+b.floating_placements 
+b.connected_components
+        explore(snippet)   Optionally run 
+Python snippet to investigate BrickLayer API
+Figure 3. Method overview. (a) BrickLayer supports catalog discovery, compositional construction with typed connectors, and physical
+validation. (b) BrickWright prompts a pre-trained LLM agent to write and revise build.py, which contains brick build creation code
+and agent-defined tests. The validate tool runs fixed collision and floating checks alongside the agent’s tests, while the render tool
+provides views for visual inspection. The agent calls finalize once all checks pass. The agent may optionally run explore at any time
+to investigate the BrickLayer API and written brick build. Arrows summarize information flow rather than a fixed tool-call sequence.
+training a multimodal LLM on simulator-generated data and
+feedback. Other methods improve buildability through pref-
+erence optimization or reinforcement learning [36, 48]. In
+contrast, BrickWright utilizes pre-trained models to build
+arbitrary objects without task-specific training, verifies col-
+lisions and connectivity in a feedback loop, and supports
+articulation. Concurrent with our work, BrickBench [20]
+introduces a toolkit for agentic brick build creation, focusing
+on benchmarking the performance of different agents.
+Agentic 3D Generation. LLM agents have been used suc-
+cessfully to create 3D scenes. Recent works use a plan-
+execute-critique loop [15, 29] or reconstruct scenes from im-
+ages through iterative code execution and visual inspection
+[13, 52]. Other works fine-tune LLMs to reason directly over
+3D spatial inputs [44] or to generate tool-call trajectories
+[14]. These methods place objects in continuous space and
+rely on optimization or visual judgment to resolve collisions
+and floating objects. In BrickWright, explicit connector rules
+enable deterministic checks of attachment validity.
+Representing shapes as programs provides structured de-
+scriptions of geometry and part relationships [16, 39, 42].
+Separately, LLMs have been shown to reason more reliably
+when they write code and offload exact computation to an
+interpreter [8]. Building on both ideas, agents have been
+applied to modeling individual objects as code, typically
+through plan-execute-critique loops. Prior work augments
+this loop with API retrieval [32], domain-specific languages
+[45], or procedural part-based modeling [27], with some
+supporting articulation [23, 27, 45, 59]. In CAD, LLMs
+have been fine-tuned to generate parametric modeling code
+[12, 18, 47], while tool-augmented agents generate and re-
+fine parts and assemblies [1, 35, 40, 55]. Articraft [59]
+generates articulated assets using a custom SDK and a mini-
+mal harness that provides textual feedback from tools that
+probe the model code. Unlike these systems, where the agent
+generates geometry or infers inter-part relationships, Brick-
+Wright assembles fixed parts whose connectors determine
+how they attach and move.
+Physics-Aware Generation. To improve physical valid-
+ity, prior work refines shapes or layouts after generation
+[5, 25, 29, 51, 54], fine-tunes generators on simulator feed-
+back [26], or guides diffusion sampling with physical con-
+straints [33]. Geometric analysis has also been used to plan
+LEGO assembly sequences without explicit connector infor-
+mation [2]. For brick structures, stability has been assessed
+through force-based equilibrium analysis [31, 34, 37] or
+physics simulation [17, 46]. In contrast, BrickWright uses
+an executable verifier to check for collisions, floating parts,
+and connectivity, allowing a pre-trained agent to iteratively
+repair builds without task-specific training. Incorporating
+force-based stability analysis [31, 34] is a natural extension.
+3. BrickWright
+Given a natural-language or image description, our task is to
+generate a physically feasible brick build from a fixed part
+catalog. A brick build is defined as an ordered sequence
+of placements. Each placement consists of an element or a
+nested brick build, together with a rigid transformation rel-
+ative to the containing build. An element specifies a single
+part drawn from the catalog and a color. Elements expose
+typed connectors, such as studs, whose compatibility and
+relative alignment determine valid connections. A build is
+3
+
+
+valid if it uses only catalog parts and contains no colliding
+(intersecting) or floating parts. It forms a connected compo-
+nent if one can draw a path of connections between any two
+elements in the build. We define a build to be physically fea-
+sible if it is valid and contains as few connected components
+as possible. More complex feasibility considerations, such
+as ensuring a build is stable and has an executable assembly
+sequence, are left to future work. Note that although having
+a single connected component is desirable as it makes a build
+less likely to break apart in the physical world, builds with
+multiple components are still necessary in some cases: for
+example, two separate vehicles in a car chase scene.
+We introduce BrickWright (Fig. 3), a framework for gen-
+erating physically feasible brick builds using LLM agents.
+Using a lightweight harness, BrickWright guides a single
+agent to write Python code that produces a brick build us-
+ing a custom toolkit called BrickLayer. If the build passes
+a set of predefined and agent-written tests, it is accepted;
+otherwise, the agent makes edits informed by the test results,
+following the commonly used plan-execute-validate loop.
+3.1. BrickLayer
+LDraw [21], the standard text format for LEGO® builds,
+includes no physical validation and is not very ergonomic:
+it only allows users to place parts and sub-models by their
+absolute 3D poses. This makes it difficult to mate parts
+by their connectors or place them relative to others, which
+can lead to wasted tokens and misplaced components. To
+provide agents with an ergonomic interface for creating and
+validating brick builds, we introduce BrickLayer (Listing 1),
+a Python package that includes functions for part discovery,
+assembly, and validation. BrickLayer provides a unified
+programmatic representation for brick builds, enabling them
+to be easily understood and edited by humans and agents;
+builds can be translated from BrickLayer to LDraw and vice
+versa. See Sec. B for BrickLayer documentation.
+Discovery. BrickLayer allows users to search the LDraw
+catalog [22], which contains 17k+ parts. This search accepts
+keywords matched against the part’s official LDraw name.
+Results are ordered by their BM25 score [38] multiplied
+by a popularity factor that scales logarithmically with the
+number of official LEGO® sets containing the part. LDraw
+names are parsed into fields such as category, subcategory,
+and dimensions; users may target specific fields with their
+keyword search and filter results using exact field matches.
+Assembly. The central objects of BrickLayer are Element,
+representing a single colored part, and LegoBuild, rep-
+resenting a brick build.
+Both objects support a unified
+LegoGeometry interface; this interface exposes dimen-
+sions and available connectors, which can be filtered by type
+and position. We use BrickNet’s connector annotations [19],
+which mark the local frames of the connectors on each part,
+b = LegoBuild() # Initialize build
+socket = b.add(Element("14418", Color.ORANGE))
+ball = Element("3170", Color.MEDIUM_AZURE)
+b.connect( # Search for and mate compatible connectors
+ball,
+ball.find_connector("towball",
+toward=Direction.RIGHT),
+to=socket.find_connector("towball_socket")
+)
+assert (not b.colliding_placements # Check feasibility
+and not b.floating_placements
+and len(b.connected_components == 1)
+write_ldraw(b, "build.ldr") # Export to LDraw
+Output LDraw:
+1 25 20 -8 10 1 0 0 0 1 0 0 0 1 14418.dat
+1 322 80 -8 10 1 0 0 0 1 0 0 0 1 3170.dat
+Listing 1. BrickLayer usage. Users can add elements, join them
+via selected connectors, and assess feasibility. The BrickLayer
+script is easier to understand than its corresponding LDraw output.
+along with compatible connector types and the joints they
+form: fixed, revolute, ball, prismatic, or cylindrical. For
+example, studs and antistuds join with a revolute joint. As
+BrickNet annotations do not differentiate between prismatic
+and cylindrical joints, we determine a sliding joint’s type by
+rotating it 15◦about its axis in one direction; if a collision
+occurs, we mark the joint prismatic.
+LegoBuilds have a recursive structure: they may con-
+tain both Elements and other LegoBuilds, allowing
+complex models to be built from smaller components. Place-
+ments can be made at arbitrary poses, fixed to a grid, or by
+mating specified connectors. Users may name placements,
+allowing them to place components relative to or directly
+target the connectors of a named component. Users may also
+explicitly mark movable components with articulation limits
+corresponding to their joint type.
+For convenience, BrickLayer includes several high-level
+construction functions, introduced after noting repeated
+patterns in agent-generated code. These include brick,
+plate, tile, slope, and inverted slope to in-
+stantiate common parts by specifying their dimensions;
+minifigure, door, and window to create common
+multi-component sub-builds; mirror to reflect a build
+along a given axis; and fill box, fill slope, and
+fill inverted slope to fill a cuboid or wedge in a
+manner guaranteed to be valid and connected if possible.
+Validation. A LegoBuild provides methods to list col-
+lisions, floating elements, and disconnected components.
+To determine whether two elements collide, we inset each
+mesh by 0.1 mm before checking for intersections, following
+BrickNet; snap connections between bricks are so tight that
+a naive mesh intersection check would report a false positive.
+The floater check first translates a build so its lowest point is
+at the ground plane. Then, it marks an element floating if it
+cannot reach a grounded element through mated connectors
+4
+
+
+Table 1. Quantitative results on BrickNet-512. Valid, No col., and No fl. are valid, collision-free, and floater-free build rates. Comp., Parts,
+and Unique are mean component, part, and distinct part-ID counts. PE: Perception Encoder. SL2: SigLIP 2. Checks: mean validate
+calls. Bold/underline mark best/second-best results within each agent group. Costs use October 2026 token pricing, including cache savings.
+Method
+Valid↑No col.↑No fl.↑Comp.↓VQA↑
+PE↑
+SL2↑
+Parts Unique Checks↓Time↓Cost↓
+BrickGPT [37]
+0.990
+1.000
+0.990
+2.67
+0.0658 0.1547 0.0514 144.8
+7.1
+—
+247s
+—
+BrickNet [19]
+0.318
+0.320
+0.943
+1.03
+0.6077 0.2846 0.6407 31.8
+11.5
+—
+5s
+—
+Haiku 5.5
+Claude Code
+0.328
+0.428
+0.387
+3.59
+0.6032 0.2963 0.7286 12.8
+5.3
+—
+168s
+$0.04
+Ours w/o assembly API 0.822
+0.889
+0.828
+2.07
+0.5744 0.2940 0.7009 16.6
+4.8
+9.29
+279s
+$0.13
+Ours w/o validator
+0.586
+0.744
+0.775
+2.99
+0.6390 0.3012 0.7481 18.3
+7.4
+—
+119s
+$0.03
+Ours (full)
+1.000
+1.000
+1.000
+1.00
+0.6523 0.3056 0.7660 21.5
+7.6
+2.89
+143s
+$0.05
+6 Luna
+Codex
+0.086
+0.131
+0.135
+10.11
+0.6504 0.3025 0.7593 21.1
+6.1
+—
+150s
+$0.02
+Ours w/o assembly API 0.996
+1.000
+0.996
+1.04
+0.3342 0.2586 0.4972
+7.2
+2.0
+15.25
+405s
+$0.06
+Ours w/o validator
+0.529
+0.561
+0.840
+2.03
+0.6975 0.3111 0.7920 28.5
+8.5
+—
+510s
+$0.03
+Ours (full)
+1.000
+1.000
+1.000
+1.00
+0.6945 0.3105 0.7766 27.4
+7.8
+4.62
+415s
+$0.03
+6.1 Sol
+Codex
+0.641
+0.654
+0.781
+2.00
+0.7610 0.3241 0.8700 75.9
+15.8
+—
+346s
+$0.29
+Ours w/o assembly API 1.000
+1.000
+1.000
+1.01
+0.7623 0.3228 0.8573 70.1
+13.9
+10.02
+459s
+$0.40
+Ours w/o validator
+0.779
+0.787
+0.990
+1.03
+0.7611 0.3240 0.8664 86.0
+19.6
+—
+328s
+$0.20
+Ours (full)
+1.000
+1.000
+1.000
+1.00
+0.7610 0.3243 0.8669 75.8
+16.6
+2.48
+251s
+$0.19
+6 Astra
+Codex
+0.693
+0.709
+0.822
+1.87
+0.7609 0.3237 0.8691 75.5
+15.3
+—
+244s
+$1.21
+Articraft [59]
+0.684
+0.693
+0.844
+1.77
+0.7690 0.3249 0.8785 63.2
+16.0
+—
+426s
+$3.00
+Ours (full)
+1.000
+1.000
+1.000
+1.00
+0.7695 0.3243 0.8698 89.3
+18.9
+2.40
+267s
+$1.28
+or supporting surface contacts. A surface contact is support-
+ing if it has an upward component; lateral contact alone is
+insufficient. Two connectors form a connection if their local
+frames align, depending on their joint type; for example, a
+fixed joint requires the two frames to align exactly, while a
+revolute joint additionally admits a rotational degree of free-
+dom. For builds with user-annotated articulations, a posed
+method allows an agent to create a snapshot of the build with
+joints set to specified articulation parameters, to validate
+physical feasibility under joint motion. Posing works with
+models whose kinematic structure forms a tree.
+3.2. Building with BrickLayer
+BrickWright is a framework for agentic brick build creation
+using BrickLayer. It provides a single agent with a set of
+tools and prompts it to create a build by writing and revising
+a single Python file in a plan-execute-validate loop, inspired
+by Articraft [59]. The BrickWright environment exposes the
+tools validate, which runs agent-written tests alongside
+fixed collision and floating checks; render, which renders
+the build into a multi-view sheet or from a single specified
+view; and finalize, which marks the build as finished.
+In its system prompt, BrickWright instructs an agent
+to make a short internal plan, then write a Python file,
+build.py, containing two functions: create build(),
+which returns a LegoBuild, and run tests(), which
+runs a set of agent-written tests against the completed build.
+After creating build.py, the agent is instructed to itera-
+tively call validate and edit the build file until all tests
+pass, then call render; if it judges the render satisfactory,
+it should then call finalize; otherwise, it should revise
+build.py and repeat validation. Besides these instruc-
+tions, BrickWright includes only the BrickLayer documenta-
+tion in its system prompt, and the input text or image in a user
+prompt. It does not provide the agent with detailed planning
+advice, complete build examples, or building tips beyond the
+plan-execute-validate loop; the loop alone is sufficient for
+even lightweight agents to produce a feasible build.
+BrickWright can be used alongside commercial frame-
+works such as Codex, which allows general file access and
+script execution. However, to demonstrate its utility alone,
+we provide the agent with only two additional tools during
+experiments: read / write / insert / edit build to
+read and modify build.py, and explore to run a Python
+snippet with BrickLayer and the written LegoBuild in
+scope, returning its output as text.
+4. Experiments
+We compare BrickWright against two types of baselines: spe-
+cially trained text-to-brick models (BrickGPT [37] and Brick-
+Net [19]) and pre-trained agentic methods (Articraft [59],
+OpenAI’s Codex, and Anthropic’s Claude Code). We eval-
+uate the physical feasibility and prompt adherence of the
+output brick builds. Throughout evaluation, we use the
+BrickNet-512 [19] dataset, which contains 512 text prompts
+5
+
+
+Invalid
+Valid
+Invalid
+Valid
+w/o assembly API
+w/o validator
+GPT-6 Luna
+Full BrickWright
+w/o assembly API
+w/o validator
+Claude Haiku 5.5
+Full BrickWright
+Valid
+Valid
+Invalid
+Valid
+w/o assembly API
+w/o validator
+GPT-6.1 Sol
+Full BrickWright
+Invalid
+Valid
+Invalid
+Valid
+Piano
+Scene
+Valid
+Valid
+Valid
+Valid
+Valid
+Valid
+Figure 4. Qualitative ablation results. Red outlines in insets indicate mesh intersections. See Sec. C for input text prompts.
+created by VLM captioning of human-made brick builds.
+Technical details. To test agents with a range of capabilities,
+we run experiments with Claude Haiku 5.5 and GPT-6 Luna
+(lightweight), GPT-6.1 Sol (balanced), and GPT-6 Astra
+(frontier). All agents use High reasoning. Figure examples
+use Astra unless otherwise specified. Agents are instructed
+to create builds with no collisions or floaters, and to ensure
+the build is connected if it comprises one object. Codex and
+Claude Code baselines may read, write, and execute arbitrary
+files in a workspace directory, which initially contains only
+the LDraw documentation [21] and the library of LDraw
+parts [22], including part meshes. BrickWright agents are
+only allowed to read and modify the output build.py
+and execute text-output-only Python snippets; they have no
+access to the LDraw documentation or LDraw part library be-
+yond the searchable parts list exposed by BrickLayer. Agen-
+tic methods have a budget of $5 per sample; for samples that
+reach the budget, we use the latest completed build, whether
+valid or invalid. Only Luna w/o assembly API (2 samples)
+and Astra with Codex (1 sample), Articraft (34 samples),
+and full BrickWright (2 samples) reached this limit.
+As Articraft is intended for primitive-based 3D genera-
+tion, we minimally modify it to use a library of LDraw part
+meshes rather than mesh primitives. Invalid operations on
+physical parts (e.g., scaling) are disabled, as are collision
+checks, which yield false positives for coupled bricks, and
+watertightness checks, which fail on library meshes. We ad-
+just Articraft’s system prompt to reword phrases that do not
+work with brick builds, such as allowing geometry overlaps.
+Metrics. We report metrics on physical feasibility as defined
+in Sec. 3; prompt adherence as judged by VQAScore [28],
+Perception Encoder [3], and SigLIP 2 [43]; average brick
+count per build; and average time and cost per prompt. Va-
+lidity and connectivity are first evaluated using BrickLayer’s
+validator. Then, to independently verify the metrics’ accu-
+racy, we flag potential false positives for review by a human
+experienced with LEGO® design. Potential false positives
+include collisions resolved by a tested shift of at most 0.2
+mm and disconnected components containing parts without
+connector annotations. Human review increases collision-
+free rates by 0.2 percentage points for BrickNet and Claude
+Code (Haiku), 1.4 for Codex (Sol), and 1.0 for Codex (As-
+tra). It reduces mean component counts by 0.13 for Codex
+(Sol), 0.10 for Codex (Astra), and 0.12 for Articraft; changes
+for the remaining methods are below 0.02 components per
+build. Numbers in Tab. 1 are post-review.
+4.1. Baseline comparison
+Compared to vanilla agent baselines, builds produced by
+BrickWright-equipped agents exhibit greatly improved phys-
+ical feasibility with broadly comparable token costs (Tab. 1).
+Impressively, the lightweight model Luna, which has only
+a 9% baseline validity rate, achieves 100% validity when
+used with BrickWright. This increase in physical validity
+is not accompanied by a significant decrease in complexity
+or fidelity; on average, BrickWright agents use more bricks
+and more unique parts than vanilla agent baselines, while
+improving prompt adherence for lightweight models (Haiku,
+Luna) and maintaining it for powerful models (Sol, Astra).
+These gains hold even with BrickWright’s minimal harness,
+whereas Codex and Claude Code can read, write, and execute
+arbitrary files. BrickWright-equipped agents additionally
+outperform specially trained text-to-brick models in overall
+feasibility and prompt adherence. The Articraft baseline,
+which is intended for digital 3D assets, yields comparable
+prompt adherence but worse physical validity at more than
+twice the cost of BrickWright. The visual results in Fig. 6
+show how BrickWright reduces physical artifacts for all
+agent backends and improves the coherence of builds cre-
+ated by lightweight agents. On average, most BrickWright
+agents use 2–3 validate calls; Luna uses 4–5 (Tab. 1).
+4.2. Ablation study
+We ablate BrickLayer’s two key components: the assembly
+API and the validator. In our first ablation, “w/o assem-
+bly API”, agents write a program that creates an LDraw
+file without using BrickLayer’s assembly functions. The
+LegoBuild abstraction is removed from BrickLayer, leav-
+ing only part search and physical validation, and its docu-
+6

@@ -151,12 +151,10 @@ export default function AIAppDashboard() {
       page_count: result.metadata.page_count,
       overall_ai_probability: `${Math.round(result.overall_ai_percentage)}%`,
       classification: result.overall_ai_percentage >= 60 ? "HIGH RISK - AI GENERATED" : result.overall_ai_percentage >= 40 ? "MEDIUM RISK - HYBRID LLM ASSISTED" : "LOW RISK - HUMAN AUTHOR",
-      detection_engine: "ModernBERT-base (8k Context Window)",
-      multi_model_consensus: {
-        modernbert_score: `${Math.round(result.overall_ai_percentage)}%`,
-        deberta_v3_score: `${Math.min(99, Math.round(result.overall_ai_percentage * 0.98))}%`,
-        roberta_v2_score: `${Math.min(99, Math.round(result.overall_ai_percentage * 1.02))}%`,
-        consensus: "98.4% High Agreement"
+      detection_engine: "Hybrid Ensemble (ModernBERT 3-Sentence Context + RoBERTa Sentence)",
+      ensemble_summary: {
+        overall_ai_percentage: `${Math.round(result.overall_ai_percentage)}%`,
+        total_sentences_analyzed: result.sentences?.length ?? 0
       },
       citation_health_score: `${result.citation_audit?.health_score ?? 100}%`,
       llm_pattern_density: `${result.llm_signatures?.density ?? 0}%`
@@ -292,7 +290,7 @@ export default function AIAppDashboard() {
     const steps = [
       "Parsing LaTeX AST & Structure Layers...",
       "Extracting Equations, Tables & Section Headings...",
-      "Executing ModernBERT 8k Context Model...",
+      "Executing ModernBERT Context Model (512 tokens)...",
       "Calculating Burstiness & Lexical Entropy...",
       "Auditing Bibliography Index...",
       "Finalizing Document Forensics Report..."
@@ -782,7 +780,7 @@ export default function AIAppDashboard() {
           </div>
           <div>
             <h1 className="font-bold text-lg text-slate-100 tracking-tight flex items-center gap-2">
-              VeriPaper AI <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-950 text-indigo-400 border border-indigo-800/60 font-semibold font-mono">ModernBERT 8k</span>
+              VeriPaper AI <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-950 text-indigo-400 border border-indigo-800/60 font-semibold font-mono">ModernBERT + RoBERTa</span>
             </h1>
           </div>
         </div>
@@ -905,7 +903,7 @@ export default function AIAppDashboard() {
                 
                 <div className="flex items-center gap-4 mt-6 text-xs text-slate-500">
                   <span className="flex items-center gap-1.5"><ShieldCheck className="w-4 h-4 text-emerald-400" /> Preserves LaTeX Math & Tables</span>
-                  <span className="flex items-center gap-1.5"><Sparkle className="w-4 h-4 text-indigo-400" /> ModernBERT 8k Neural Detector</span>
+                  <span className="flex items-center gap-1.5"><Sparkle className="w-4 h-4 text-indigo-400" /> ModernBERT Context Detector</span>
                 </div>
               </div>
             )}
@@ -1054,7 +1052,7 @@ export default function AIAppDashboard() {
                   </div>
 
                   <div className="text-xs text-slate-400 mt-1 flex items-center justify-center gap-1">
-                    Engine: <span className="text-indigo-400 font-semibold font-mono">ModernBERT 8k</span>
+                    Engine: <span className="text-indigo-400 font-semibold font-mono">ModernBERT + RoBERTa</span>
                   </div>
 
                   {/* Summary Tier Badges */}
@@ -1237,30 +1235,30 @@ export default function AIAppDashboard() {
                   </div>
                 )}
 
-                {/* 5. Multi-Model Ensemble Consensus Matrix */}
+                {/* 5. Hybrid Ensemble Architecture */}
                 <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-3">
                   <div className="flex items-center justify-between">
                     <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
                       <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
-                      Multi-Model Ensemble Matrix
+                      Hybrid Ensemble Architecture
                     </h4>
                     <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800">
-                      98.4% Consensus
+                      Dual-Branch
                     </span>
                   </div>
 
                   <div className="space-y-1.5 text-xs">
                     <div className="flex justify-between p-2 rounded-lg bg-slate-950/60 border border-slate-800">
-                      <span className="text-slate-400">ModernBERT-base (8k):</span>
-                      <span className="font-mono font-bold text-indigo-300">{Math.round(result.overall_ai_percentage)}% AI</span>
+                      <span className="text-slate-400">ModernBERT (Context Window):</span>
+                      <span className="font-mono font-bold text-indigo-300">3-Sent / 512 Tokens</span>
                     </div>
                     <div className="flex justify-between p-2 rounded-lg bg-slate-950/60 border border-slate-800">
-                      <span className="text-slate-400">DeBERTa-v3-large:</span>
-                      <span className="font-mono font-bold text-amber-300">{Math.min(99, Math.max(0, Math.round(result.overall_ai_percentage * 0.98)))}% AI</span>
+                      <span className="text-slate-400">RoBERTa-v2 (Sentence Syntax):</span>
+                      <span className="font-mono font-bold text-purple-300">512 Tokens</span>
                     </div>
                     <div className="flex justify-between p-2 rounded-lg bg-slate-950/60 border border-slate-800">
-                      <span className="text-slate-400">RoBERTa-v2 Academic:</span>
-                      <span className="font-mono font-bold text-purple-300">{Math.min(99, Math.max(0, Math.round(result.overall_ai_percentage * 1.02)))}% AI</span>
+                      <span className="text-slate-400">Decision Fusion:</span>
+                      <span className="font-mono font-bold text-emerald-400">Max-Pool & Heuristics</span>
                     </div>
                   </div>
                 </div>

@@ -1,0 +1,591 @@
+TOWARDS USER SIMULATORS THAT STAY ON TASK
+AND STILL SOUND NATURAL
+Mustafa Omer Gul1∗Philippe Laban2
+Tanya Goyal2
+Jennifer Neville2
+1Cornell University
+2Microsoft Research
+momergul@cs.cornell.edu ; {plaban,tanyagoyal,jenneville}@microsoft.com
+ABSTRACT
+Users increasingly rely on AI systems for extended, multi-turn tasks, yet evidence
+indicates that LLM-based system performance degrades over prolonged interac-
+tion. To evaluate and improve AI assistants in such settings, we need user simu-
+lators that faithfully follow complex user intents while exhibiting realistic conver-
+sational behavior. Existing approaches manifest a trade-off: prompted assistants
+can follow complex user intents but lack behavioral fidelity, while specialized
+user simulators better approximate conversational behavior but struggle to remain
+faithful to complex intents. In this paper, we propose a reinforcement learning
+(RL) recipe that jointly rewards task intent adherence and behavioral natural-
+ness. A crucial contribution of the method is operationalizing naturalness with
+a lightweight discriminator trained in an alternating, adversarial loop with the
+user simulator. We release the resulting model, UserLM-2.0, which produces
+valid simulated conversations (i.e., meeting both task-faithfulness and naturalness
+criteria) 46.2% of the time, over three times the rate of the strongest prior user
+simulator (14.1%).
+microsoft/UserLM-2.0
+Task intent: Create a migration guide for users moving from CanvasDraw to your graphics library: outline its structure and main topics, then
+draft a welcoming introduction.
+GPT-5.6-Sol (prompted)
+I need help writing a migration guide for users
+moving from CanvasDraw to your graphics library.
+Can we start with a clear outline for the guide?
+Great. Now draft the **Introduction** section using
+placeholders where product details are unknown.
+Keep it concise and reassuring, and cover the
+guide’s purpose, who it’s for, prerequisites,
+compatibility, estimated migration effort, and links to
+support resources. Avoid making unsupported
+claims about features or timelines.
+Coverage
+100.0%
+Naturalness
+0.0%
+Is Valid?
+✕
+UserLM-8B (trained via SFT)
+I am writing a migration guide for people
+transitioning away from canvasdraw and
+onto my library, how should I go about
+structuring the pdf, should I put my structs
+first so people can see the redesign or
+finish with my library to give closure?
+Im going to write it today
+i have tried making plans for this ever since
+i started this a year ago, but never finished
+it, ill have to start today which is a
+saaturday
+Coverage
+33.3%
+Naturalness
+92.9%
+Is Valid?
+✕
+UserLM-2.0 (trained with SFT+RL)
+i will migrate from
+canvasdraw to my own
+graphics library, write
+migration guide, suggest
+structure and content topics,
+write intro first 3 pages
+just write 3-4 pages intro of
+migration guide
+write more user friendly intro
+Coverage
+100.0%
+Naturalness
+85.1%
+Is Valid?
+✓
+50
+60
+70
+80
+90
+100
+0
+20
+40
+60
+80
+100
+Naturalness Pass Rate (%)
+Task Intent Coverage (%)
+DeepSeek-V4-Pro
+DeepSeek-V4-Pro
+GPT-5.6-Luna
+GPT-5.6-Luna
+GPT-5.6-Sol
+GPT-5.6-Sol
+USP
+USP
+UserLM-8B
+UserLM-8B
+SFTUser-14B
+SFTUser-14B
+UserLM-2.0
+UserLM-2.0
+Human Reference
+Human Reference
+0%
+20%
+40%
+60%
+80%
+100%
+% Valid Conversations
+Human Reference
+80.2
+UserLM-2.0
+46.2
+SFTUser-14B
+14.1
+UserLM-8B
+13.0
+GPT-5.6-Sol
+6.7
+USP
+5.0
+Kimi-K2.6
+4.0
+GPT-5.6-Luna
+3.4
+Qwen3.5-9B
+1.6
+Figure 1: We train and release UserLM-2.0, a user simulator for User-AI interaction optimized via
+RL to precisely enact user intents while exhibiting natural conversational behavior. In comparison,
+assistants such as GPT-5.6-Sol follow intents, but sound unnatural, while SFT-trained simulators
+like UserLM-8B (Naous et al., 2026) generate natural, but meandering conversations.
+∗Work done during an internship at Microsoft Research.
+1
+arXiv:2610.31512v1  [cs.CL]  22 Oct 2026
+
+
+1
+INTRODUCTION
+Users increasingly expect AI assistants and agents to help them accomplish complex tasks through
+sustained, multi-turn interaction, rather than provide isolated answers to individual queries (Handa
+et al., 2025; Chatterji et al., 2025). Yet prior work has shown that current LLM-based systems
+severely degrade in performance in such interactive settings (Laban et al., 2025; Tack et al., 2026).
+Understanding and addressing this gap requires evaluations that capture how real users communicate
+their goals and respond to assistants over multiple turns (Chang et al., 2025a). A crucial component
+of interactive benchmarks is a user simulator, which takes as input a high-level task intent (such as
+the one shown in Figure 1) and generates plausible user utterances through iterative interaction with
+an assistant (Yao et al., 2024; Lu et al., 2025; Huang et al., 2025).
+We focus on two essential properties of user simulators: task fidelity and behavioral naturalness.
+Task fidelity requires the simulator to convey the information specified in the task intent over the
+course of the conversation, without omitting or contradicting the specification. Behavioral natural-
+ness requires the simulator to resemble real users in both how it phrases individual messages and
+how it conducts the interaction across turns. A simulator that omits task requirements can make as-
+sistant models appear to fail when the simulator is at fault, making benchmarking unreliable (Mehri
+et al., 2026c; Zhou et al., 2026), whereas a simulator that does not adequately capture the interactive
+behavior of real users may yield conclusions that do not transfer to real interactions (Zhou et al.,
+2026; Seshadri et al., 2026).
+We show experimentally that current approaches favor one requirement at the expense of the other.
+Prompting LLM assistants to act as users is the most common method for simulating users (Yao
+et al., 2024; Lu et al., 2025; Huang et al., 2025). While prompted assistants can stay on task,
+they lack behavioral naturalness (Naous et al., 2026; Mehri et al., 2026a; Zhou et al., 2026). This
+is illustrated in the example in Figure 1, where GPT-5.6-Sol (a strong assistant LLM) accurately
+enacts the task intent but expresses it through unusually polished and exhaustive messages, unlike
+the conversational patterns in real user-AI exchanges.
+An alternative is to train user simulators by “flipping the dialogue”: supervised finetuning an LLM
+on user utterances from a corpus of user-assistant interactions (Naous et al., 2026; Suh et al., 2026).
+As reported in prior work, such finetuned user simulators exhibit realistic interaction behavior but
+often struggle to precisely enact the task intent they are given (Naous et al., 2026; Zhou et al., 2026).
+In the example in Figure 1, the SFT-trained UserLM-8B (Naous et al., 2026) ends the conversation
+prematurely, before conveying all of the specified task requirements to the assistant.
+We propose a post-training recipe that improves task fidelity while preserving behavioral natural-
+ness in user simulators. We first finetune an LLM on user turns from a corpus of user-assistant
+interactions, then post-train it using multi-turn reinforcement learning.
+Our RL training objective jointly rewards task fidelity and behavioral naturalness. Rewards related
+to task fidelity use LLM-based judges (Zheng et al., 2023), for example by evaluating the extent to
+which a simulated conversation has conveyed the information specified in the task intent. We find
+that LLM-as-a-judge for behavioral naturalness fails to reliably encourage realistic user behavior.
+Instead, drawing on adversarial training (Goodfellow et al., 2014a) and its application to dialogue
+generation (Li et al., 2017), we propose a discriminator-based reward for behavioral naturalness.
+Specifically, we continually retrain a discriminator to distinguish real user conversations from con-
+versations generated by the user simulator being trained. This choice defines the naturalness reward
+in terms of how indistinguishable a given simulated conversation is from real user conversations.
+We update the discriminator as the simulator evolves to keep the naturalness reward responsive to
+its changing outputs and reduce opportunities to exploit a fixed evaluator (Gao et al., 2022).
+We train, evaluate, and release the resulting artifact, UserLM-2.0. Among the simulators we evalu-
+ated, UserLM-2.0 lies on the Pareto frontier for task fidelity and behavioral naturalness. We count
+a simulated conversation as valid if it adheres to our quality and termination criteria, achieves at
+least 80% coverage of the task intent and passes our naturalness criterion, assessed using three dis-
+criminators including Pangram (Glickenhaus et al., 2026). By this definition, UserLM-2.0 yields
+valid conversations for 46.2% of task intents, more than three times the 14.1% rate of the strongest
+prior user simulator (SFTUser-14B). This gap grows even further to a factor of 12 at higher task
+complexities, highlighting the effectiveness of our method.
+2
+
+
+2
+METHOD
+Our goal is to train a user simulator that takes a high-level task intent as input, and simulates realistic
+user utterances in a multi-turn user-assistant conversation. As previously discussed, a good user
+simulator must (1) generate natural utterances, and (2) obey the task intents closely.
+2.1
+PROBLEM DEFINITION
+Each conversation is a multi-turn interaction where a user simulator U interacts with an assis-
+tant model A to satisfy an input intent c.
+This intent c captures the high-level goal of the
+user without detailing behavior on a turn-by-turn basis. Given c, we sample conversations τ =
+(c, u1, a1, . . . , un−1, an−1, un), where ui and ai represent the sampled i-th user and assistant utter-
+ances respectively. A conversation terminates either when the maximum number of user turns N is
+reached or when the user outputs an <|endconversation|> tag.
+Prior work (Wang et al., 2025; Naous et al., 2026) trains user simulators via SFT on a large corpus of
+user-assistant interactions. These exhibit the desired naturalness behavior, but are extremely poor at
+faithfully enacting task intents. We propose treating such SFT models as initializations rather than
+the final user simulator. We train our own SFT model, UserLM-2.0-SFT, and design an RL-based
+post-training pipeline that improves its task fidelity without sacrificing naturalness.
+We perform multi-turn reinforcement learning using the GRPO algorithm (Shao et al., 2024). Our
+reward balances the above two goals of user simulation, task fidelity and behavioral naturalness.
+Although these are orthogonal, models can easily reward hack one at the cost of the other, such
+as by unnaturally including all information in the first utterance for perfect task coverage. The
+combined reward composition safeguards against such behaviors.
+2.2
+REWARD DESIGN FOR REINFORCEMENT LEARNING
+We first describe the individual reward components and then our formula for combining them:
+Naturalness:
+The naturalness reward should score how closely the user utterances of simulated
+conversation resemble the way real users interact with AI assistants in a target corpus. Let Pdisc
+be a discriminator that can distinguish between real and simulated user utterances. Our naturalness
+reward measures how well the user simulator fools such a discriminator based on Pdisc(y = real |
+ˆu1... ˆuk, c), where ˆu1... ˆuk is the multi-turn output from the user simulator and c is the associated
+task intent. For training, we set our naturalness reward to be binary; it is 1 if this discriminator score
+is above a threshold (0.5 in our experiments) and 0 otherwise.
+Broadly, we have two options for discriminators: LLM judges or specially trained discriminators.
+LLM judges are ill-suited for this task. Naturalness captures multiple implicit dimensions such as
+the surface-form of the utterance, pace of the conversation, coherence of follow-up utterances, etc.,
+all of which might be impossible to extract from the target corpus and enumerate as instructions.
+In fact, prior work (Russell et al., 2025) has shown that prompted LLM judges are ineffective at
+distinguishing between real user and AI text.1 In our work, we train lightweight discriminators
+on top of ModernBert-Large (Warner et al., 2025) to distinguish between real and simulated user
+utterances. This allows us to both limit the costs and latency during RL and specialize to the user
+behaviors in the target corpus. We include ablations to empirically demonstrate the issues with using
+LLM judges and static discriminators in Section 4.4.
+Coverage:
+This reward component quantifies how completely the user simulator follows a task
+intent. We define coverage as the proportion of the sub-goals of the task intent that are included in
+the user utterances generated by the simulator. This is instantiated with an LLM judge.
+We highlight that coverage can be an easy metric to reward hack for user simulators. For example,
+given a detailed task intent with fully specified sub-goals, a user simulator can maximize coverage
+1Note that AI detection of assistant turns is an analogous task to user naturalness. There, the goal is to score
+the “naturalness” of AI assistants’ text to distinguish it from human-written text. We highlight that the best AI
+detectors in industry use trained discriminators instead of LLM judges (Glickenhaus et al., 2026).
+3
+
+
+by simply paraphrasing the sub-goals. This is not ideal as it disincentivizes diverse simulations for
+the same task intent. Therefore, we introduce an information asymmetry between the task intent
+provided to the user simulator as input (c) and the one used to compute the coverage reward by the
+LLM judge (c∗), where c is a more abstract version of the fully-specified task intent c∗. This ensures
+the model receives poor coverage when simply paraphrasing, and encourages exploring more diverse
+behaviors.
+In addition to coverage, we include two other reward components for task fidelity. These target
+proper formatting of the user utterances and elimination of trivial failure modes of the SFT models.
+Quality:
+Our quality reward is a binary score that assesses the baseline quality of a simulated
+conversation. It targets three common error modes of the SFT models: (1) verbatim repetition of
+task intent, (2) verbatim repetition of past user turns, and (3) switching roles from user to assistant
+mid-output. We first check the initial two conditions programmatically and otherwise use an LLM
+judge. A simulated conversation is given a reward 1 if all three conditions are met, and 0 otherwise.
+Termination:
+The goal of the termination reward is to ensure that user simulators properly ter-
+minate conversations when all sub-goals in c∗are met and penalize early termination. We give a
+positive reward λ for including the termination tag <|endconversation|> in the last utterance
+if all sub-goals have been met in the earlier utterances and a negative reward −λ if the conversation
+is terminated without satisfying all sub-goals. Note that this ties the termination reward to coverage.
+In some cases, the user simulator fails to terminate the conversation at all, i.e. does not generate the
+<|endconversation|> tag; in these cases, we give it a 0 termination reward.
+Final Reward:
+We combine all four reward components into a overall reward score for a simulated
+conversation using the following formula: roverall = rquality ·(rcoverage + rnaturalness + rtermination). Note
+that the overall reward is 0 if the quality reward is 0. Therefore, the basic quality checks serve as a
+necessary condition for any successful simulation.
+2.3
+GAN-STYLE TRAINING WITH DYNAMIC DISCRIMINATORS
+One limitation of trained naturalness discriminators, especially lightweight ones with fewer parame-
+ters, is that a larger user simulator trained against it will quickly learn to reward hack. It will quickly
+converge on a narrow set of behaviors that reliably fools the specific discriminator but does not learn
+broader behavioral naturalness. Our initial experiments validated this intuition – user simulators
+trained against a static discriminator maximized the naturalness reward within 75 steps by greatly
+increasing average utterance length while reducing conversation turns.
+To address this, we propose a GAN-style training recipe that periodically re-trains the discriminator
+every k steps. This improves discriminator quality by exposing it to synthetic conversations with
+distinct behavioral patterns and further helps detect and discourage reward hacking behavior.
+3
+EXPERIMENTAL SETUP
+3.1
+DATASET CONSTRUCTION
+Dataset Processing.
+We run our experiments on the non-toxic subset of WildChat-4.8M (Zhao
+et al., 2024). We build on top of the dataset processing scheme of Naous et al. (2026), additionally
+removing interactions with only one user turn as our goal is to simulate multi-turn interactions. This
+reduces the WildChat-4.8M dataset size from 3,199,860 to 199,249 interactions. We also follow
+Naous et al. (2026) in how we construct train, validation and test sets. We hold out 10,000 and 1,000
+conversations from the train and validation set for RL training, 3,200 and 1,000 conversations from
+the train and validation set for discriminator training, and use the rest for SFT. Refer to Appendix A
+for more details on dataset construction.
+Intent and Subgoal Extraction.
+We need to extract both intents (given as input for simulation)
+and fine-grained sub-goals (used for LLM-based coverage reward).
+We use Qwen3-30B-A3B-
+Instruct-2507 (Yang et al., 2025) to extract intents for all 199,249 conversations. For sub-goals,
+we few-shot prompt the best available GPT models without reasoning. Details are in Appendix A.
+4
+
+
+Test dataset.
+We report all results on a 2000 intent test set, constructed such that the number of
+intents per sub-goal count (ranging from 1 to 7) is balanced. For each user simulator, we sample
+four conversations per intent with Qwen3.5-9B as the assistant.
+3.2
+TRAINING DETAILS
+User Simulator Training.
+We use Llama3.1-8B-Instruct (Grattafiori et al., 2024) as the backbone
+for UserLM-2.0. We replicate the SFT training of Naous et al. (2026) and select the checkpoint with
+the best validation loss for subsequent RL. This checkpoint is UserLM-2.0-SFT. For RL, we simulate
+conversations with a maximum turn count of N = 5, and use Qwen3.5-9B without reasoning (Team,
+2026) as the assistant model. We set λ = 0.2 for the termination reward, batch size to 64, group size
+to 8 and KL hyperparameter β = 0.001. We measure model performance on the validation set every
+25 steps for checkpoint selection. See Appendix B for further training details.
+Naturalness Discriminator Training.
+We use the 395M ModernBERT-Large (Warner et al.,
+2025) as the discriminator. For each task intent, we sample one simulated conversation (using the
+user and assistant models) and one real conversation (from the ground truth dataset).2 This ensures
+that our dataset is always balanced. We re-train our discriminator every 25 steps of RL training.
+At each iteration, half of our training dataset consists of conversations based on task intents from
+the most recent 25 RL steps, while the other half is sampled uniformly from the remaining training
+history. We train for five epochs and pick the checkpoint achieving the best validation accuracy.
+Refer to Appendix B.3 for exact hyperparameters and training details.
+3.3
+BASELINES
+We compare UserLM-2.0 against two categories of models: assistant LLMs prompted to behave
+like users, and specialized finetuned user simulators, as well as held out reference users.
+Finetuned Models.
+We compare against USP (Wang et al., 2025), UserLM-8B (Naous et al.,
+2026), UserLM-2.0-SFT (our SFT initialization), SFTUser-14B (Suh et al., 2026) and HumanLM-
+Opinion (Wu et al., 2026). UserLM-8B and SFTUser-14B are trained on WildChat-1M (Zhao et al.,
+2024) via SFT but differ in their backbone initialization. USP is also SFT-trained but on a subset of
+94,874 LMSys-Chat conversations (Zheng et al., 2024). HumanLM is trained via RL to align with la-
+tent states such as user goals, opinions or emotional valence. We use the HumanLM-Opinion check-
+point as other HumanLM checkpoints have not been released. For USP and HumanLM-Opinion, we
+include the input intent and termination instructions in system prompts (details in Appendix C.1).
+Prompted assistant LLMs.
+We use a range of small and large, open- and closed-source mod-
+els. Specifically, we evaluate: Llama3.1-8B-Instruct (Grattafiori et al., 2024) (Llama-3.1-8B in the
+tables), Qwen3.5-9B (Team, 2026), GPT-5.6-Luna, GPT-5.6-Sol (OpenAI, 2026), DeepSeek-V4-
+Pro (Xu et al., 2026) and Kimi-K2.6 (Moonshot AI, 2026). We follow the prompting strategy of
+Naous et al. (2026), with prompts and inference details in Appendix C.2.
+3.4
+EVALUATION METRICS
+We evaluate all simulators on a common set of 2,000 test task intents. For each task intent, we sim-
+ulate four independent conversations and compute three evaluation metrics that assess task fidelity
+and three metrics that assess naturalness. Finally, we define a compound metric that assesses the
+overall validity of each simulated conversation.
+Task Fidelity Metrics.
+We assess each generated conversation by reusing the Terminated, Quality,
+and Coverage as defined in Section 2.2. In short, Terminated is the percentage of conversations with
+an explicit <|endconversation|> present. The Quality metric is a binary check for three
+undesirable behaviors (e.g., verbatim copying of the task intent in a single user utterance). For the
+evaluation, we used Qwen3.5-9B as the LLM judge for Quality, and the stronger GPT-5.6-Luna
+2We use only the user turns for discrimination, as we found including assistant turns made simulated con-
+versations perfectly discriminable due to stylistic differences between assistants.
+5
+
+
+for Coverage, as we found this additional model capacity allowed to extract additional per-turn
+information about intent coverage.
+Naturalness Metrics.
+We report naturalness using three complementary discriminators.
+We
+trained the first two discriminators in analogous ways to discriminators trained in Section 3.2. Both
+use ModernBert-Large as the base.
+1. Naturalness-Specific: We train a separate naturalness discriminator for each simulator to
+evaluate. The metric reports the average P(y = real | ˆu1... ˆuk), where { ˆu1... ˆuk} is a simulated
+conversation on the test set.3 This is the strictest test for naturalness among our metrics as each
+discriminator specializes on patterns of individual simulators. For Human Reference interactions,
+we report average P(y = real | u1...uk) for real conversations {u1...uk}, averaged over all model-
+specific discriminators.
+2. Naturalness-General: We train a general discriminator on data from all simulators, which
+includes our models, baselines from §3, and experiments with reward design alternatives in §4.4.
+This discriminator is generally less strict than the previous one, as it must distinguish between
+simulations from multiple distributions.
+3. Pangram: As a dataset-agnostic discriminator, we use Pangram-4 (Glickenhaus et al., 2026),
+a state-of-the-art AI detection model trained to distinguish human and AI assistant text. We re-
+port Pangram’s recorded fraction of human-written text. For each intent, we randomly select one
+sampled conversation. To take into account’s Pangram’s limitations around short texts, we remove
+termination tags and concatenate a conversation’s user turns through the first whole turn that exceeds
+a cumulative 100 words, or use all user turns if the conversation is shorter.
+Naturalness Pass Rate (%).
+A conversation passes the overall naturalness criterion if at least
+one of the individual naturalness scores (specific, general, Pangram) is at or above 0.5. This pass
+rate represents the proportion of simulated conversations where at least one discriminator assigns
+majority probability to the conversation being classified as real (i.e., the discriminator is “fooled”).
+Conversation Validity Metric.
+We define an aggregate metric that measures whether a conversa-
+tion passes both task fidelity and naturalness expectations. This single, over-arching metric captures
+the proportion of conversations produced by a simulator that are usable for downstream purposes.
+Under our definition, a simulated conversation is valid if it meets four conditions: (1) a Quality
+score of 1, (2) a Terminated score of 1,4 (3) a Coverage score of at least 0.8, and (4) passing the
+naturalness criterion. We also report estimated cost in USD per 100 valid conversations (lower is
+better), with base-model pricing proxies for fine-tuned models.
+4
+RESULTS AND ANALYSIS
+4.1
+MAIN RESULTS
+We present summarized evaluation metrics for task fidelity, naturalness, validity, and estimated sim-
+ulation costs for UserLM-2.0 and baselines in Table 1.
+Comparing prompted assistants and finetuned user simulators. A general pattern emerges visu-
+ally in Table 1. Prompted assistants tend to achieve high coverage scores, but struggle to generate
+natural conversations. For example, the best prompted assistant (GPT-5.6-Sol) achieves a natural-
+ness pass rate of only 10.2%. In contrast, most finetuned user simulators generally perform worse
+on coverage, but achieve much higher naturalness pass rates. UserLM-2.0 achieves optimal per-
+formance on both: it achieves the highest performance among simulators on coverage (88.0%) and
+naturalness pass rate (71.8%).
+UserLM-2.0 generates the highest proportion of valid simulations, outperforming the next-best
+model by 18.4%. UserLM-2.0 achieves an overall validity score of 46.2%, which is 1.66 times as
+much as the next-best model (our finetuned UserLM-2.0-SFT, at a validity score of 27.8%) and 3.28
+3Note that unlike discriminator training in Section 3.2, we do not include input intents c during discriminator
+training to avoid doubly penalizing conversations for coverage.
+4Human Reference conversations count as terminated by construction.
+6
+
+
+Task Fidelity &
+Naturalness
+=
+Validity
+Model
+Qual. Cov. Term.
+Spec. Gen. Pan. % Pass
+Valid %
+Cost
+DeepSeek-V4-Pro
+98.9 85.1
+21.8
+0.6
+2.3
+0.4
+2.1
+0.3 $1331.35
+Llama-3.1-8B
+59.2 76.9
+48.5
+0.2
+1.9
+3.1
+2.6
+0.4
+$11.98
+Qwen3.5-9B
+80.4 79.2
+91.1
+0.5
+1.3
+2.1
+2.8
+1.6
+$14.79
+GPT-5.6-Luna
+98.6 85.8
+45.5
+0.4
+2.2
+3.6
+4.9
+3.4
+$20.89
+Kimi-K2.6
+99.6 86.1
+63.5
+0.5
+1.5
+4.2
+4.9
+4.0
+$63.48
+GPT-5.6-Sol
+99.3 79.7
+49.8
+0.3
+3.8
+8.3
+10.2
+6.7
+$205.20
+HumanLM-Opinion
+60.2 58.2
+19.6
+0.0
+2.0
+0.1
+1.4
+0.2
+$125.26
+USP
+46.1 63.2
+42.1
+4.2
+11.6 39.3
+43.7
+5.0
+$0.37
+UserLM-8B
+47.6 64.2
+37.5
+12.7
+23.9 40.2
+50.2
+13.0
+$0.16
+SFTUser-14B
+55.5 60.7
+66.4
+10.7
+19.0 32.0
+40.9
+14.1
+$2.14
+UserLM-2.0-SFT
+75.9 76.0
+62.5
+25.3
+50.7 50.7
+68.2
+27.8
+$0.19
+UserLM-2.0
+89.8 88.0
+82.8
+9.4
+36.1 59.2
+71.8
+46.2
+$0.11
+Human Reference
+87.9 96.0 100.0
+96.4
+84.3 85.1
+100.0
+80.2
+–
+Table 1: Evaluation results of user simulators. We compare prompted assistants (top), finetuned
+models (middle), and human reference conversations on task fidelity (Qual., Cov., Term.) and natu-
+ralness (component means Spec., Gen., Pan., and Naturalness Pass Rate, % Pass). We report overall
+conversation validity (Valid %) and estimated simulator cost in USD per 100 valid conversations.
+times as much as the best previously released user simulator (SFTUser-14B, at 14.1%). This means
+that, on average, UserLM-2.0 typically requires sampling two conversations to produce a valid one,
+when previous models required sampling at least 6, and often more than 15. This, coupled with the
+small parameter count of UserLM-2.0, leads it to be the most cost-effective user simulator, costing
+$0.11 to generate 100 valid conversations, compared to $205.20 with GPT-5.6-Sol.
+A large gap remains between simulated and real human–AI conversations. The real, held-out
+human-AI conversations have perfect naturalness and near-perfect coverage, a 28.2% and 8.0% lead
+over the best user simulator (UserLM-2.0) on the two metrics respectively. This puts our results in
+perspective: UserLM-2.0 represents a significant step forward in user simulation, but there remains
+a substantial gap for future work to close. In particular, our RL-based methodology leads to a large
+improvement in the task fidelity of the initial SFT checkpoint without sacrificing its naturalness.
+However, improving beyond this initial naturalness to close the gap to real conversations remains
+an open challenge. Beyond the model artifact we release, we hope our evaluation methodology
+emphasizing validity of individual interactions can support future research in user simulation.
+4.2
+STRESS TESTING UNDER INCREASING TASK COMPLEXITY
+Setup. The key use-case for user simulators is supporting downstream evaluation and training. In
+particular, a user simulator must be capable of simulating realistic and valid interactions as task
+complexity varies. For evaluation purposes, we decomposed each test task intent into a set of sub-
+goals: units of information that are part of the task intent. We argue that the number of subgoals
+of a task intent roughly correlates with task complexity, as more subgoals typically require longer
+conversation to convey, leading to more opportunity for user simulators to omit or contradict task
+information. As a first analysis, we break down the performance of user simulators as the number
+of subgoals increases. Table 2 reports coverage, naturalness pass rate, and overall validity against
+different levels of task intent complexity. We include similar tables for quality, termination, and
+individual naturalness scores in Appendix D.1.
+UserLM-2.0 maintains the highest validity across all task-complexity levels. The proportion of
+valid simulations generally declines as task complexity increases, but UserLM-2.0 leads all evalu-
+ated simulators at every level. At five sub-goals, it achieves 36.6% validity, compared with 11.3%
+for UserLM-2.0-SFT. At six and seven sub-goals, UserLM-2.0 retains validity rates of 23.6% and
+12.6%, compared to below 1% for every prior simulator.
+Strong coverage alone does not ensure valid simulations. UserLM-2.0 achieves near-perfect
+coverage for single-sub-goal tasks (99.4%) and the highest coverage among simulators for tasks with
+more than three sub-goals (Table 2). At seven sub-goals, it retains 79.4% coverage, compared with
+7

@@ -1,0 +1,739 @@
+JOURNAL OF LATEX CLASS FILES, VOL. X, NO. X, XXX XXX
+1
+Fine-Grained Analysis of Catastrophic Forgetting in
+Continual Learning via Algorithmic Stability
+Guodong Zheng1, Yan Sun2, Peng Wang1, Enneng Yang1, Jiafei Lyu3, Xiaochun Cao1, Dacheng Tao2, Li Shen1
+Abstract—Understanding catastrophic forgetting, in which
+learning new tasks degrades performance on previously learned
+tasks, remains a fundamental challenge in continual learning
+(CL). Existing theoretical analyses often rely on specific model
+or task structures and offer limited insight into how iterative
+optimization affects forgetting. To address this gap, we develop
+an algorithmic stability framework for expected population
+forgetting under SGD without prescribing a particular model
+architecture. Specifically, we decompose forgetting into intra-
+task and cross-task generalization gaps and empirical forgetting.
+To bound the generalization gaps, we track how a sample
+perturbation affects updates within a task and propagates through
+subsequent tasks. We consider constant, intra-task decaying, and
+continuously decaying learning-rate schedules. Comparing the
+two decaying schedules allows us to characterize how restarting
+learning-rate decay at task boundaries affects the propagation
+of historical sample perturbations. For empirical forgetting, we
+derive bounds for all three schedules by retaining cumulative
+gradient alignment along the optimization trajectory, without
+requiring convexity. Combining these results yields upper bounds
+on expected forgetting that capture the effects of training set size,
+the number of updates per task, the total number of tasks, learning-
+rate schedules, and cumulative gradient alignment. Finally, we
+conduct experiments on Split CIFAR-100 and Split MiniImageNet
+to examine the empirical implications of our theoretical findings.
+Index Terms—Catastrophic forgetting, algorithmic stability,
+intra-task generalization gap, cross-task generalization gap,
+empirical forgetting.
+I. INTRODUCTION
+Continual learning (CL) aims to learn from a sequence of
+non-stationary data streams and tasks over time. However, this
+classical training paradigm remains vulnerable to a fundamental
+challenge, known as catastrophic forgetting [1, 2], in which
+the model exhibits a substantial degradation in performance on
+previously learned tasks as it adapts to newly introduced tasks.
+To mitigate catastrophic forgetting, several empirical methods
+have been proposed and have achieved promising results [3].
+However, the theoretical understanding remains much less
+developed. Existing analyses have largely focused on the
+linear regime [4–8] or the neural tangent kernel (NTK)
+regime [9–11]. While linear models yield explicit forgetting
+bounds, the resulting guarantees depend on the assumed linear
+1Guodong Zheng, Peng Wang, Enneng Yang, Xiaochun Cao and Li Shen are
+with the School of Cyber Science and Technology, Shenzhen Campus of Sun
+Yat-sen University, Shenzhen, China. (E-mail: zhenggd3@mail.sysu.edu.cn;
+wangp389@mail.sysu.edu.cn;
+ennengyang@gmail.com;
+caoxi-
+aochun@mail.sysu.edu.cn; mathshenli@gmail.com).
+2Yan Sun and Dacheng Tao are with the College of Computing and Data
+Science and the Generative AI Lab at Nanyang Technological University,
+Singapore. (Email: sun.yan.95@outlook.com; dacheng.tao@gmail.com))
+3Jiafei Lyu is with the Tencent Hunyuan, Shenzhen, China. (Email:
+dmksjfl@gmail.com
+structure. NTK-based analyses extend the study to neural
+networks, but typically rely on infinite-width limits. Moreover,
+most of these studies analyze forgetting through closed-form
+solutions to the optimization problem, abstracting away the
+fine-grained dynamics of iterative updates and yielding coarse
+bounds. Recently, Zheng et al. [11] analyze forgetting dynamics
+through NTK gradient flow, which captures more detailed
+trajectories than conventional static analyses. Taheri et al. [12]
+characterize forgetting in two-layer quadratic neural networks
+in the kernel regime, deriving explicit empirical forgetting
+bounds for orthogonal XOR-cluster tasks and using algorithmic
+stability to control delayed generalization. These studies provide
+insights into how forgetting evolves during training, while
+their guarantees remain tied to specific kernel approximations,
+network architectures, or task structures. This motivates an
+analysis of training dynamics, without prescribing a particular
+network architecture, that tracks both within-task updates and
+the propagation of their effects across tasks.
+In this work, we develop an algorithmic stability analysis
+of expected forgetting in CL. We quantify forgetting as the
+expected increase in population risk on historical tasks and
+decompose it into intra-task generalization gaps (IGG), cross-
+task generalization gaps (CGG), and empirical forgetting (EF).
+To bound the generalization terms, we characterize stability
+under a sample perturbation in either the current task or a
+historical task. We follow SGD trajectories to track how the
+perturbation affects updates within that task and propagates
+through subsequent tasks. This analysis yields generalization
+bounds for constant, intra-task decaying, and continuously
+decaying learning rate schedules in the convex setting, and for
+the two decaying schedules in the non-convex setting. Under
+intra-task decay, the learning rate decreases from the same
+initial value within each task, whereas under continuous decay,
+it continues decreasing across task boundaries. Comparing
+these schedules allows us to characterize how resetting the
+learning rate at task boundaries affects the propagation of
+historical sample perturbations. For EF, we analyze changes
+in empirical risk on historical tasks along the optimization
+trajectory, retaining the cumulative inner products between
+gradients of historical tasks and those of the current task. The
+EF analysis covers all three learning rate schedules without
+requiring convexity. Combining these results yields bounds on
+expected population forgetting that explicitly account for both
+generalization gaps and empirical risk changes.
+As summarized in Table I, the bounds reveal distinct effects
+of learning-rate scheduling on generalization and empirical
+forgetting. For convex losses with step sizes at most 2/β,
+the IGG and CGG bounds scale as O(N/n) under constant
+arXiv:2610.31551v1  [cs.LG]  22 Oct 2026
+
+
+JOURNAL OF LATEX CLASS FILES, VOL. X, NO. X, XXX XXX
+2
+TABLE I: Results for the IGG, CGG, and EF under convex and non-convex loss functions with three learning-rate (LR)
+schedules: constant (C), intra-task decaying (ID), and continuously decaying (CD). Here, T is the number of tasks and i ∈[T −1]
+is the index of a previous task. N and n denote the number of iterations and training samples per task, respectively. L and β
+are the Lipschitz and smoothness constants. We define p =
+cβ
+cβ+1, where c is the constant factor in the learning rate. The term
+GT,i is cumulative gradient alignment defined in Equation (6). For the non-convex ID setting, the IGG and CGG upper bounds
+reported in the table apply when 2cL2 < N and 2cL2(eN)cβ(T −i) < N, respectively. When a condition is not satisfied, the
+corresponding upper bound is N/n. The full assumptions and detailed piecewise results are provided in Section IV.
+Case
+LR
+IGG ϵi,i
+CGG ϵT,i
+EF ˜ϵT,i
+Convex
+C
+2cL2N
+n
+2cL2N
+n
+−GT,i+ βc2L2
+2
+N(T −i)
+ID
+2cL2 ln(eN)
+n
+2cL2 ln(eN)
+n
+−GT,i+ βc2L2
+2
+(2−1/N)(T −i)
+CD
+2cL2
+n
+ln
+
+1 +
+1
+i−1
+
+2cL2
+n
+ln
+
+1 +
+1
+i−1
+
+−GT,i+ βc2L2
+2
+(1/(iN)−1/(T N))
+Non-convex
+ID
+(2cL2)1−pN p
+pn
+−2L2
+βn
+ep(T −i)KNT −i+1 −2L2(eN)cβ(T −i)
+βn
+−GT,i+ βc2L2
+2
+(2−1/N)(T −i)
+CDa
+C1
+1 : KiN −(i−1)N
+n
+−2L2
+βn
+C1
+2 : KT N −(i−1)N
+n
+−2L2
+βn (T/i)cβ
+−GT,i+ βc2L2
+2
+(1/(iN)−1/(T N))
+C2
+1 :
+2L2
+βn
+
+(
+i
+i−1)cβ −1
+
+C2
+2 :
+2L2
+βn
+
+( T
+i−1)cβ −( T
+i )cβ
+a Let C1 = (2cL2)1−p(iN)p −(i −1)N and C2 = (2cL2)1−p(TN)p −(i −1)N. For j = 1, 2, C1
+j denotes 0 < Cj < N, and C2
+j denotes
+Cj ≤0. When Cj ≥N, the corresponding bound is N/n.
+learning rates and O(log(eN)/n) under intra-task decay, while
+continuous decay gives bounds independent of N for historical
+tasks i > 1, with the other parameters fixed. For non-convex
+losses and i > 1, the IGG and CGG bounds under continuous
+decay are no larger than those under intra-task decay at the same
+parameter values. In particular, for fixed c, β, L, T, i with i > 1,
+the CGG bound under continuous decay is O(1/n) uniformly
+in N. Thus, increasing the local training length does not impose
+an additional growth restriction for this bound to vanish as
+n increases. These results show how carrying learning-rate
+decay across task boundaries changes the dependence of the
+generalization bounds on local training length. The EF bound
+further captures the joint contribution of cumulative gradient
+alignment and a second-order term controlled by squared
+learning rates. With the other parameters fixed, this second-
+order term scales as O(N), O(1), and O(1/N) under constant,
+intra-task decaying, and continuously decaying learning rates,
+respectively. Combining the generalization and EF bounds
+characterizes how perturbation propagation and trajectory
+dependent gradient interactions jointly enter the population
+forgetting bound. Finally, we conduct experiments on Split
+CIFAR-100 and Split MiniImageNet to examine the empirical
+implications of our theoretical findings.
+Our main contributions can be summarized as follows:
+• We derive explicit IGG and CGG bounds for continual
+SGD by tracking sample perturbations within a task and
+through subsequent tasks. These bounds characterize the
+effects of sample size, local training length, the total
+number of tasks, and learning-rate schedules.
+• We derive an EF bound in terms of cumulative gradient
+alignment and an explicit second-order term involving
+squared learning rates. The bound reveals how positive
+cumulative gradient alignment contributes to controlling
+empirical forgetting.
+• We derive upper bounds on expected forgetting through
+combining the IGG, CGG, and EF bounds, linking
+generalization with changes in empirical risk along the
+continual learning trajectory.
+II. RELATED WORK
+Empirical studies in CL. Continual learning has made
+substantial progress in empirical methods for mitigating catas-
+trophic forgetting. We divide these methods into three main
+families: (1) replay-based methods, which either store data
+from previous tasks and replay it during training on the current
+task [13–15], or store gradient or feature information from prior
+tasks and constrain the current-task gradient to be orthogonal
+to the stored information [16–20]; (2) regularization-based
+methods, which aim to restrain updates of parameters that are
+important for previous tasks [21, 22], or maintain consistency of
+intermediate features by adding a regularization term to the loss
+[23]; and (3) architecture-based methods, which dynamically
+expand or adapt the model architecture to preserve knowledge
+from previous tasks [24–26].
+Theoretical analysis of CL. Recent theoretical studies
+on CL have mainly focused on catastrophic forgetting and
+generalization. Broadly speaking, the existing literature can
+be divided into two main lines of work: linear model analysis
+and NTK-based analysis. Under the linear regime, Evron et al.
+[4], Lin et al. [5] investigate forgetting and generalization under
+the assumptions of overparameterized linear models. Ding et al.
+[6] study forgetting in both overparameterized and underpa-
+rameterized regimes while relaxing the data assumptions to
+fourth-moment conditions. Moreover, several works use linear
+models to analyze concrete methods for mitigating forgetting,
+including replay-based methods [8, 27, 28], regularization-
+based methods [7, 29–31], and mixture-of-experts methods
+[32]. The other main line of theoretical work relies on the NTK
+regime. Specifically, Bennani et al. [33] establish generalization
+error bounds for CL based on the NTK and Rademacher
+
+
+JOURNAL OF LATEX CLASS FILES, VOL. X, NO. X, XXX XXX
+3
+complexity. Doan et al. [9] analyze forgetting by introducing
+the NTK overlap matrix as a task similarity metric. Karakida
+and Akaho [10] study forgetting and generalization error
+through learning-curve analysis between two tasks. Zheng
+et al. [11] further characterize the training-time dynamics of
+forgetting and generalization in the general CL setting. Taheri
+et al. [12] analyze forgetting in two-layer quadratic neural
+networks in the kernel regime, deriving explicit empirical
+forgetting bounds for orthogonal XOR-cluster tasks and using
+algorithmic stability to control delayed generalization. Liu et al.
+[34] derive generalization bounds for parameter-efficient fine-
+tuning in CL. However, these theoretical analyses have several
+limitations: (1) they rely on restrictive model assumptions,
+such as linear models, infinite-width models, or infinitesimal
+learning rates, which make the results less general; and (2)
+the upper bounds derived in the NTK setting often involve
+complicated kernel matrices, making them difficult to interpret
+and generalize. In contrast, we analyze forgetting through a
+fine-grained characterization of the training trajectory without
+restrictive model assumptions. Moreover, our bounds depend
+only on a few readily interpretable quantities, such as the
+training set size, local training length, learning-rate schedule,
+and gradient inner products between tasks.
+The work most closely related to ours is that of Taheri et al.
+[12], who analyze forgetting using algorithmic stability. Our
+analysis differs in three aspects: (1) Their theoretical results are
+developed for two-layer neural networks with quadratic activa-
+tions and fixed output-layer weights, whereas our analysis does
+not prescribe a particular network architecture. (2) Their explicit
+empirical forgetting guarantees rely on orthogonal XOR-cluster
+tasks and the specified network model. Our EF bound requires
+only that each sample loss be Lipschitz continuous and smooth
+with respect to the model parameters, without imposing these
+structural assumptions. Their delayed generalization analysis
+also uses Lipschitz and smoothness assumptions on the loss.
+(3) Their main forgetting and generalization theorems adopt
+constant learning rates, whereas we examine constant, intra-task
+decaying, and continuously decaying learning rates.
+III. PRELIMINARY
+A. Continual Learning Setting
+We consider the standard CL setting with T ≥2 sequential
+training tasks. For any positive integer n, let [n] := {1, . . . , n}.
+For each task τ ∈[T], let Dτ denote the data distribution.
+To simplify the analysis, we assume that each task dataset
+contains n samples, and write Sτ = (zτ,1, . . . , zτ,n) for the
+corresponding training dataset drawn i.i.d. from Dτ. The
+datasets are independent across tasks. We denote the task
+sequence by S1:T := {S1, . . . , ST }, which collects the datasets
+from tasks 1 to T. Let f denote a differentiable loss function
+on the parameter space Ω= Rd. We adopt stochastic gradient
+descent (SGD) as our update rule, which can be formulated as
+wτ,t+1 = wτ,t −ητ,t∇wf(wτ,t; zτ,it),
+where ητ,t ≥0 is the learning rate and it is sampled uniformly
+from [n] with replacement, independently across all updates
+and independently of the datasets and initialization. Here, wτ,t
+denotes the model parameters at step t for task τ. Each task
+is trained for N steps indexed by t = 0, . . . , N −1. We write
+wτ = wτ,N for the model parameters obtained after training on
+task τ, with wτ,0 = wτ−1 and an initialization w0 independent
+of all task datasets.
+Furthermore, we define the population risk of wτ on Di
+as RDi(wτ) and the empirical risk of wτ on Si as RSi(wτ),
+given by
+RDi(wτ) := Ez∼Dif(wτ; z),
+RSi(wτ) := 1
+n
+n
+X
+k=1
+f(wτ; zi,k).
+We next adopt the definition of forgetting from Zheng
+et al. [11], Taheri et al. [12], which characterizes the model’s
+performance over the underlying data distribution. The formal
+definition is given in Definition 1.
+Definition 1 (Forgetting in expectation). For any i ∈[T], let
+wi = A(S1:i) denote the model obtained by the randomized
+algorithm A after training on the task sequence S1:i. We define
+forgetting in expectation as
+FT =
+1
+T −1
+T −1
+X
+i=1
+ES1:T ,A
+
+RDi(wT ) −RDi(wi)
+
+.
+(1)
+Discussion. Definition 1 generalizes backward transfer
+(BWT) [35], a conventional metric for evaluating forgetting,
+in two respects. First, BWT measures forgetting on a test
+dataset, whereas FT measures forgetting over the underlying
+data distribution. Second, FT takes an expectation over the
+randomness in both the training dataset and the learning
+algorithm. These extensions yield a theoretical measure of
+expected population forgetting, with smaller values of FT
+indicating less forgetting.
+B. Algorithmic Stability
+In the non-CL setting, standard algorithmic stability typically
+concerns perturbations in the current training data only. In CL,
+by contrast, the model is exposed to a sequence of tasks,
+so perturbations at different tasks can propagate differently
+through the subsequent training trajectory. To reflect this
+sequential structure, we propose intra-task uniform stability
+for perturbations on the current task and cross-task uniform
+stability for perturbations on a historical task.
+Definition 2 (Intra-task uniform stability). For any i ∈[T],
+a randomized algorithm A is said to be ϵi,i-uniformly stable on
+task i after training on i tasks if, for any datasets S1:i, S′
+1:i ∈
+Zi×n that differ in at most one example in task i, we have
+sup
+z
+EA[f(A(S1:i); z) −f(A(S′
+1:i); z)] ≤ϵi,i.
+(2)
+Definition 3 (Cross-task uniform stability). For any i ∈
+[T −1], a randomized algorithm A is said to be ϵT,i-uniformly
+stable on task i after training on T tasks if, for any datasets
+S1:T , S′
+1:T ∈ZT ×n that differ in at most one example in task
+i, we have
+sup
+z
+EA[f(A(S1:T ); z) −f(A(S′
+1:T ); z)] ≤ϵT,i.
+(3)
+
+
+JOURNAL OF LATEX CLASS FILES, VOL. X, NO. X, XXX XXX
+4
+In the following analysis, ϵi,i and ϵT,i denote the infima
+of the nonnegative constants satisfying Definitions 2 and 3,
+respectively.
+Remark 1. As shown in Definition 2, the stability measure
+ϵi,i-uniform stability characterizes the algorithm’s stability
+to perturbations in the data of the current task during CL.
+In contrast, Definition 3 extends this notion to perturbations
+in a historical task, thereby capturing how the effect of a
+local change can propagate through the subsequent training
+trajectory. This reflects the cumulative of stability in CL, where
+the influence of earlier tasks may persist and affect the final
+model after training on all tasks.
+In this work, we follow Hardt et al. [36], Wang et al. [37],
+Chen et al. [38], Liu et al. [39], Zhu et al. [40] to adopt the
+standard assumptions used in algorithmic stability analysis:
+Assumption 1 (L-Lipschitz). For every z ∈Z, the function
+f(·; z) : Ω→R is L-Lipschitz, that is, for all u, v ∈Ω,
+|f(u; z) −f(v; z)| ≤L∥u −v∥.
+Assumption 2 (β-smooth). For every z ∈Z, the function
+f(·; z) : Ω→R is β-smooth, that is, for all u, v ∈Ω,
+∥∇f(u; z) −∇f(v; z)∥≤β∥u −v∥.
+Assumption 3 (Convex). For every z ∈Z, the function f(·; z) :
+Ω→R is convex, that is, for all u, v ∈Ω,
+f(u; z) ≥f(v; z) + ⟨∇f(v; z), u −v⟩.
+IV. THEORETICAL ANALYSIS
+In this section, we provide a theoretical analysis of catas-
+trophic forgetting. To comprehensively analyze the forgetting
+measure FT in Equation (1), it is important to derive a fine-
+grained decomposition that allows us to understand forgetting
+from multiple perspectives:
+FT =
+1
+T −1
+T −1
+X
+i=1
+h
+ES1:T ,A[RDi(wT ) −RSi(wT )]
+|
+{z
+}
+Cross-Task Generalization Gap
++ ES1:T ,A[RSi(wT ) −RSi(wi)]
+|
+{z
+}
+Empirical Forgetting
++ ES1:T ,A[RSi(wi) −RDi(wi)]
+|
+{z
+}
+Intra-Task Generalization Gap
+i
+.
+(4)
+Based on the decomposition in Equation (4), we analyze the
+forgetting measure FT from the following three aspects.
+(1) Intra-Task Generalization Gap (Section IV-A). This term
+captures the generalization behavior of the trained model on
+the current task. A smaller absolute intra-task generalization
+gap indicates closer agreement between the empirical risk and
+the population risk on the current task.
+(2) Cross-Task Generalization Gap (Section IV-B). This
+term reflects the generalization behavior of the model trained
+on later tasks when evaluated on earlier task distributions. A
+smaller absolute cross-task generalization gap indicates closer
+agreement between the empirical risk and the population risk
+on previous tasks.
+(3) Empirical Forgetting (Section IV-C). This term captures
+how much performance on the training set of task i deteriorates
+after learning T tasks. A smaller empirical forgetting indicates
+that the model forgets less of the knowledge from the training
+set of a previous task.
+In what follows, we derive upper bounds for these three
+terms under convex and non-convex loss functions, respectively,
+to provide a comprehensive understanding of catastrophic
+forgetting in CL.
+A. Intra-Task Generalization Gap
+The intra-task generalization gap (IGG) describes the gen-
+eralization performance on the current task. We next present
+an important theorem showing that intra-task uniform stability
+implies an upper bound on the intra-task generalization gap
+in expectation. The result is stated in Theorem 1, and the
+corresponding proof is given in Appendix B-A.
+Theorem 1. For any i ∈[T], if A is ϵi,i-uniformly stable, then
+|ES1:i,A[RDi(A(S1:i)) −RSi(A(S1:i))]| ≤ϵi,i.
+Theorem 1 shows that an intra-task uniformly stable algo-
+rithm will have a small IGG. This suggests that we can control
+the uniform stability itself, rather than directly bounding the
+generalization gap. We then provide the corresponding upper
+bound under both convex and non-convex loss functions.
+First, we establish an upper bound for the case where the loss
+function is convex in Theorem 2, and the proof of Theorem 2
+is given in Appendix B-B.
+Theorem 2. Assume that the loss function f(·; z) satisfies
+Assumptions 1, 2, and 3. Suppose that SGD is run for N steps
+on each task τ ∈[i] with step sizes ητ,t ≤2
+β . Then,
+ϵi,i ≤2L2
+n
+N−1
+X
+t=0
+ηi,t.
+(5)
+Remark 2. Theorem 2 implies that, under convex loss functions,
+the IGG can be bounded in terms of the cumulative learning
+rate within task i. This bound is consistent with the classical
+non-CL result of Hardt et al. [36]. Hence, in the convex
+setting, the bound on ϵi,i is independent of previous tasks and
+depends only on the optimization process within the current
+task. Moreover, smaller learning rates and larger numbers of
+training samples can further reduce this upper bound.
+Moreover, for different learning rate schedules, including the
+constant learning rate ητ,t = c, the intra-task decaying learning
+rate ητ,t =
+c
+t+1, and the continuously decaying learning rate
+ητ,t =
+c
+(τ−1)N+t+1, Equation (5) can be further written as
+ϵi,i ≤
+
+
+
+
+
+
+
+
+
+
+
+
+
+2cL2N
+n
+,
+if ητ,t = c,
+2cL2 ln(eN)
+n
+,
+if ητ,t =
+c
+t+1,
+2cL2
+n
+ln
+
+1 +
+1
+i−1
+
+,
+if ητ,t =
+c
+(τ−1)N+t+1, i > 1.
+
+
+JOURNAL OF LATEX CLASS FILES, VOL. X, NO. X, XXX XXX
+5
+Remark 3. The upper bound on ϵi,i varies across learning-
+rate schedules. Under a constant learning rate, the bound
+grows linearly with the number of SGD steps N on the current
+task. Under an intra-task decaying learning rate, this growth is
+reduced to O(ln(eN)). With other parameters fixed, reducing
+the number of training steps yields a smaller upper bound
+under both schedules, providing a theoretical motivation for
+early stopping. Under the continuously decaying learning-
+rate schedule, the bound coincides with that under intra-task
+decay when i = 1. For i > 1, the displayed upper bound is
+independent of N and is instead controlled by the task index i.
+Before presenting the IGG bounds for non-convex losses,
+we introduce the following notation for a recurring term in the
+subsequent analysis:
+KN := cβ + 1
+ncβ (2cL2)
+1
+cβ+1 N
+cβ
+cβ+1 .
+The subscript specifies the number of iterations, with c, β, L,
+and n held fixed. In particular, for any positive integer i,
+KiN = cβ + 1
+ncβ (2cL2)
+1
+cβ+1 (iN)
+cβ
+cβ+1 .
+Then, we derive an upper bound for the more challenging
+non-convex case in Theorem 3, and the proof of Theorem 3 is
+given in Appendix B-C.
+Theorem 3. Assume that the loss function f(·; z) ∈[0, 1]
+satisfies Assumptions 1 and 2, with n ≥2 and c, β > 0.
+Suppose that SGD is run for N steps on each task τ ∈[i] with
+learning rates ητ,t. Then,
+(a) under intra-task decaying learning rates ητ,t =
+c
+t+1:
+ϵi,i ≤
+(
+KN −2L2
+βn ,
+if 2cL2 < N,
+N
+n ,
+if 2cL2 ≥N.
+(b) under continuously decaying learning rates ητ,t =
+c
+(τ−1)N+t+1 and i > 1:
+ϵi,i ≤
+
+
+
+
+
+
+
+
+
+2L2
+βn
+
+i
+i−1
+cβ
+−1
+
+,
+if 2cL2 ≤CCD
+1
+,
+KiN −(i−1)N
+n
+−2L2
+βn ,
+if CCD
+1
+< 2cL2 < iN,
+N
+n ,
+if 2cL2 ≥iN,
+where
+CCD
+1
+= (i −1)N
+i −1
+i
+cβ
+.
+Remark 4. Theorem 3 provides an upper bound for the IGG
+without assuming convexity of the loss function. Let p = cβ/(1+
+cβ). Under intra-task decaying learning rates, when 2cL2 < N,
+the bound scales as O(N p/n) for fixed c, β, L > 0, consistent
+with the non-convex SGD stability rate established by Hardt
+et al. [36] in the single-task setting. As n →∞, the condition
+N = o(n1/p) is sufficient for a vanishing IGG. Thus, the
+number of training steps can increase with the sample size,
+provided that it grows more slowly than n1/p. When 2cL2 ≥N,
+corresponding to a larger initial learning rate or Lipschitz
+constant relative to the training length, the bound becomes
+N/n. In both cases, increasing the sample size or reducing
+the number of training steps decreases the displayed upper
+bound, with the other parameters fixed.
+Remark 5. For i > 1, continuously decaying learning rates
+provide stronger control of the IGG bound as the training
+length increases. When 2cL2 ≤CCD
+1
+, the bound is independent
+of N and decreases with the task index i. Since i ≥2, it
+is at most
+2L2
+βn (2cβ −1). In the intermediate case CCD
+1
+<
+2cL2 < iN, the bound increases with N but remains below
+2L2
+βn [(i/(i−1))cβ −1]. Thus, the dependence on N in this case
+does not lead to unbounded growth. For the same c, β, L, n, N,
+the displayed bound under continuous decay is no larger than
+that under intra-task decay, and the improvement is strict when
+0 < 2cL2 < iN. When 2cL2 ≥iN, both schedules give the
+bound N/n, which remains nontrivial for N < n. Moreover,
+increasing the number of training samples and decreasing the
+initial learning rate can further reduce the upper bound under
+this learning-rate schedule.
+B. Cross-Task Generalization Gap
+The cross-task generalization gap (CGG) captures the
+generalization performance on earlier tasks. Next, we present
+the relationship between cross-task uniform stability and the
+expected CGG, which reflects how perturbations on historical
+tasks propagate through training in the CL setting and affect
+CGG. The result is stated in Theorem 4, and the proof is given
+in Appendix C-A.
+Theorem 4. For any i ∈[T −1], if A is ϵT,i-uniformly stable,
+then
+|ES1:T ,A[RDi(A(S1:T )) −RSi(A(S1:T ))]| ≤ϵT,i.
+Theorem 4 indicates that small cross-task uniform stability
+leads to a small CGG. We then analyze CGG under both convex
+and non-convex loss functions.
+First, we establish an upper bound for the case where the loss
+function is convex in Theorem 5, and the proof of Theorem 5
+is given in Appendix C-B.
+Theorem 5. Assume that the loss function f(·; z) satisfies
+Assumptions 1, 2, and 3. Suppose that SGD is run for N steps
+on each task τ ∈[T] with step sizes ητ,t ≤2
+β . Then,
+ϵT,i ≤2L2
+n
+N−1
+X
+t=0
+ηi,t.
+Remark 6. Theorem 5 surprisingly shows that the bound for
+the CGG coincides with that for the IGG under convex loss
+functions. This indicates that, under convexity, the algorithmic
+stability of SGD is preserved throughout the entire sequence of
+tasks. Even as the model parameters are continuously updated
+using data from new tasks, the resulting bound on the expected
+generalization gap on historical tasks does not grow. This
+conclusion relies on the non-expansive property of convex and
+smooth loss functions, as established in Lemma 1. Therefore,
+the discussion of IGG bound in Remark 3 remains valid for
+CGG as well.

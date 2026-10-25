@@ -1,0 +1,644 @@
+arXiv:2610.31505v1  [cs.CV]  22 Oct 2026
+Machine Learning
+for Biomedical Imaging
+Evaluation of Uncertainty-Aware Multi-Software Ensembles for Hip-
+pocampal Segmentation
+Gabriel Oliveira-Stahl 1,2
+, Anna Schroder 1,2
+, James Moggridge 2,3
+, Hamza A. Salhab 2
+, Caroline Micallef 2,
+Josephine Barnes 6
+, M. Jorge Cardoso 5
+, Carole H. Sudre* 1,4,5
+, Matthew Grech-Sollars* 1,2
+1 Hawkes Institute, Department of Computer Science, University College London, UK
+2 Lysholm Department of Neuroradiology, National Hospital for Neurology and Neurosurgery, University College London
+Hospitals NHS Foundation Trust, London, UK
+3 Department of Brain Repair and Rehabilitation, UCL Institute of Neurology, University College London, UK
+4 Unit for Lifelong Health and Ageing, Department of Population Science and Experimental Medicine, University College
+London, UK
+5 School of Biomedical Engineering & Imaging Sciences, King’s College London, UK
+6 Dementia Research Centre, University College London, UK
+Abstract
+Accurate hippocampal segmentation can be a useful tool for diagnosing and monitoring neurological conditions such as
+Alzheimer’s disease and epilepsy. While numerous automated segmentation methods exist, their clinical adoption remains
+limited. Reliable uncertainty assessment can enhance trust and facilitate clinical translation. This study evaluates
+ensembles of five heterogeneous hippocampal segmentation methods — InnerEye, ASHS, FastSurfer, HippoSeg, and
+FreeSurfer — across two dementia datasets and one epilepsy dataset. The sub-ensemble containing InnerEye, FastSurfer,
+and HippoSeg emerged as both accurate and efficient, highlighting the feasibility of balancing computational cost and
+performance. Additionally, ensemble-derived uncertainty quantification with sample variance, mutual information, and
+predictive entropy is shown to reduce inaccurate segmentations by flagging low-confidence cases, potentially providing
+a mechanism for automatically escalating ambiguous cases for expert assessment. Lastly, this study explores the
+downstream clinical utility of ensemble-derived uncertainty, finding a significant correlation with motion artefact severity
+and a modest contribution to Alzheimer’s disease classification.
+Keywords
+Uncertainty estimation, Ensemble, Hippocampal segmentation, Carbon footprint, Alzheimer’s disease
+Article informations
+https://doi.org/10.59275/j.melba.2026-e77b
+©2026 Oliveira-Stahl, Schroder, Moggridge, Salhab, Micallef, Barnes, Cardoso, Sudre, and
+Grech-Sollars. License: CC-BY 4.0
+Volume 2026, Received: 2026-02-24, Published 2026-09-24
+Corresponding author: gabriel.stahl.17@ucl.ac.uk
+Special issue: Uncertainty for Safe Utilization of Machine Learning in Medical Imaging (UNSURE) 2025
+Guest editors: Mobarak Hoque, Raghav Mehta, Cheng Ouyang, Chen Qin, Marianne Rakic, and Sandy Wells
+. ∗Contributed equally as joint senior authors.
+615
+
+
+Oliveira-Stahl et al., 2026
+1. Introduction
+Hippocampal volume changes are associated with several
+neurological diseases such as Alzheimer’s and epilepsy (Jack,
+1994; Duan et al., 2020). Accurate volumetric measure-
+ment can serve as a biomarker for diagnosis and disease
+monitoring (Schuff et al., 2008; Briellmann et al., 2002).
+While manual segmentation by an expert is still consid-
+ered the gold standard, its time-consuming nature and the
+well-documented intra- and inter-reader variability remain
+significant limitations (Boccardi and et al., 2015; Geuze
+et al., 2005). Although a concerted effort has taken place
+to establish a harmonised protocol for manual hippocampal
+segmentation (Frisoni and Jack, 2015), multiple different
+protocols for hippocampal segmentation exist, complicating
+the notion of a ground truth segmentation (Geuze et al.,
+2005).
+Numerous methods for automatic hippocampus seg-
+mentations have been proposed, ranging from atlas-based
+approaches (Dill et al., 2015), to deep learning methods
+(Schroder et al., 2023). Despite the range of available
+methods, clinical adoption remains limited. Key concerns
+hindering the clinical translation of these tools include the
+risk of silent failure, and a lack of robustness to unex-
+pected distribution shifts. Reliable uncertainty estimation
+can play a central role in strengthening the trustworthi-
+ness of these algorithms, e.g. by escalating uncertain cases
+for human review, and various approaches for assessing
+predictive uncertainty have been explored in the literature
+(Abdar and et al., 2020). While Bayesian neural networks
+offer the most principled framework for posterior approxi-
+mation, they are often computationally prohibitive (Abdar
+and et al., 2020). Monte-Carlo Dropout and ensembles
+have emerged as practical methods for Bayesian approxima-
+tion (Lakshminarayanan et al., 2016; Gal and Ghahramani,
+2015). However, these approaches differ substantially in
+computational cost. Monte-Carlo sampling increases in-
+ference time through repeated stochastic forward passes,
+while ensemble-based uncertainty quantification (UQ) re-
+quires running multiple models or segmentation pipelines,
+making inference cost scale with ensemble size. This cre-
+ates an important trade-off between uncertainty reliabil-
+ity, scalability, and computational efficiency, particularly
+when methods are deployed across large imaging cohorts or
+resource-constrained clinical environments. Beyond provid-
+ing uncertainty estimation, ensemble methods consistently
+achieve superior performance over individual models, as
+repeatedly demonstrated by results from the Brain Tumor
+Image Segmentation Benchmark (BRATS) (Menze and
+et al., 2015) and the White Matter Hyperintensity Seg-
+mentation Challenge (Kuijf and et al., 2019). Ensemble
+predictions can be aggregated through multiple strategies,
+with stacking of heterogeneous models proving highly ef-
+fective and simple averaging providing a stable method for
+integrating their predictions (Müller et al., 2022). Although
+deep ensembles often outperform single models, their com-
+bined outputs are not automatically well-calibrated, even
+when each constituent network is well-calibrated on its own
+(Wu and Gales, 2021; Rahaman and Thiery, 2021). Cali-
+bration deteriorates further under distribution shift (Ovadia
+et al., 2019), a problem that has been traced in part to in-
+sufficient diversity among ensemble members (Javanbakhat
+et al., 2024). To counter this, the present study assesses the
+disagreement of deliberately heterogeneous segmentation
+methods and treats that disagreement itself as an uncer-
+tainty estimate, a strategy previously explored by Kofler
+et al. (2021).
+Another growing concern is the computational cost and
+energy consumption of the segmentation methods. Recent
+work has highlighted the potential environmental impact
+of large-scale deep learning models (Strubell et al., 2020;
+Wu and et al., 2022), emphasizing the need for sustainable
+solutions. High computational demands not only contribute
+to a significant carbon footprint, but also limit accessibility
+for hospitals and research institutions with limited resources.
+Addressing both the need for reliable uncertainty estimation
+and computational efficiency will be conducive for enabling
+broader clinical adoption.
+Beyond performance accuracy, ensembling methods may
+prove useful to provide robust uncertainty estimates that
+can be employed for downstream clinical tasks. One such
+application relates to quality control and particularly mo-
+tion artefact detection. There are a number of sources
+that can lead to motion artefacts in brain magnetic reso-
+nance imaging (MRI), including patient movement, invol-
+untary physiological motion (e.g., respiration and cardiac
+pulsation), swallowing, and flow of fluids such as blood or
+cerebrospinal fluid (Zaitsev et al., 2015). Motion artefacts
+can negatively impact image quality and lead to erroneous
+interpretations, in particular in acquisitions with low signal-
+to-noise ratio (Havsteen et al., 2017). Accurately detecting
+and correcting motion-related image degradation has long
+been a challenge in medical image processing (Zaitsev et al.,
+2015). While both traditional machine learning and deep-
+learning-based methods have demonstrated strong perfor-
+mance (Vakli et al., 2023), their effectiveness often does
+not generalise well across vendors or acquisition protocols.
+Segmentation uncertainty, which tends to increase as image
+quality degrades, may therefore offer a complementary sig-
+nal for flagging motion-corrupted scans, with previous work
+showing that ensemble-derived uncertainties are particularly
+useful for quality control (Ng et al., 2023).
+A further potential application of uncertainty estima-
+tion in the context of hippocampal segmentation is disease
+classification. Previous work has shown that hippocampal
+616
+
+
+Uncertainty-Aware Ensembles for Hippocampal Segmentation
+volume can discriminate Alzheimer’s disease (AD) from
+mild cognitive impairment (MCI) and cognitively normal
+(CN) subjects with approximately 84% sensitivity and speci-
+ficity (Colliot et al., 2008), and a recent meta-analysis of
+artificial intelligence (AI)-based methods-based methods
+reports high performance for AD vs. CN (sensitivity: 0.87,
+specificity: 0.91, AUC: 0.95), though accuracy decreases
+for AD vs. MCI (AUC: 0.80) and MCI vs. CN (AUC: 0.83)
+(Wu et al., 2025). Leveraging epistemic uncertainty, we
+hypothesise that disagreements between methods designed
+to accommodate atrophy and methods trained purely on
+healthy individuals will be stronger in the AD cases with
+stronger hippocampal atrophy. If confirmed, such disagree-
+ment could serve as an additional feature for classification.
+1.1 Contributions
+Our contributions are three-fold. First, we provide a com-
+prehensive benchmark of five heterogeneous hippocampal
+segmentation methods, evaluating their accuracy, calibra-
+tion, and carbon footprint across two dementia cohorts and
+one epilepsy cohort. From this benchmark, we identify a
+resource-efficient triad — InnerEye, FastSurfer, and Hip-
+poSeg — that matches the full ensemble’s Dice performance
+while reducing inference CO2 emissions by approximately
+82%, and show that simple averaging of probabilistic out-
+puts yields the best integration strategy. Second, we demon-
+strate that uncertainty estimates derived from the triad’s
+probabilistic outputs can support automated quality control:
+aggregated uncertainty successfully flags gross segmenta-
+tion failures across datasets, and correlates significantly
+with motion artefact severity, suggesting a mechanism for
+automatically escalating problematic cases for expert review.
+Third, we investigate the clinical utility of ensemble-derived
+uncertainty for disease classification, and show that combin-
+ing uncertainty metrics with hippocampal volume features
+improves discrimination between cognitively normal and
+Alzheimer’s disease groups.
+2. Methods
+2.1 Segmentation tools
+Five segmentation techniques were chosen to cover differ-
+ences in techniques (atlas-based and deep-learning-based)
+and variation in training data (healthy controls, dementia,
+and epilepsy). An overview is provided in Table 1. Notably,
+for ASHS we used the Penn Memory Center 3T ASHS Atlas
+for T1-weighted MRI (Xie and et al., 2016).
+2.2 Data
+Five datasets were used to assess the potential benefit of
+including uncertainty measures in three separate contexts:
+cross-domain segmentation performance with ground truth,
+motion artefact detection, and Alzheimer’s disease spec-
+trum classification.
+For the experiments on segmentation performance, hip-
+pocampal segmentations were performed on three inde-
+pendent datasets, for which gold standard manual seg-
+mentations were defined by a clinician with neuroradiology
+experience, and confirmed by a consultant neuroradiolo-
+gist. The definition followed an amended version of the
+harmonised protocol definition to also include the fimbria
+(Boccardi and et al., 2015). The three datasets were:
+ADNI dataset
+: Thirty participants of the Alzheimer’s
+Disease Neuroimaging Initiative (ADNI) (mean age 76.8 ±
+7.3 years; 21 male, 9 female). T1-weighted images were ac-
+quired with voxel sizes approximately 1.2mm×0.9–1.3mm×
+0.9–1.3mm, varying by acquisition site. One third were
+diagnosed with Alzheimer’s disease, one third with late mild
+cognitive impairment, and one third were cognitively normal.
+No subjects overlapped with those in the InnerEye training
+dataset.
+Local Epilepsy:
+Eight patients with temporal lobe epilepsy
+(mean age 46.8±24.9 years; 3 male, 5 female). MRI scans
+were acquired using a Siemens Prisma 3T scanner with
+an magnetization-prepared rapid gradient echo (MPRAGE)
+sequence and a voxel size of 1.1mm×1.1mm× 1.2mm. Eth-
+ical approval for the research study using this data was
+given through the hospital Data Access Process for Re-
+search (DAP-R ethics, University College London Hospitals
+NHS Foundation Trust (2024)).
+Local Dementia:
+Twenty-one patients referred to the
+dementia clinic (mean age 73.0 ± 14.5; 15 male, 6 fe-
+male). MRI scans were acquired on a Siemens Prisma 3T
+scanner using an MPRAGE sequence with a voxel size of
+1.1mm×1.1mm× 1.2mm. Ethical approval for the research
+study using this data was given through the hospital Data
+Access Process for Research (DAP-R ethics, University Col-
+lege London Hospitals NHS Foundation Trust (2024)).
+For the motion artefact analysis, the publicly available
+Movement-Related Artefacts (MR-ART) dataset (Nárai
+et al., 2022) was used. No ground truth segmentations
+were available for this dataset.
+MR-ART:
+148 healthy adults (age range 18–75 years,
+median 25.2 years; 53 male, 95 female) with no reported
+neurological or psychiatric conditions. MRI scans were ac-
+quired on a Siemens Magnetom Prisma 3T scanner using
+an MPRAGE sequence with isotropic 1 mm3 resolution. For
+each participant, three T1-weighted scans were acquired:
+one motion-free (Standard), and two with induced head
+617
+
+
+Oliveira-Stahl et al., 2026
+Table 1: Overview of selected hippocampal segmentation tools, their methodology, and the primary clinical cohorts
+comprising their training data or atlases. Abbreviations: CNN = convolutional neural network; ASD = Autism Spectrum
+Disorder.
+Tool
+Method
+Training Data / Atlas
+References
+ASHS (AS)
+Atlas-based (Multi-atlas)
+Healthy controls, MCI
+(Xie and et al., 2016)
+HippoSeg (HI)
+Atlas-based (Multi-atlas)
+Healthy controls, Epilepsy
+(Vos and et al., 2020)(Winston et al., 2013)
+FreeSurfer (FR)
+Atlas-based (Probabilistic)
+Healthy controls, AD
+(Fischl, 2012)
+FastSurfer (FA)
+Deep learning (CNN)
+Healthy controls, AD, ASD
+(Henschel et al., 2020)
+InnerEye (IN)
+Deep learning (CNN)
+Healthy controls, MCI, AD
+(Schroder et al., 2026)(Microsoft, 2024)
+motion of increasing severity (HeadMotion1: 5 nods; Head-
+Motion2: 10 nods during acquisition).
+Each scan was
+assigned a clinical quality score by experienced neuroradiol-
+ogists who were blind to the acquisition condition; following
+the original dataset definition, scans were rated on a three-
+point scale reflecting image quality from the point of view of
+clinical diagnostic use, as clinically good (score 1), medium
+(score 2), or bad (score 3), with bad-quality images consid-
+ered unusable for clinical diagnostics (see supplementary fig.
+S5). Of these, 100 participants across all three conditions
+were included in the analysis.
+For the Alzheimer’s disease classification experiment, a
+separate, larger ADNI cohort was used. No ground truth
+manual segmentations were available for this cohort.
+ADNI Classification Cohort:
+150 participants from the
+Alzheimer’s Disease Neuroimaging Initiative (ADNI), strat-
+ified by diagnosis: 50 cognitively normal (CN), 50 with
+mild cognitive impairment (MCI), and 50 with Alzheimer’s
+disease (AD) (mean age 73.0 ± 7.5 years, range 56–90; 75
+male, 75 female). Baseline T1-weighted MRI scans were ac-
+quired across multiple ADNI sites using MPRAGE (n=129)
+and inversion recovery spoiled gradient echo (IR-SPGR;
+n=21) sequences.
+Voxel sizes varied across sites, with
+about half of them acquired at 1.0×1.0×1.0mm isotropic
+and the remainder at 1.0–1.2×0.87–1.25×0.87– 1.25mm.
+The ADNI data used in the preparation of this article
+were obtained from the Alzheimer’s Disease Neuroimaging
+Initiative (ADNI) database (adni.loni.usc.edu). The ADNI
+was launched in 2003 as a public-private partnership, led by
+Principal Investigator Michael W. Weiner, MD. The original
+goal of ADNI was to test whether serial magnetic resonance
+imaging (MRI), positron emission tomography (PET), other
+biological markers, and clinical and neuropsychological as-
+sessment can be combined to measure the progression of
+mild cognitive impairment (MCI) and early Alzheimer’s dis-
+ease (AD). The current goals include validating biomarkers
+for clinical trials, improving the generalisability of ADNI
+data by increasing diversity in the participant cohort, and
+to provide data concerning the diagnosis and progression
+of Alzheimer’s disease to the scientific community. For
+up-to-date information, see adni.loni.usc.edu.
+2.3 Processing
+Inference for the ADNI dataset and MR-ART was performed
+on a high-performance computing (HPC) cluster. For car-
+bon footprint benchmarking, the data was processed on
+a dedicated node equipped with 4 NVIDIA GTX 1080 Ti
+GPUs, an Intel Xeon E5-2640 v4 CPU (2.40GHz), and
+64GB of RAM, with no concurrent jobs from other users.
+The local hospital data was processed entirely on a local
+MacBook Pro (Intel Core i5-5257U CPU @ 2.70 GHz, with
+∼8GB of memory) due to data sharing limitations in ethics.
+For fair comparison, same software versions were installed
+on the cluster and on the local machine. An older ver-
+sion of FreeSurfer (v6.0.0) was selected to accommodate
+the memory constraints of the local machine. FastSurfer
+(v2.3.3) was run from a Docker image on the local machine,
+and via Singularity (v3.8.5-2.el7) on the reserved cluster
+node. ASHS (v2.0.0, July 2018) was run natively on the
+respective host system. Because epilepsy can cause uni-
+lateral hippocampal atrophy the left and right hippocampi
+were processed separately to avoid averaging out potential
+differences in segmentation performance. This separation
+allows for evaluating whether some methods underperform
+specifically on the atrophied side. Energy consumption and
+time to completion was tracked with the Python package
+Codecarbon (v2.8.3). Carbon tracking was performed in
+machine mode on the dedicated cluster node, using the
+United Kingdom country-level grid intensity estimate avail-
+able to CodeCarbon for the location of the datacenter. The
+reported values therefore represent inference emissions only,
+including CPU, GPU, and RAM energy during runtime,
+and do not include model training, data storage or trans-
+fer, hardware manufacturing, or other lifecycle emissions.
+CodeCarbon recorded a power usage effectiveness (PUE) of
+1.0, so no additional data-centre cooling or infrastructure
+618
+
+
+Uncertainty-Aware Ensembles for Hippocampal Segmentation
+overhead was included. No additional pre-processing of
+the scans was performed prior to segmentation with the
+respective tool.
+2.4 Uncertainty quantification
+For each voxel v, uncertainty was quantified as sample vari-
+ance, mutual information (MI), and predictive entropy (PE)
+across the winning triad’s probabilistic outputs. Sample
+variance was calculated as Varv =
+1
+T−1
+PT
+t=1(yv,t −¯yv)2,
+with the mean prediction ¯yv = 1
+T
+PT
+t=1 yv,t. Mutual infor-
+mation was defined as MIv = H(¯pv) −1
+T
+PT
+t=1 H(pv,t),
+and predictive entropy as PEv = H(¯pv) = −¯pv log2 ¯pv −
+(1 −¯pv) log2(1 −¯pv), where ¯pv = 1
+T
+PT
+t=1 pv,t, pv,t is the
+predicted probability for voxel v from tool t, and T is the
+number of segmentation tools. Figure 1 presents confi-
+dence maps for all three uncertainty quantification (UQ)
+metrics for a high-Dice example (a) and a low-Dice ex-
+ample (b). Uncertainty calibration was evaluated by the
+expected calibration error (ECE), with M = 15 bins of
+equal bin-width. To not have larger hippocampi have a dis-
+proportionate influence, ECE was calculated as the average
+of the per-hippocampus ECE values. For each hippocampus
+we computed ECE = PM
+m=1
+|Bm|
+n
+|acc(Bm) −conf(Bm)|,
+where Bm represents the set of indices of voxels with
+confidence values falling into bin m. We additionally re-
+port adaptive ECE (AECE), replacing equal-width prob-
+ability bins with R = 15 equal-mass bins obtained by
+sorting voxels by ¯pv and splitting them into quantiles:
+AECE = 1
+R
+PR
+m=1|acc(Bm) −conf(Bm)|. This reduces
+sensitivity to sparsely populated bins in segmentation, where
+most voxels are near-certain background. To assess class-
+specific calibration, we also computed AECE separately for
+true foreground (y = 1) and true background (y = 0) voxels,
+denoted AECEfg and AECEbg, and averaged these met-
+rics across hippocampi. To confirm robustness to the bin
+count, we repeated the analysis over R ∈10, 15, 20, 30, 50
+and verified that the tool ranking remained stable.
+2.5 Ensemble performance & calibration
+Segmentation performance was evaluated using the Dice
+Similarity Coefficient (DSC) and the 95th percentile Haus-
+dorff distance (HD95), predictive uncertainty with sample
+variance, mutual information, and entropy, while uncertainty
+calibration was evaluated in terms of expected calibration
+error. As initial benchmarking, the five individual segmenta-
+tion methods, all possible triads formed from them, and the
+full ensemble of five methods were compared on the ADNI
+dataset. The same ADNI dataset was therefore used both
+to identify the best-performing triad and to report its ADNI
+performance. Consequently, any performance advantage
+of the selected triad over other sub-ensembles on ADNI
+should be interpreted as an in-sample estimate that may be
+partially inflated by selection on the same data. The Local
+Dementia and Local Epilepsy datasets were not used for
+triad selection and therefore provide the held-out assessment
+of cross-domain segmentation performance and calibration.
+For each triad and for the full ensemble, the final prediction
+mask was obtained via majority voting. Performance was as-
+sessed in terms of DSC, ECE, and estimated CO2 emissions.
+The expected calibration error (ECE) of each sub-ensemble
+was approximated by interpreting the number of votes from
+the T = 3 ensemble members as discrete confidence levels.
+Specifically, if n models predicted the class hippocampus for
+a voxel v, the ensemble confidence was defined as pv = n
+T .
+For the winning triad, minor changes to their code were in-
+troduced to enable saving of the probabilistic outputs. The
+relevant amended scripts are publicly available on GitHub:
+https://github.com/zfdiwkm/multi-software-uncertainty.
+2.5.1 Ensemble integration strategy
+Next, we compared different strategies for integrating the
+predictions of the best-performing triad to assess their im-
+pact on segmentation accuracy and uncertainty calibration.
+These ensemble strategies were: (1) simple averaging of the
+output probabilities from each ensemble member (denoted
+as ‘Ensemble Averaged’ in the results), (2) weighting each
+prediction by the model’s confidence (‘Ensemble Weighted’),
+and (3) assigning each voxel to the prediction of the most
+confident model in a winner-takes-all approach (‘Ensemble
+Triage’). Due to non-normality of studied distributions,
+Friedman tests were performed to assess significant differ-
+ence in performance. To account for multiple comparisons,
+p-values were adjusted with the Holm-Bonferroni method.
+Resource consumption was estimated in terms of duration
+and CO2 expenditure for each method and each subject.
+2.6 Uncertainty-based quality control
+We investigated whether ensemble-derived uncertainty can
+support automated quality control, both by identifying
+unreliable segmentation outputs and by flagging low image
+quality cases.
+2.6.1 Silent failure detection
+We evaluated whether hippocampus-wide aggregated un-
+certainty could serve as a predictor of low-quality seg-
+mentations. To this end, uncertainty values were aggre-
+gated across the region of interest (ROI), defined as the
+union of predicted segmentations with a one-voxel mar-
+gin.
+Morphological dilation was performed once, with
+scipy.ndimage.binary_dilation with a square connec-
+tivity = 1 (6 connected kernel). The hippocampi with the
+highest uncertainty were excluded, and the resulting impact
+on segmentation performance was assessed to determine
+619
+
+
+Oliveira-Stahl et al., 2026
+Figure 1: Visualisation of uncertainty maps. Uncertainty quantified as sample variance, mutual information, and
+predictive entropy, all min-max normalised. Dark red line represents the gold standard boundary. Top row: High-Dice
+example. Bottom row: Low-Dice example.
+the method’s suitability for preventing silent failures. The
+threshold for exclusion was determined through the follow-
+ing steps: (A) classifying all predictions into ‘correct’ or
+‘failed’ segmentations, with failed segmentations defined
+here as DSC < 0.82 or HD95 > 2.5 mm; (B) performing a
+stratified split of predictions into a validation set (30%) and
+a test set (70%); (C) conducting a grid search to identify
+the optimal threshold per dataset and metric by maximis-
+ing the F1-score; and (D) applying the identified optimal
+threshold to the held-out test data.
+2.6.2 Motion artefact detection
+We further assessed whether uncertainty correlates with im-
+age quality in the presence of motion artefacts. Using the
+MR-ART dataset, uncertainty metrics were computed for
+each hippocampus and grouped by the image quality score
+(1 = good, 2 = medium, 3 = bad) assigned by expert neu-
+roradiologists. To test for a monotonic relationship between
+quality score and uncertainty, a within-subject permutation
+test was performed (10,000 permutations), using Spear-
+man’s rank correlation as the test statistic. Quality score
+labels were permuted within each subject to preserve the
+repeated-measures structure. Pairwise comparisons (Score
+2 vs 1; Score 3 vs 2) were conducted using Wilcoxon signed-
+rank tests on the subset of subjects with scans in both
+categories being compared (n = 37 and n = 43 subjects,
+respectively). For each subject, uncertainty values were av-
+eraged across hippocampi within each quality category prior
+to testing. P-values were adjusted for multiple comparisons
+using the Holm-Bonferroni method, applied across all six
+pairwise tests (3 metrics × 2 comparisons).
+2.7 Uncertainty for Alzheimer’s disease classification
+We investigated whether ensemble-derived uncertainty could
+improve classification of Alzheimer’s disease from hippocam-
+pal features. From the ADNI baseline stratified cohort, 150
+subjects were selected with balanced representation across
+diagnostic groups (50 were cognitively normal, 50 with mild
+cognitive impairment, and 50 with Alzheimer’s disease).
+Hippocampal volumes were extracted from each segmenta-
+tion method and normalised by intracranial volume (ICV),
+with ICV estimates provided by HIPPOSEG. Voxel-wise
+uncertainty metrics (sample variance, mutual information,
+and predictive entropy) were aggregated as the mean across
+the hippocampal ROI for each hemisphere, then averaged
+across hemispheres to yield subject-level features. This
+scalar aggregation was chosen to keep the feature space
+small relative to the cohort size and to reduce the risk of
+overfitting that would be introduced by higher-dimensional
+spatial uncertainty features. Age and sex were included
+as covariates. To assess the discriminative power brought
+by uncertainty estimates we compared models including
+620
+
+
+Uncertainty-Aware Ensembles for Hippocampal Segmentation
+individual and combined uncertainty estimates to a model
+based only on volumetric input. Classification methods
+included logistic regression, Random Forest, and support
+vector machine classifiers, with 5×5 repeated stratified
+k-fold cross-validation (25 total folds). Three binary clas-
+sification tasks were evaluated: CN vs AD, CN vs MCI,
+and MCI vs AD. Performance was assessed using the area
+under the receiver operating characteristic curve (AUC) and
+balanced accuracy. Statistical comparison of feature sets
+against the volume-only baseline was performed using a per-
+mutation test (10,000 permutations), with 95% confidence
+intervals estimated via bootstrap resampling.
+3. Results
+3.1 Ensemble performance & calibration
+3.1.1 Benchmarking cost and performance
+The ensemble consisting of InnerEye, FastSurfer, and Hip-
+poSeg produced segmentations at the same level of accuracy
+as an ensemble consisting of all five softwares, while sub-
+stantially reducing carbon emissions (from 4.65 kg to 0.85
+kg CO2eq for processing the 30 ADNI patients) and retain-
+ing a comparably well-calibrated uncertainty measure (Fig.
+2). For the remainder of the paper, any mention of ’Triad’
+will therefore refer to this specific ensemble.
+3.1.2 Ensemble integration strategy
+Simple mean averaging of the ensemble members’ proba-
+bilistic outputs yielded the highest Dice performance across
+all datasets (Fig. 3, p < 0.05 after Holm-Bonferroni cor-
+rection). For HD95, no significant difference was observed
+between the mean ensemble and other ensemble integration
+strategies on the epilepsy dataset. On the Local Demen-
+tia dataset, the mean ensemble did not significantly differ
+from InnerEye, while it significantly outperformed all other
+methods (Fig. 3, p < 0.05, Holm-Bonferroni corrected).
+3.1.3 Uncertainty calibration
+The averaged probabilistic output by the Triad members
+produced the best calibrated confidences, with an ECE of
+0.05 across all three datasets (Fig. 4). The second most
+calibrated segmentation method was HippoSeg, with an
+ECE slightly higher than 0.05 averaged across all datasets.
+InnerEye (ECE ≈0.08) and FastSurfer in particular (ECE
+≈0.16) were less well-calibrated.
+3.2 Uncertainty-based quality control
+3.2.1 Silent failure detection
+Applying dataset-specific uncertainty thresholds demon-
+strated varying effectiveness across UQ metrics and datasets
+(Fig. 3). For Dice-based outlier detection (Dice < 0.82),
+entropy achieved the highest performance with 91.7% recall
+and 44.2% precision, while variance and mutual information
+both achieved 83% recall with ∼35% precision. For HD95-
+based outlier detection (HD95 > 2.5mm), entropy again
+performed best with 88.9% recall and 40.6% precision, com-
+pared to variance and mutual information achieving 55.6%
+recall with 28.9% and 30.6% precision, respectively.
+3.2.2 Motion artifact detection
+A significant monotonic relationship was observed between
+image quality score and uncertainty across all three metrics
+(permutation test, p < 0.01; Spearman ρ = 0.30–0.36).
+Pairwise comparisons showed that uncertainty was signif-
+icantly higher for clinically unusable scans (score 3) com-
+pared to medium quality scans (score 2) for all metrics
+(Wilcoxon signed-rank, p < 0.05, Holm-adjusted; Fig. 5).
+However, the difference between good (score 1) and medium
+(score 2) quality scans was not significant (p = 0.18). En-
+tropy showed the strongest effect, with the largest corre-
+lation coefficient (ρ = 0.36) and most significant pairwise
+difference (p < 0.001).
+3.3 Uncertainty for Alzheimer’s disease classification
+Adding uncertainty metrics to hippocampal volume features
+did modestly improve classification of Alzheimer’s disease.
+For CN vs AD classification, the volume-only baseline (total
+intracranial volume (TIV)-normalized bilateral hippocampal
+volume with age and sex covariates) achieved an AUC
+of 0.81 ± 0.04. The best-performing model (Full_mean,
+logistic regression) achieved AUC 0.87 ± 0.03, representing
+a modest improvement of +0.06 (permutation test, p <
+0.001; Fig. 6). In practical terms, using the Full_mean
+feature set led to one additional subject (out of 49) being
+correctly identified as AD and four additional subjects (out
+of 48) being correctly identified as CN (Fig. 7). Adding any
+individual uncertainty feature to volume (Vol+UQ variants)
+provided no benefit over volume alone (∆AUC ≈0, p >
+0.05). For CN vs MCI (baseline AUC 0.73) and MCI vs
+AD (baseline AUC 0.70) classifications, uncertainty features
+consistently were unable to improve predictive performance
+(supplementary figures S1 to S4).
+4. Discussion
+The current study comprehensively evaluated ensembles of
+heterogeneous hippocampal segmentation methods, and
+proposes the triad of InnerEye, FastSurfer, and HippoSeg
+as the optimal combination for achieving high segmentation
+performance while minimising resource cost and maintaining
+good calibration. This ensemble significantly outperformed
+all individual methods, while also producing well-calibrated
+621

@@ -1,0 +1,788 @@
+A Sparse Topometric Graph
+for Scalable Cross-Session Indoor Navigation
+Eun Sun Lee
+Minkyun Seo
+Gwangtak Bae
+Junho Kim
+Seunggu Kang
+Jaesik Park∗
+Young Min Kim∗
+Seoul National University
+{eunsunlee,funboy0804,tak3452,82magnolia,jrkangsg,jaesik.park,youngmin.kim}@snu.ac.kr
+Top-Down View
+From Handheld LiDAR
+Our Topometric Graphs (Colored with Cyan and Purple) 
+and Found Correspondences and Subgraphs
+From iPhone
+Geometric-only Candidates
+Appearance-only Candidates
+Query Node (GT/Ours)
+Figure 1. Real-world office scene with repetitive structure captured weeks apart with heterogeneous sensors. 3D scans with limited
+overlap are independently collected using a handheld LiDAR scanner and a mobile phone, respectively, and related via the proposed sparse
+topometric graphs. For a selected query node, geometry-only candidates shown in green and appearance-only candidates from DINOv2
+features [19] remain highly ambiguous. Graph-structured matching resolves this ambiguity and identifies the correct correspondence.
+Abstract
+A conventional embodied agent in an indoor environment
+builds a map by accumulating noisy real-world measure-
+ments and results from heavy inference to guide navigation.
+While the detailed measurements may differ due to scene
+changes or sensor settings, the unique topological structure
+of navigable passages or the connectivity between rooms
+may provide training-free guidance that complements local
+observations. We propose a sparse topometric graph as an
+efficient structural representation for robust indoor naviga-
+tion, alleviating the need for fine-grained matching, which
+is computationally expensive, memory-intensive, and prone
+to real-world variations. The map consists of nodes that en-
+code local 3D geometry and distance-weighted edges that
+capture traversable connectivity. A learned graph-matching
+network finds consistent subgraph structures across ses-
+sions by considering both node-level geometric descrip-
+tors and neighborhood connectivity. The holistic contextual
+matching is robust to local ambiguities caused by weak dis-
+tinctiveness or repetitive structure, and establishes stable
+correspondences despite local scene changes, different sen-
+sor modalities, or limited spatial overlap. We analyze the
+practicality of the graph through cross-session point-goal
+navigation, where a goal specified in a prior reference map
+must be reached from an unknown initial pose in a later ses-
+sion. Experiments show that our method achieves the high-
+est success rates (77.1% on Gibson [34] and 40.0% under
+3D-FRONT [9] scene changes), while reducing memory by
+more than two orders of magnitude compared to point-level
+representations. The proposed approach further supports
+cross-session alignment and goal-directed navigation with
+1
+arXiv:2610.31432v1  [cs.RO]  22 Oct 2026
+
+
+strong scalability and robust real-world transfer.
+1. Introduction
+Embodied agents in daily life need to understand spatial
+context to interact in unstructured environments. Capturing
+the spatial map of the deployed environment often requires
+composing multiple measurements with minimal overlap,
+as indoor scenes often contain complex concavities, fre-
+quent occlusions, and confined navigable spaces due to fur-
+niture, rooms, and narrow passages with corners. Reusing
+the acquired map in a separate session poses additional dif-
+ficulties. Transferring the high-quality geometry of the en-
+tire deployed space may require extensive spatial memory,
+and reusing the map with a different embodiment may en-
+counter scene changes and different sensor configurations
+with unknown relative poses.
+Prior navigation studies [6, 7, 21, 25] have used differ-
+ent spatial representations for mapping, localization, and
+planning in 2D top-down maps of large-scale indoor envi-
+ronments. Dense metric maps [6, 7, 12, 21] preserve de-
+tailed geometry and support path planning, but their storage
+and matching costs rapidly increase with environment scale.
+Keyframe- [4, 5, 23] and appearance-based [2, 14, 15, 25]
+maps are compact and visually informative, but their relia-
+bility can degrade under viewpoint and scene changes. Se-
+mantic and hierarchical scene graphs [11, 13, 32, 36] pro-
+vide higher-level structure through layouts, objects, or lan-
+guage descriptions, but often depend on reliable detections,
+explicit labels, or predefined semantic categories.
+In this paper, we propose a sparse topometric graph that
+can reliably capture geometric context despite prevalent am-
+biguities in indoor environments with repetitive structures,
+moved furniture, and heterogeneous sensor modalities. In
+the presence of such variations, local features are insuffi-
+cient to extract reliable geometric context, and a broader
+spatial arrangement must be considered.
+Our proposed
+graph representation summarizes the spatial organization
+of traversable space. Each node is centered on traversable
+structure rather than on a sampled point in the cloud, aggre-
+gates the observed 3D points within a fixed-radius neigh-
+borhood, and stores a compact geometry-only descriptor,
+while each edge represents free-space connectivity with a
+distance-based weight. This fixed-radius aggregation makes
+local geometry reusable at the graph level instead of ty-
+ing descriptors to raw point samples [20, 28]. Compress-
+ing each local point set into a fixed-size node descriptor
+keeps the map size proportional to the number of graph
+nodes rather than the raw scene geometry, while preserving
+enough local and structural information for cross-session
+map reuse.
+We demonstrate the usability of the representation in
+cross-session point-goal navigation. The agent starts from
+an unknown initial pose and must reach the goal pose, de-
+fined on the reference map built in a previous session. The
+agent first aligns its current observations relative to the ref-
+erence map and selects waypoints toward the goal while
+taking the navigable path topology into account. We train
+a graph-matching network to predict cross-session corre-
+spondences between graph nodes by jointly considering lo-
+cal geometry and connectivity between neighboring nodes.
+The predicted correspondences are used to estimate the rel-
+ative transformation between the reference and current ses-
+sions, after which the graph-based navigation policy guides
+the agent toward the transferred goal. This setting lets us
+study whether a single sparse representation can support
+both cross-session alignment and downstream navigation.
+Fig. 1 illustrates our pipeline with a real-world cross-
+session example. The example highlights a key challenge.
+Local geometric descriptors or appearance-based cues can
+be ambiguous when similar structures repeat across par-
+tially overlapping sessions.
+The proposed representation
+and graph matching reduce these ambiguities by consider-
+ing both node-level geometry and neighboring graph con-
+nectivity.
+The main contributions are summarized as follows:
+• We propose a sparse topometric graph for cross-session
+indoor map reuse. It represents traversable space with
+compact geometry-only node descriptors and distance-
+weighted graph connectivity, providing a scalable map
+representation.
+• We introduce a graph-node descriptor that aggregates
+fixed-radius 3D observations around reusable node cen-
+ters. This makes local geometry available at the graph
+level instead of tying descriptors to individual point-cloud
+samples.
+• We introduce a learned graph-matching approach that
+predicts cross-session node correspondences using both
+local geometric similarity and graph connectivity, and we
+use the same graph for cross-session alignment and way-
+point selection.
+• We evaluate the method on simulated cross-session nav-
+igation, large-scale indoor scenes, scene-change settings,
+and a real-world indoor study, demonstrating efficient and
+reliable cross-session map use.
+2. Related Work
+2.1. Map Representations for Navigation
+Metric maps, such as occupancy grids and voxel maps [12,
+21], provide fine-grained geometric detail for obstacle
+avoidance and motion planning. However, their reliance
+on globally consistent poses makes them vulnerable to ac-
+cumulated drift and scene changes across sessions, often
+leading to degraded map quality [27]. Appearance-based
+methods [15, 31] represent scenes via stored images or
+2
+
+
+Depth
+Correspondence Estimation
+(Sec. 3.2                           )
+Odometry 
+Sensor
+Cross-session Localization (Sec. 3.3)
+Navigation via Score Propagation
+(Sec. 3.3                             )
+Goal
+Position
+Navigation
+Waypoint
+Agent
+Pose
+Sparse Topometric Graph
+     (Sec 3.1                               )
+Agent Pose
+Goal
+Position
+Start Pose
+(a)                (b)          (c)          (d)
+Reference Graph
+Current Graph
+Region-level
+Corresp. 
+Reference Session
+Current Session
+Figure 2. Overview of the proposed cross-session localization and navigation framework. Given depth Dt and odometry Ot inputs,
+the agent constructs a topometric graph using medial-axis decomposition and assigns geometric descriptors from local point clouds. Node
+correspondences M are estimated across reference graph Gref and current graph Gcur via graph matching. The correspondences are reused
+for both localization and navigation. The navigation policy combines the goal-directed score Sgoal with the frontier-based exploration score
+Sexplore to select a node as the next waypoint toward the goal position g of the cross-session navigation task.
+learned visual features, enabling viewpoint-aware match-
+ing and memory-efficient planning. Visual place recogni-
+tion (VPR) approaches [14] extend this to cross-session lo-
+calization by matching compact global descriptors between
+sessions. They are more robust to spatial drift but remain
+sensitive to lighting, occlusion, and viewpoint deviation.
+Object-centric scene graphs [10, 11, 13, 17] offer higher-
+level reasoning by representing objects and their relations,
+supporting semantically meaningful planning. In particular,
+ObjReact [10] targets cross-session navigation by construct-
+ing an object-centric 3D scene graph and reactively plan-
+ning routes toward recognized goal-relevant objects. How-
+ever, these approaches rely on consistent object detection
+and semantic stability across time. To support a fair and
+diverse evaluation, we adopt representative methods from
+each of the above categories as baselines for cross-session
+navigation: a metric-based grid map [6], appearance-based
+maps [14, 15], and object-centric scene graphs [10, 11].
+Beyond these, point-level geometric descriptors [20, 28]
+enable fine-grained spatial alignment and have demon-
+strated strong performance in localization and map registra-
+tion tasks. Rather than using them densely, we adopt their
+desirable geometric properties in a compact, node-anchored
+form, combining their discriminative power with structural
+abstraction for scalable cross-session navigation.
+Our work bridges these extremes by introducing a sparse
+topometric graph that generates a topological graph over
+navigable areas, where each graph node is anchored with
+sparse 3D geometric descriptors. This structure supports
+both cross-session localization and goal-directed planning
+in a single pipeline, offering a compact and robust map rep-
+resentation for cross-session navigation.
+2.2. Graph-based Correspondence
+Graph-based representations encode spatial relationships
+that support structural reasoning for localization and nav-
+igation. Factor graphs have long provided the backbone
+for multi-session SLAM [8], while learned approaches con-
+struct topological maps where nodes represent visited loca-
+tions and edges encode navigability [7, 25]. Recent work
+studies cross-session localization and graph-based align-
+ment over object- or scene-level abstractions, with node-
+level features drawn from different modalities and seman-
+tics [18, 24, 35]. These approaches demonstrate that rea-
+soning about relational structure helps resolve ambiguities
+that local features alone cannot resolve.
+However, object-level graphs rely on stable semantic de-
+tection, which degrades under scene changes or sensing
+heterogeneity. Related work has also explored learned ge-
+ometric descriptors and registration over point-cloud fea-
+tures [20, 28]. Such methods typically operate at the point
+or object level rather than over navigable spatial regions.
+Our graph provides a sparse topological description
+of traversable regions that compactly encodes reachabil-
+ity from the agent’s current position. The graph structure
+also enables holistic cross-session matching of connected
+regions, which is robust to perturbations in local features
+and to moderate topological deviations arising from scene
+changes or measurement discrepancies.
+3. Method
+We introduce a sparse topometric graph representation and
+a pipeline for cross-session localization and navigation. We
+consider a cross-session navigation task in which an agent
+3
+
+
+Algorithm 1 Cross-session navigation with a sparse topo-
+metric graph
+Require: Gref, goal g, stream {(Dt, Ot)}T
+t=1, matcher GNNθ,
+update period K
+Ensure: Next-step action at
+1: function BUILDGRAPH({(Dτ, Oτ)}t
+τ=1)
+2:
+Fuse observations into Ot and Pt
+3:
+Extract reachable free space from Ot
+4:
+Sample nodes and connect neighbors
+5:
+Downsample Pt and encode radius-based node descriptors
+6:
+return Gcur
+t , Ot
+7: end function
+8: function FINDCORR(Gref, Gcur)
+9:
+P ←Sinkhorn(GNNθ(Gref, Gcur))
+10:
+M ←argmax matches after removing unmatched assign-
+ments from P
+11:
+return Min ←RANSAC(M)
+12: end function
+13: function NAVSCORE(Min, Gcur, g)
+14:
+if Min̸ = ∅then
+15:
+Estimate relative transform and transfer goal scores
+16:
+Compute frontier score ¯Sexplore
+17:
+return ¯Sgoal + ¯Sexplore
+18:
+else
+19:
+Compute frontier score ¯Sexplore
+20:
+return ¯Sexplore
+21:
+end if
+22: end function
+23: procedure NAVIGATE
+24:
+Initialize Min ←∅and v∗←∅
+25:
+Initialize running map Ot
+26:
+for t = 1 to T do
+27:
+Update Ot with (Dt, Ot)
+28:
+if t mod K = 0 then
+29:
+Gcur, Ot ←BUILDGRAPH({(Dτ, Oτ)}t
+τ=1)
+30:
+Min ←FINDCORR(Gref, Gcur)
+31:
+Snav ←NAVSCORE(Min, Gcur, g)
+32:
+v∗←arg maxv Snav(v)
+33:
+end if
+34:
+at ←PathPlanner(pv∗, Ot)
+35:
+end for
+36: end procedure
+operates in an indoor environment for which a reference
+map was constructed in a prior session. The reference ses-
+sion is represented as a sparse topometric graph Gref. At
+deployment, the agent is at an unknown pose within the
+same environment and must navigate to a goal position
+g ∈R2 specified in the coordinate frame of the reference
+session. The current session may differ from the reference
+due to trajectory variation, partial spatial overlap, accumu-
+lated odometry drift, and local scene arrangement.
+An overview of the proposed approach is shown in
+Fig. 2, and Alg. 1 summarizes the deployment loop. At
+each time step t, the agent receives a depth observation Dt
+and an odometry measurement Ot = (xt, yt, θt) in its local
+frame. Using the stream {(Dτ, Oτ)}t
+τ=1, the agent incre-
+mentally constructs a top-down occupancy map Ot and a
+depth-derived accumulated point cloud Pt. Every K=20
+steps, these geometric observations are converted into a
+current-session graph Gcur
+t . (BUILDGRAPH, Sec. 3.1). To
+enable cross-session localization, the agent performs topo-
+metric graph matching between Gcur
+t
+and Gref, producing
+candidate node correspondences M (FINDCORR, Sec. 3.2).
+These correspondences are then used for relative pose es-
+timation and navigation toward the reference-session goal,
+without relying on dense map alignment or continuous pose
+tracking across sessions (NAVSCORE, Sec. 3.3).
+3.1. Sparse Topometric Graph
+The BUILDGRAPH stage in Alg. 1 (lines 2–6) constructs the
+shared representation used by the rest of the pipeline. We
+represent each session as a topometric graph G = (V, E).
+Here, topometric denotes the joint encoding of topological
+connectivity among navigable anchors and metric and ge-
+ometric information. Each node vi ∈V corresponds to a
+navigable anchor extracted from traversable free space and
+is associated during graph construction with a 2D position
+pi ∈R2 and a sparse 3D geometric descriptor fi ∈R32.
+Edges E encode traversable connectivity between adjacent
+nodes, where each edge weight stores the local distance
+dij = ∥pi −pj∥2 between neighboring anchors.
+The graph is derived from two complementary geomet-
+ric representations. A top-down occupancy map is used to
+identify reachable traversable free space and extract graph
+nodes, while a depth-derived accumulated point cloud is
+used to compute geometric descriptors within each node.
+We first extract the portion of free space that is reachable
+from the agent’s current position so that the graph remains
+focused on reusable navigable structure rather than on every
+nominally free cell in the dense map. Navigable anchors
+are defined by the structure of the reachable free-space oc-
+cupancy map, with graph nodes placed at uniform intervals
+of d=5 cells (0.25 m) along each branch. The nodes anchor
+local traversable areas from which features are extracted.
+The key geometric design choice is how node descriptors
+are defined. Unlike the original per-point formulation, de-
+scriptors are anchored at navigable graph nodes rather than
+at existing points in the cloud. For each node vi, we collect
+points {q ∈P : ∥q −pi∥< r} within a fixed radius around
+its construction anchor and compute a local geometric em-
+bedding. We adopt a pre-trained rotation-equivariant point-
+cloud encoder from BUFFER-X [28] with frozen weights,
+providing robustness to partial observations and sensor het-
+erogeneity. As a result, the representation remains com-
+pact while each node still carries both local 3D context and
+graph-level connectivity for cross-session correspondence
+and downstream navigation. Implementation details such
+4
+
+
+START
+(a) Two Graphs from
+Different Sessions
+END
+Agent Trajectories
+Distance-based Correspondences
+(c) Adding Noise to 
+Graph Edges
+(b) GT Correspondence 
+Construction
+Edges
+Noised Edges
+Nodes
+Figure 3. Training pair construction for graph matching. (a)
+Topometric graphs are extracted from two sessions with partially
+overlapping coverage of the same scene. (b) Ground-truth node
+correspondences are established by pairwise Euclidean distances
+between node centers across sessions. (c) Gaussian noise is in-
+jected into the edge weight to simulate odometry drift and con-
+struct training graph pairs.
+as voxel downsampling are deferred to the supplementary
+material.
+3.2. Correspondence Estimation
+The FINDCORR stage in Alg. 1 (lines 9–11) estimates cross-
+session correspondences.
+Given topometric graphs con-
+structed from different navigation sessions, our goal is to
+identify correspondences between nodes representing the
+same physical locations in the environment. This problem
+requires reasoning over a noisy topometric graph, in which
+both the local geometry encoded in nodes and the graph
+structure are perturbed by measurement noise, odometry
+drift, and scene variation. We treat the topometric graph as
+a shared representation, from which node correspondences
+are inferred as a signal used jointly for localization and nav-
+igation. These correspondences are reused for both pose
+estimation and goal-directed navigation.
+Rather than relying on dense frame- or point-level
+matching, which can be disrupted by unobserved areas or
+local scene variations, our approach operates on sparse
+graphs. Each node aggregates local 3D geometry over a
+traversable anchor using rotation-robust and view-invariant
+descriptors (Sec. 3.1), yielding a compact representation
+that naturally tolerates missing coverage under partial over-
+lap and sensing heterogeneity. In addition, the graph struc-
+ture encodes spatial relationships among nodes, providing
+global context that helps disambiguate correspondences be-
+yond local geometry.
+Matching Objective. Our objective is to predict a soft par-
+tial assignment between nodes in the reference and current
+graphs by jointly reasoning over node-level geometric fea-
+tures and graph connectivity. We employ IPCA-GM [33]
+with Sinkhorn-normalized assignment to estimate corre-
+spondence probabilities while allowing unmatched nodes
+under partial overlap. Because the prediction is constrained
+by both local geometry and graph structure, the resulting
+correspondences are more robust to local ambiguity, re-
+peated structure, and incomplete coverage than geometry-
+only matching.
+Training Pair Construction. As illustrated in Fig. 3, train-
+ing pairs are constructed from two partial traversals col-
+lected in the same scene with different spatial coverage. We
+build graphs GA and GB from these sessions and define cor-
+respondence supervision by spatial proximity between their
+construction anchors across sessions. During training, we
+perturb traversable edge distances to improve robustness to
+odometry drift. Exact objective and implementation details
+are deferred to the supplementary material.
+3.3. Localization and Waypoint Selection
+The NAVSCORE stage in Alg. 1 (lines 14–21) reuses the
+predicted correspondences for both localization and way-
+point selection. Using the RANSAC-filtered node matches
+Min, each matched node pair provides a position corre-
+spondence (pref
+i , pcur
+j ). We estimate the relative transforma-
+tion Tref→cur ∈SE(2) from these inlier correspondences.
+During deployment, odometry drift accumulates over time
+as the agent explores. To reduce its impact on localization,
+we construct the current-session graph from a spatially lo-
+cal subset of recently observed traversable structure rather
+than from the full accumulated map.
+Our navigation policy directly reuses the topometric
+graph and cross-session correspondences introduced earlier,
+without additional representations or task-specific supervi-
+sion. Given the correspondence, we perform cross-session
+navigation by selecting nodes in the current graph as way-
+points. The policy balances exploitation of available goal
+information and exploration of unmapped areas using two
+complementary signals, a goal-directed score Sgoal derived
+from cross-session correspondences and a frontier-based
+exploration score Sexplore that promotes explored area ex-
+pansion. A goal g ∈R2 specified in the reference-session
+frame is converted into scores on the reference graph, and
+those scores are propagated to the current-session graph
+through the predicted correspondence.
+The exploration
+term is computed on the current occupancy map and evalu-
+ated at current-session graph nodes for waypoint selection.
+Since the correspondence matches the holistic spatial con-
+text rather than individual nodes, reliable cross-session evi-
+dence becomes available only after sufficient exploration.
+We therefore transition from using the exploration score
+only to the combined goal-directed and exploration score
+once cross-session evidence becomes reliable, as illustrated
+in Fig. 2. The selected waypoint is then executed on the oc-
+cupancy map using a Fast Marching Method planner [29].
+5
+
+
+Table 1. Evaluation protocol across datasets.
+Dataset
+Max Steps
+Goal Thr. (m)
+Avg. Area (m2)
+3D-FRONT
+500
+1.0
+80.6
+Gibson
+500
+2.0
+83.4
+HM3D
+1000
+2.0
+212.8
+4. Experiments
+We evaluate our approach on cross-session point-goal nav-
+igation experiments. We assess navigation under odometry
+noise, varying scene scales, limited inter-session overlap,
+and scene change.
+4.1. Experimental Setup
+We evaluate on three datasets: Gibson [34] for the main
+evaluation under noiseless and noisy odometry, HM3D [22]
+for large-scale evaluation, and 3D-FRONT [9] for scene-
+change evaluation.
+Experiments are conducted in Habitat [26] using the Lo-
+CoBot action space [16]. The agent takes discrete actions
+of moving forward by 0.25 m or turning left or right by
+10◦. The success threshold is 2.0 m for Gibson and HM3D.
+For 3D-FRONT, we use a 1.0 m threshold because the pri-
+mary question is whether the representation remains locally
+reusable under scene change, rather than long-range plan-
+ning. Table 1 summarizes the step budgets and scene scales
+used in each dataset. The graph matching network is trained
+on Gibson training scenes and is applied without retraining
+across all datasets. Unless otherwise noted, all methods are
+executed under the same simulator and action setting. Ad-
+ditional implementation details are deferred to the supple-
+mentary material.
+In every episode, the goal is specified on the reference-
+session map, while the agent acts only in the current session.
+The reference and current sessions are collected at different
+times and from different start positions. The agent therefore
+cannot rely on frame-to-frame continuation across sessions
+and must recover a usable cross-session relation from par-
+tial overlap. This shared protocol lets us compare how well
+each representation supports map reuse rather than single-
+session exploration.
+4.2. Baselines
+We compare against representative baselines spanning sev-
+eral reusable map abstractions. ANS [6] represents the envi-
+ronment with a dense occupancy-grid map. RnR-Map [15]
+uses a top-down visual feature map.
+AnyLoc [14] pro-
+vides an appearance-based retrieval baseline using com-
+pact global descriptors.
+ConceptGraph [11] and Objec-
+tReact [10] represent the environment with scene-graph
+or object-graph abstractions.
+We also compare against
+Table 2.
+Cross-session point-goal navigation results on Gib-
+son [34] under noiseless and noisy odometry.
+Noiseless
+Noisy (σ = 1.0)
+Method
+SR
+SPL
+SR
+SPL
+ANS [6]
+40.00
+33.40
+40.00
+33.13
+RnR [15]
+30.00
+23.67
+41.41
+32.38
+AnyLoc [14]
+40.00
+10.91
+30.00
+5.69
+ObjReact [10]
+54.28
+40.81
+54.28
+40.81
+ConceptGraph [11]
+41.43
+22.93
+32.86
+16.40
+Ours
+77.14
+47.71
+60.00
+23.64
+BUFFER-X [28] in the compactness analysis as a dense
+point-level geometric reference.
+We prioritize baselines that expose an explicit reference-
+session representation and can be integrated into a goal-
+conditioned navigation loop in the current session. This
+lets us compare dense occupancy maps, top-down feature
+maps, appearance-based retrieval, and semantic graph ab-
+stractions under the same cross-session point-goal protocol.
+Several baselines were not originally proposed for this ex-
+act setting, so we adapt them while preserving their original
+representation and decision logic as much as possible. Full
+adaptation details are deferred to the supplementary mate-
+rial.
+4.3. Navigation Performance
+Main evaluation on Gibson. Table 2 reports cross-session
+point-goal navigation under noiseless and noisy odome-
+try. We use Success Rate (SR) and Success weighted by
+Path Length (SPL) [1]. For ObjectReact, we report the re-
+sult obtained with its original policy-coupled evaluation set-
+ting. That method uses an RGB-frame-based controller [30]
+rather than the same discrete 0.25 m forward action used
+by the other methods here, so its SPL is informative but
+not strictly action-level comparable. Our method achieves
+the highest SR under both odometry conditions, and it also
+achieves the best SPL under noiseless odometry.
+Under
+noisy odometry, SR remains strong while SPL decreases
+more noticeably, suggesting that the representation still sup-
+ports reliable cross-session recovery while path efficiency is
+more affected by delayed correspondence under drift.
+Large-scale evaluation on HM3D. Fig. 4 evaluates navi-
+gation as the difficulty of cross-session reuse increases. For
+each episode, we first sample a reference-session start po-
+sition and then choose the current-session start position to
+be a prescribed geodesic distance away. We use this start-
+position separation as a controlled difficulty proxy. Larger
+separation generally makes useful overlap harder to recover
+early in the episode and therefore makes cross-session cor-
+respondence more difficult. The figure reports accumulated
+successful episodes as this difficulty increases. Our method
+6
+
+
+0.67
+12.59
+1.99
+3.27
+4.42
+5.42
+7.11
+Episode Difficulty (m)
+Success Episode Count
+Figure 4. Navigation performance in large-scale HM3D envi-
+ronments [22]. Cumulative number of successful episodes out of
+100 as the geodesic separation between the reference- and current-
+session start positions increases.
+Table 3. Cross-session point-goal navigation results under scene
+changes on 3D-FRONT [9].
+ANS RnR AnyLoc ObjReact ConceptGraph Ours
+SR
+13.33 13.33
+20.00
+6.67
+13.33
+40.00
+SPL 8.36
+8.83
+6.91
+6.67
+4.92
+20.18
+Table 4. Memory comparison across methods on Gibson [34].
+Method
+Scene Representation
+Storage (MB)
+ANS [6]
+Grid Map
+1.76
+RnR-Map [15]
+Feature Map
+2.00
+AnyLoc [14]
+Place Descriptor Map
+13.25
+ObjReact [10]
+Object Graph
+0.80
+ConceptGraph [11] Scene Graph with Language Features
+5.00
+BUFFER-X [28]
+Point Cloud
+2.81
+Ours
+Sparse Topometric Graph
+0.02
+degrades more gradually than the baselines and maintains
+the strongest performance in the harder regimes.
+Evaluation under scene change. Table 3 reports results on
+3D-FRONT with furniture additions, removals, rearrange-
+ments, and same-category replacements across sessions.
+We use a 1.0 m success threshold in this setting because the
+goal is to test whether the representation remains locally
+reusable when object layout changes. Our method achieves
+the highest SR and SPL in this setting. This result suggests
+that the representation remains useful even when object ar-
+rangements differ across sessions. Fig. 5 shows a qualitative
+example. The same figure also includes an additional qual-
+itative example from 2D-3D-S [3] to illustrate behavior in a
+distinct large indoor environment with repetitive structure.
+4.4. Compactness
+Compactness.
+Table 4 compares the stored reference-
+session representation reused by each method in the current
+session. Storage is measured on the representation retained
+after the reference-session traversal under the same episode
+data budget, rather than on transient intermediate states dur-
+ing construction. For example, BUFFER-X stores the ref-
+erence session as the voxel-downsampled point cloud used
+as input to matching. The proposed representation is sub-
+stantially smaller than dense occupancy grids, dense feature
+maps, and point-level geometry. This follows from storing
+geometry only at sparse graph-node anchors and traversable
+connectivity, rather than across the full scene.
+Detailed
+measurement protocol is provided in the supplementary ma-
+terial.
+4.5. Real-World Data Demonstration
+We further evaluate the representation on real-world cross-
+session data captured several weeks apart with heteroge-
+neous sensors. One session uses a handheld LiDAR scanner
+and the other uses a mobile phone with built-in LiDAR. The
+two sessions are collected independently at different times
+of day. The LiDAR session was recorded in daytime, and
+the mobile-phone session was recorded at night. They cover
+only partially overlapping portions of the environment. The
+scene is an office building with repeated monitors, tables,
+and cubicles of similar design, which creates strong local
+ambiguity in both geometry and appearance across nearby
+locations. We use this example as a focused correspondence
+study rather than a closed-loop robot experiment. Acquisi-
+tion and reconstruction details are deferred to the supple-
+mentary material.
+Fig. 1 illustrates the main conceptual value of the rep-
+resentation.
+The left side shows how the two sessions
+are related at the graph level through node correspon-
+dences. On the right, we select one query node and compare
+graph-structured matching against two weaker cues in iso-
+lation. The first is geometry-only matching based on node-
+descriptor similarity. The second is appearance-only match-
+ing based on DINOv2 features [19]. In this repeated of-
+fice layout, both isolated cues yield multiple plausible can-
+didates, while the graph-structured representation resolves
+the ambiguity and identifies the correct correspondence. We
+use this example as supporting evidence for the representa-
+tion claim of the paper.
+5. Limitations and Scope
+This paper studies cross-session map reuse for single-floor
+indoor navigation under a 2D top-down point-goal formu-
+lation. Multi-floor environments and explicit vertical con-
+nectivity are outside the current evaluation scope, and ex-
+tending the representation to such settings is a natural di-
+rection for future work. Within that scope, we focus on
+cross-session reuse under partial overlap, sensing varia-
+tion, and moderate scene change. More severe changes to
+traversable connectivity, such as closed doors, blocked cor-
+ridors, or large structural reconfiguration, were not system-
+atically evaluated here and remain an important area for fu-
+7

@@ -1,0 +1,612 @@
+Same Luck, Different Choice: Twin-World Credit
+Assignment for Agentic Reinforcement Learning
+Zeropy Surio
+University of Sheffield
+Tobias Engel
+Carnegie Mellon University
+Mei-Lin Chou
+University of Michigan
+Anika Raman
+University of Michigan
+Samuel Okafor
+Carnegie Mellon University
+Abstract
+Agentic reinforcement learning rewards a complete episode, yet the policy needs
+credit for every decision inside it. Counterfactual branching estimates this credit
+by re-running the episode after an alternative decision, but the branch draws its
+sampling noise independently of the factual episode, so the outcome difference
+mixes the effect of the decision with the luck of everything that follows. We observe
+that in agentic search the retriever, the corpus, and the grader are deterministic, so
+an episode is a deterministic function of the policy’s decisions and its sampling
+noise. Twin worlds are therefore realizable: the same noise, a different decision.
+We introduce TWICE (TWIn-world Credit Estimation), which keys the Gumbel
+noise of every token by turn and line, rolls out counterfactual twins that inherit the
+factual episode’s downstream noise, and turns their paired outcome differences into
+turn-level advantages for policy-gradient updates on actor-sampled trajectories;
+only the actor is deployed. Twin credit is unbiased for any coupling quality, its
+variance is that of an independent counterfactual scaled by 1 −ρ, where ρ is the
+twins’ outcome correlation, and under coupling the number of rollouts needed to
+resolve an advantage of size ∆falls from Θ(∆−2) to Θ(∆−1). A square-root rule
+spends the twin budget where outcomes are predicted to disagree per unit cost. On
+seven question-answering benchmarks, TWICE improves the average exact match
+of GRPO by 5.3 and 4.5 points on Qwen2.5-3B and 7B, outperforms tree-search
+and counterfactual-branching baselines, and uses 68% fewer auxiliary tokens than
+VinePPO.
+1
+Introduction
+Reinforcement learning (RL) has turned language models into search agents that interleave reasoning
+with retrieval calls and are rewarded only for the correctness of their final answer (Jin et al., 2025;
+Song et al., 2025; Chen et al., 2025; Sun et al., 2025; Zheng et al., 2025a). The reward says whether
+an episode went well; it does not say which decision—a query, the choice to search again, or the
+final answer—was responsible. GRPO (Shao et al., 2024) broadcasts one scalar to every token
+of the episode, and PPO (Schulman et al., 2017) relies on a critic that must learn values of long,
+retrieval-laden contexts; either way, a good query in a failed episode is punished and a wasted query
+in a lucky one is rewarded (Wei et al., 2025; Zhang et al., 2025a).
+A growing literature assigns finer credit to agent decisions. Critics are hard to train on language
+states (Kazemnejad et al., 2025), and hierarchical critics add their own machinery (Zhou et al.,
+2024a); process rewards come from information gain, judges, or annotated sub-goals (Wang et al.,
+2026a; Zheng et al., 2025b; Wang et al., 2026b; Liu et al., 2026; Zhang et al., 2026a); identical states
+can be grouped across rollouts (Feng et al., 2025); and tree rollouts compare siblings that share a
+Preprint.
+arXiv:2610.31544v1  [cs.LG]  22 Oct 2026
+
+
+1
+3
+7
+15
+31
+extra rollouts per decision
+10
+−1
+10
+0
+10
+1
+variance of credit
+(a) Independent credit is floored
+return − MC baseline
+independent pairs
+twin pairs, ρ = 0.6
+floor: factual's own luck
+0
+20
+40
+60
+pairs J
+10
+−4
+10
+−3
+10
+−2
+10
+−1
+P(wrong sign)
+(b) Sign of a Δ = 0.1 advantage
+independent
+twins, prev = 0.02
+twins, prev = 0
+10
+−2
+10
+−1
+advantage Δ
+10
+1
+10
+2
+10
+3
+10
+4
+pairs for 95% sign accuracy
+∝Δ−2
+∝Δ−1
+(c) Coupling changes the rate
+independent
+twins, prev = 0.01
+twins, prev = 0
+0.00
+0.25
+0.50
+0.75
+1.00
+TV between next-token laws
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+P(same token)
+(d) Shared noise couples policies
+optimal: 1 −TV
+Gumbel bound
+shared noise
+independent
+Figure 1: Why twins (exact curves). (a) Variance of credit for a decision with Q=0.55, V =0.45:
+subtracting a Monte Carlo baseline from the realized return is floored by the return’s own variance;
+independent pairs decay as 1/J; twin pairs are lower by the factor 1 −ρ (Prop. 2). (b) Probability
+of assigning the wrong sign to a ∆=0.1 advantage with J pairs. (c) Pairs needed for 95% sign
+accuracy: ∝∆−2 for independent pairs, ∝∆−1 for twins (Prop. 3). (d) Shared Gumbel noise makes
+two nearby next-token distributions emit the same token almost as often as an optimal coupling
+(Lemma 1); independent noise does not.
+prefix (Ji et al., 2026; Zong et al., 2026; Zhang et al., 2026b; Fu et al., 2026). The most direct esti-
+mators re-run the episode from a visited decision with an alternative action and compare outcomes (Li
+et al., 2026; Samanta et al., 2026; Kazemnejad et al., 2025). All of them compare continuations
+whose sampling noise is drawn independently.
+This choice has a cost that is easy to miss. Would this episode have succeeded had the agent
+issued a different query? is a counterfactual question about the realized episode (Pearl, 2009). An
+independently sampled branch answers an interventional question instead: the outcome difference
+contains the effect of the decision plus the difference in luck of every later sampling step—which
+follow-up query was drawn, whether the agent stopped early, how the answer was phrased. The
+factual episode’s own luck never averages out, so estimators that use the realized return have a
+variance floor that no number of extra rollouts removes (Figure 1a), and resolving an effect of size ∆
+takes Θ(∆−2) rollouts (Figure 1c).
+We observe that agentic search admits a better answer. The retriever, the corpus, and the grader are
+deterministic, so once sampling is written with the Gumbel-max trick (Maddison et al., 2014; Oberst
+and Sontag, 2019), an episode is a deterministic function of the policy’s decisions and its exogenous
+noise. The factual episode’s twin world (Balke and Pearl, 1994)—the same noise, a different decision
+at one turn—can then be rolled out exactly. Downstream luck is shared, so the twin’s outcome
+difference isolates the decision, as in counterfactual generation from language models (Ravfogel
+et al., 2025; Chatzi et al., 2025) and common random numbers in simulation (Glasserman and Yao,
+1992; Ng and Jordan, 2000). Coupling is also strongest exactly where credit is hardest: a decision
+that barely changes the downstream distribution yields a twin that reproduces the factual continuation
+and ties, instead of a noisy ±1.
+We build TWICE on this observation. It (i) keys the Gumbel noise of each token by episode, turn,
+line, and position, so twins stay aligned when lengths differ and every trajectory remains an exact
+sample from the policy; (ii) turns the paired outcome difference of a factual decision and its twin
+into a turn-level advantage for PPO-style updates on actor-sampled trajectories; and (iii) branches
+each decision with a probability proportional to
+p
+predicted discordance/cost, reweighting to stay
+unbiased. Our contributions:
+• Insight and theory. Credit assignment in agentic RL asks a counterfactual question that inde-
+pendent branching cannot answer cheaply. We show that twin credit is unbiased for any coupling
+quality, scales variance by 1 −ρ, changes the sign-detection rate from ∆2 to ∆, and admits a
+square-root budget rule (§5).
+• Method. TWICE realizes twins with keyed noise, two exact shortcuts, and unbiased budgeting; it
+leaves the RL loss unchanged and deploys the actor alone (§4).
+• Evidence. On seven QA benchmarks and two backbones, TWICE outperforms nine RL baselines,
+cuts wrong-sign credit from 21.7% to 6.9% relative to independent counterfactuals, and uses 68%
+fewer auxiliary tokens than VinePPO (§6).
+2
+
+
+2
+Related Work
+Credit assignment for LLM agents.
+Outcome-reward RL for agents builds on PPO, GRPO, and
+their variants (Schulman et al., 2017; Shao et al., 2024; Yu et al., 2025; Ahmadian et al., 2024). Finer
+credit comes from learned or hindsight critics (Zhou et al., 2024a, 2025; Tan et al., 2026; Wang
+et al., 2026c), state grouping (Feng et al., 2025; Wang et al., 2026d; Zhu et al., 2026a), environment
+feedback (Huo et al., 2026), and process rewards from information gain, judges, or verifiers (Wang
+et al., 2026a; Liang et al., 2026a; Samarinas et al., 2026; Wu et al., 2026; Zhu et al., 2026b; Setlur
+et al., 2025). Tree methods share prefixes and compare siblings (Hou et al., 2025; Guo et al., 2025; Ji
+et al., 2026; Zong et al., 2026; Zhang et al., 2026b; Fu et al., 2026; Dong et al., 2025a); SIPO notes
+that adaptive expansion biases sibling values (Fu et al., 2026). Monte Carlo methods estimate values
+from rollouts at intermediate states (Kazemnejad et al., 2025), resets resample continuations from
+a decision (Samanta et al., 2026), error localization searches for the first irrecoverable step (Liang
+et al., 2026b), and CRR forks the environment and contrasts the factual return with one sampled
+counterfactual (Li et al., 2026). TWICE keeps this last, most direct estimator but changes what the
+branch holds fixed: its downstream noise. Related uses of the same tree structure allocate a fixed
+rollout budget toward prompt roots and turn-level prefixes that are likely to yield mixed rewards (Zou
+et al., 2026a), or back the terminal reward up those prefixes and distill the resulting turn-level credit
+into a bounded teacher (Zou et al., 2026b).
+Counterfactuals and shared randomness.
+Twin networks answer counterfactual queries by
+sharing exogenous noise between factual and hypothetical worlds (Balke and Pearl, 1994; Pearl,
+2009). Gumbel-max structural causal models make this concrete for categorical sampling (Oberst
+and Sontag, 2019) and for language models (Ravfogel et al., 2025; Chatzi et al., 2025). In RL,
+counterfactual reasoning appears in model-based policy search (Buesing et al., 2019), hindsight and
+counterfactual credit (Harutyunyan et al., 2019; Mesnard et al., 2021; Meulemans et al., 2023), and
+multi-agent baselines (Foerster et al., 2018); fixing random numbers to compare policies dates to
+PEGASUS (Ng and Jordan, 2000) and common random numbers in simulation (Glasserman and
+Yao, 1992). Shared-noise coupling of language-model samplers is also used for speculative decoding
+and watermarking (Daliri et al., 2025; Kirchenbauer et al., 2023; Kuditipudi et al., 2024). To our
+knowledge, TWICE is the first to use it for credit assignment in LLM training, where it changes both
+the variance and the sample complexity of counterfactual credit.
+RL for search agents.
+Search-R1 and its successors train agents to call a search tool inside their
+reasoning (Jin et al., 2025; Song et al., 2025; Chen et al., 2025; Sun et al., 2025; Jiang et al., 2025;
+Gao et al., 2025), refine rewards for efficiency and process quality (Wang et al., 2025a; Zhang et al.,
+2025b; Wu et al., 2026), and extend to real web environments and large reasoning models (Zheng
+et al., 2025a; Li et al., 2025a). TWICE changes only how credit is estimated and applies to any of
+these pipelines whose tools are deterministic or cached. Appendix A extends this discussion.
+3
+Preliminaries
+Agentic episodes.
+A question x starts an episode. At turn t, the policy πθ writes a turn yt ∼
+πθ(· | st)—reasoning followed by one action, a search call or the final answer—given the context
+st; a tool returns ot = E(yt), and st+1 = st ⊕yt ⊕ot. After at most H turns, a grader returns
+a utility U ∈[0, 1] (exact match in our experiments). The retriever over a fixed corpus and the
+grader are deterministic; web tools become deterministic within a training step by caching. We write
+Qπ(st, y) = E[U | st, yt=y], V π(st) = Ey∼πQπ(st, y), and Aπ = Qπ −V π; the credit of a turn is
+Aπ(st, yt).
+Counterfactual branching.
+Given a visited decision, a branch samples y′ ∼π(· | st), executes it,
+and continues with π to reach U ′. The difference Dt = U −U ′ satisfies E[Dt | st, yt] = Aπ(st, yt)
+whenever the continuation is a π-rollout, and this is the estimator of CRR (Li et al., 2026); VinePPO
+instead estimates V π(st+1) −V π(st) with independent rollouts from both states (Kazemnejad et al.,
+2025). Writing U = Qπ(st, yt) + ε, where ε is the luck of the factual continuation, any estimator
+that uses the realized U inherits Var(ε), and estimators that avoid it pay for a second set of rollouts.
+3
+
+
+Figure 2: TWICE in one training step. Top: every factual token draws Gumbel noise keyed by
+(episode, turn, line, position). Bottom: the twin of turn 2 swaps in an alternative drawn with fresh
+noise and continues with the factual keys, sharing the downstream luck ξ3; under shared noise, nearby
+next-token distributions emit the same token (inset). Right: the outcome difference divided by the
+branch probability is the turn’s credit, and branch probabilities follow a square-root rule of predicted
+discordance over cost; the actor is updated with PPO/GRPO on factual tokens and deployed alone.
+4
+TWICE
+4.1
+Twin worlds from keyed noise
+With Gumbel-max sampling, token i of turn t is arg maxv [ℓθ(v | ·)/τ +ξ(v)], where ℓθ are the logits,
+τ the temperature, and ξ a vector of i.i.d. standard Gumbel variables; top-p restricts the arg max
+to the nucleus. With deterministic tools, U = F(x; ξ1, . . . , ξH) is a deterministic function of the
+per-turn noise ξt (Oberst and Sontag, 2019; Ravfogel et al., 2025). The twin of the factual episode
+at turn t with alternative y′ evaluates F with turn t replaced by y′ and every later noise variable
+unchanged (Balke and Pearl, 1994). This needs two properties: every trajectory must remain an exact
+sample from π, and the twin must read the same noise as the factual episode for the same role.
+TWICE indexes noise by a key κ = (e, t, ℓ, j)—episode e, turn t, line ℓof the turn, and position j
+within the line—and sets ξκ(v) = −log(−log uκ(v)) with uκ from a counter-based pseudorandom
+function seeded by κ. Keys never repeat within a trajectory, so every factual or twin trajectory samples
+each token with a fresh Gumbel vector and is an exact draw from π (Appendix B.1). Keys are indexed
+by turn and line rather than by a global token counter, so a twin whose turn t has a different length
+still reads the factual noise at every later turn, and a divergence inside a line re-synchronizes at the
+next line. A single sampler seed per episode, as exposed by serving engines (Kwon et al., 2023), is
+also exact but aligns noise by token count, so a single length change decouples the rest of the episode.
+Watermark-style n-gram keys (Kirchenbauer et al., 2023) re-synchronize faster but can repeat within
+a trajectory, which breaks exactness. Keyed sampling is a logits processor that adds ξκ and takes the
+arg max; it adds about 2% to generation time.
+4.2
+Twin credit
+For a factual decision (st, yt), TWICE draws an alternative y′ ∼πold(· | st) with fresh keys, executes
+it, and continues from st ⊕y′ ⊕E(y′) with the factual keys of turns t+1, . . . , H, reaching the twin
+utility U ′
+t. The pair gives
+Dt = U −U ′
+t,
+E[Dt | st, yt] = Aπ(st, yt).
+(1)
+This pair reuses the factual continuation, so it costs one alternative turn plus one continuation. Further
+pairs j ≥1 re-run the continuation of the factual decision and of a new alternative with fresh
+downstream keys shared within the pair; the credit is the mean of the J differences, and we use J=1
+4
+
+
+unless stated. Two cases need no generation at all. If y′ equals yt token for token, the twin is the
+factual episode and Dt = 0 exactly (a self-twin, increasingly common as the policy sharpens). If the
+alternative retrieves exactly the factual documents, the twin almost always ties (4.1% discordance);
+such twins are continued only with probability qsame=0.25 and reweighted by 1/qsame.
+4.3
+Where to branch
+A budget β caps auxiliary tokens at β times the policy’s rollout tokens. Each factual decision is
+branched with probability
+qt = min
+ 1, max
+ qmin, λ
+p
+ˆηt/ct
+
+,
+(2)
+where ct is the twin’s token cost (alternative turn plus the factual episode’s remaining tokens), ˆηt is
+the predicted discordance Pr(Dt̸ = 0), and λ is set per batch by bisection to meet β. ˆηt comes from
+a logistic model over features of the factual episode—the prompt’s group success rate ˆp among its G
+rollouts, the factual outcome U, the turn’s mean token entropy, its action type, and its position—fit
+online on realized twins with weights 1/qt. With branch indicator Bt ∼Bern(qt) and evidence coin
+St (§4.2), the credit is the Horvitz–Thompson estimate (Horvitz and Thompson, 1952)
+ˆAt =
+Bt St
+qt q et
+same
+Dt,
+(3)
+with et = 1 if the alternative retrieved the factual documents and 0 otherwise. Eq. (2) is the variance-
+optimal allocation (Prop. 4): cheap late decisions and prompts with mixed outcomes get twins, while
+prompts that the policy always or never solves rarely do.
+4.4
+Policy update
+Every token of turn t in a factual episode receives the advantage
+At = ˆAtraj + ω ˆAt/ˆσ,
+(4)
+where ˆAtraj = (U −¯UG)/sG is GRPO’s group-normalized episode advantage (Shao et al., 2024), ˆσ
+is the batch standard deviation of nonzero twin credits, and ω=1. Unbranched turns keep ˆAtraj alone.
+The clipped surrogate, the KL term, and retrieved-token masking are unchanged (Jin et al., 2025);
+twin tokens are used only for credit, and only the actor is deployed. Algorithm 1 in Appendix D
+summarizes one step.
+5
+Theory
+All statements condition on a visited decision (st, yt); proofs are in Appendix B. Let Dind
+t
+be the pair
+difference when the branch’s continuation uses independent noise, and define the twin correlation
+ρt = 2Cov(U, U ′
+t)/Var(Dind
+t
+) and the discordance ηt = Pr(Dt̸ = 0).
+Proposition 1 (Twin credit is unbiased). With deterministic tools and unique keys, every twin
+trajectory is marginally a π-rollout from its branch state, E[Dt] = Aπ(st, yt), and, whenever Bt
+and St depend only on information available before the twin’s continuation, E[ ˆAt] = Aπ(st, yt).
+Hence P
+t ˆAt∇θ log πθ(yt | st) is an unbiased policy-gradient estimate for any noise layout and any
+coupling quality.
+Proposition 2 (Twins remove shared luck). Var(Dt) = (1 −ρt)Var(Dind
+t
+). With J pairs at equal
+cost, twin and independent credit have variances (1−ρt)Var(Dind
+t
+)/J and Var(Dind
+t
+)/J. In contrast,
+the realized return minus a baseline from b independent rollouts has variance at least Var(U | st, yt)
+for every b.
+Lemma 1 (Coupling is local). If, while the twin and factual continuations agree, their next-token
+distributions at each of L downstream positions differ by at most ϵ in total variation, the continuations
+are identical with probability at least
+  1−ϵ
+1+ϵ
+L, so ηt ≤2Lϵ.
+Proposition 3 (Credit becomes detection). For binary U, let p± = Pr(Dt = ±1), ∆= p+ −p−>
+0, and prev = p−. With J pairs, the probability that P
+j Dt,j ≤0 is at most e−Jr with the
+exact large-deviation rate r = −log
+ 1 −(√p+ −√p−)2
+≥∆2/(2∆+ 4prev). If prev ≤∆,
+J = ⌈6 log(1/δ)/∆⌉pairs give sign accuracy 1 −δ; independent pairs with Q′ = Q −∆, where
+Q = Qπ(st, yt) and Q′ = Qπ(st, y′), need (1 −o(1)) 4Q′(1 −Q) log(1/δ)/∆2 as δ, ∆→0.
+5
+
+
+Table 1: Exact match (%) on seven QA benchmarks (mean of three seeds; †: in-domain; Bamb.
+is Bamboogle). Groups: outcome-level credit, process signals without extra rollouts, tree rollouts,
+counterfactual branching, ours. Tok.: generated tokens per update relative to GRPO, including
+auxiliary rollouts. Bold / underline: best / second best.
+General QA
+Multi-hop QA
+Method
+NQ†
+TriviaQA
+PopQA
+HotpotQA†
+2Wiki
+MuSiQue
+Bamb.
+Avg.
+Tok.
+Qwen2.5-3B
+PPO
+41.2
+56.4
+41.1
+33.8
+32.6
+11.4
+28.0
+34.9
+1.00×
+GRPO
+43.1
+57.6
+41.8
+37.2
+34.5
+13.9
+33.6
+37.4
+1.00×
+GRPO (2×)
+43.8
+58.1
+42.3
+38.1
+35.4
+14.5
+34.4
+38.1
+2.00×
+IGPO
+44.0
+57.9
+42.6
+39.0
+37.1
+15.2
+35.2
+38.7
+1.00×
+GiGPO
+44.5
+58.4
+42.8
+39.5
+38.0
+15.7
+36.0
+39.3
+1.00×
+Tree-GRPO
+45.7
+59.1
+43.3
+40.6
+40.2
+16.4
+38.4
+40.5
+1.00×
+AT2PO
+46.0
+59.4
+43.6
+41.1
+40.9
+16.9
+39.2
+41.0
+1.00×
+VinePPO
+45.2
+58.6
+43.0
+41.4
+41.6
+17.3
+38.4
+40.8
+3.20×
+CRR
+45.0
+58.8
+42.9
+40.8
+40.7
+16.6
+37.6
+40.3
+1.70×
+TWICE (ours)
+46.9
+60.0
+44.2
+43.2
+43.8
+18.9
+41.6
+42.7
+1.70×
+Qwen2.5-7B
+PPO
+43.9
+60.2
+43.0
+39.6
+38.0
+16.8
+38.4
+40.0
+1.00×
+GRPO
+45.6
+61.2
+44.0
+42.1
+40.3
+18.7
+42.4
+42.0
+1.00×
+GRPO (2×)
+46.2
+61.7
+44.4
+42.9
+41.1
+19.2
+43.2
+42.7
+2.00×
+IGPO
+46.4
+61.5
+44.7
+43.5
+42.3
+20.0
+43.2
+43.1
+1.00×
+GiGPO
+46.8
+61.9
+44.9
+43.9
+43.0
+20.5
+44.0
+43.6
+1.00×
+Tree-GRPO
+47.7
+62.8
+45.2
+44.8
+44.4
+21.1
+44.8
+44.4
+1.00×
+AT2PO
+48.0
+63.0
+45.5
+45.2
+44.9
+21.6
+45.6
+44.8
+1.00×
+VinePPO
+47.3
+62.4
+45.1
+45.5
+45.7
+21.9
+45.6
+44.8
+3.20×
+CRR
+47.1
+62.5
+45.0
+44.9
+44.8
+21.3
+44.8
+44.3
+1.70×
+TWICE (ours)
+48.8
+63.7
+46.3
+47.1
+47.9
+23.5
+48.0
+46.5
+1.70×
+Proposition 4 (Square-root budget). Let decisions i have second moments mi = E[D2
+i ] and costs ci.
+Eq. (3) is unbiased for any qi > 0, its total variance is P
+i mi/qi −P
+i(EDi)2, and the minimizer
+under P
+i qici ≤C is q⋆
+i = min(1, λ
+p
+mi/ci). For binary U, mi = ηi.
+Proposition 1 makes correctness independent of coupling: keys, serving-engine nondeterminism,
+or tool noise can only cost variance. Proposition 2 removes the floor of Figure 1a, and Lemma 1
+explains why ρt is large where effects are small. Proposition 3 is the core of the insight: independent
+pairs estimate a mean from outcomes that disagree by chance at rate ≈2Q(1 −Q), whereas twins
+disagree mostly when the decision matters, so reversals are rare and a few discordant pairs reveal the
+sign. Proposition 4 turns this into allocation: coupling lowers ηi, and the square-root rule moves the
+saved budget to decisions whose twins are predicted to disagree.
+6
+Experiments
+6.1
+Setup
+Data, models, and training.
+We follow the Search-R1 protocol (Jin et al., 2025): training on the
+union of NQ and HotpotQA training sets, retrieval of the top-3 passages by E5 (Wang et al., 2022)
+from the 2018 Wikipedia dump (Karpukhin et al., 2020), at most four search calls, and exact match as
+the reward. We evaluate exact match on NQ, TriviaQA, and PopQA (Kwiatkowski et al., 2019; Joshi
+et al., 2017; Mallen et al., 2023) and on the multi-hop HotpotQA, 2WikiMultiHopQA, MuSiQue, and
+Bamboogle (Yang et al., 2018; Ho et al., 2020; Trivedi et al., 2022; Press et al., 2023). Backbones are
+Qwen2.5-3B/7B-Instruct (Qwen et al., 2024); Appendix F adds Qwen3-4B (Yang et al., 2025) and
+6

@@ -1,0 +1,690 @@
+SympFormer: Inertial Attention Blocks from Damped
+Hamiltonian Dynamics on Spaces of Probability Measures
+Viktor Stein
+∗†, Levin Maier∗‡, Wuchen Li
+§, Gabriele Steidl
+¶
+October 23, 2026
+Abstract
+The attention mechanism underpins modern large language models, yet their dynamics re-
+main only partially understood. Recent perspectives interpret attention blocks as interacting
+particle systems, whose mean-field limits correspond to gradient flows of energy functionals
+on spaces of probability densities on Rd equipped with Wasserstein-type metrics. We extend
+this viewpoint by deriving accelerated attention blocks from inertial, Nesterov-type damped
+Hamiltonian dynamics on these density spaces, developing the geometry and differential cal-
+culus needed to make the construction rigorous. In particular, we introduce a local-mobility
+geometry for the Otto–Wasserstein and softmax–Wasserstein settings, and a quotient Stein ge-
+ometry that resolves the degeneracy of the linear-attention kernel to yield a well-defined metric
+and differential calculus. We provide rigorous foundations when softmax attention admits a
+gradient-flow formulation and when its inertial counterpart admits a damped Hamiltonian on
+explicitly characterized domains. For linear attention, we obtain a finite-dimensional solution
+theory with sharp conditions for global existence versus finite-time second-moment blow-up.
+We further prove a quantitative link between continuous moment blow-up and the discrete-
+layer depth at which token norms cross a prescribed threshold.
+Finally, motivated by the
+finite-token geometry, we propose geometric corrections to token and momentum updates. In
+decoder-only, nanoGPT-style experiments on TinyStories and OpenWebText, these corrections
+lower validation negative log-likelihood on next-token prediction relative to momentum-only
+controls.
+Keywords: transformers; attention dynamics; local-mobility geometry; Wasserstein geometry;
+quotient Stein geometry; differential calculus; damped Hamiltonian dynamics; finite-time blow-up;
+discrete layer depth.
+∗Equal contribution.
+†Department of Mathematics, Technical University of Munich, and the Munich Center for Machine Learning.
+viktor.stein@tum.de, https://neitalg.github.io/NEITALG/.
+‡School of Mathematics,
+Institute for Advanced Study,
+1 Einstein Drive,
+Princeton,
+NJ 08540,
+USA,
+lmaier@ias.edu.
+§Department of Mathematics, University of South Carolina, Columbia. 1523 Greene St, Columbia, SC 29208,
+USA, wuchen@mailbox.sc.edu.
+¶Institute of Mathematics, Technische Universität Berlin, Straße des 17. Juni 136, 10623 Berlin, Germany,
+steidl@math.tu-berlin.de, https://tu.berlin/imageanalysis.
+1
+arXiv:2610.31600v1  [math.SG]  22 Oct 2026
+
+
+1
+Introduction
+This paper develops foundations of infinite-dimensional Nesterov acceleration and connects it to the
+mathematical theory of deep transformers—two fields that at first glance appear largely unrelated.
+To motivate this connection, we first consider the role of attention in transformers.
+The transformer architecture introduced in Attention Is All You Need [77] forms the backbone of
+modern large language models. Its attention layers update token representations by allowing tokens
+to exchange information across a sequence. The widespread use and societal importance of these
+systems make a mathematical understanding of their behavior important. Although attention has
+become an active subject of mathematical research, with contributions to approximation theory,
+stability, learning, and the dynamics of token interactions [17,24,30,41,45,81,89], even the behavior
+of the original transformer architecture remains only partially understood.
+Attention layers can be viewed as discrete dynamical systems for token representations [24,
+81] and, in a continuous-depth limit, as interacting particle systems [35, 51, 68]. Under suitable
+assumptions, a subsequent mean-field limit describes the evolution of the token distribution through
+a non-linear transport equation, allowing PDE methods to be used to study collective behavior
+[13, 16]. We provide further details in Section 2 and illustrate this passage in Figure 2. In their
+recent work, Castin–Ablin–Carrillo–Peyré [16] establish well-posedness of the mean-field PDE for
+softmax attention for compactly supported initial data and study Gaussian initial data separately.
+General non-Gaussian initial densities with unbounded support remain outside their analysis. As
+in their work, we consider probability densities on Rd, allowing unbounded support, which lets us
+study growth in token magnitudes, which sphere-constrained models exclude [13,33–35,56].
+The transformer PDE arising in the mean-field limit can also be interpreted formally as a
+gradient flow of an interaction energy on a space of probability densities equipped with a suitable
+Riemannian metric. For softmax attention, Castin et al. [16, Sec. 5] develop this interpretation,
+but explicitly leave its rigorous geometric justification open. Before moving on, we highlight several
+obstacles to making this gradient-flow interpretation rigorous. The first concerns differentiation
+itself: the admissible density classes on Rd are not assumed to carry a smooth manifold structure.
+Therefore the relevant tangent and cotangent spaces and notions of differentiation must be specified
+explicitly. A further difficulty comes from weak Riemannian metrics, for which even smooth energies
+need not admit a gradient vector field; see Section 4.1. To define the Riemannian metrics considered
+here, we follow a guiding principle: associate a differential operator, called the mobility operator,
+with the attention kernel and use its inverse to define the metric. Making this construction rigorous
+requires identifying suitable function spaces on which this operator is invertible. Figure 3 illustrates
+this passage from attention kernels to Riemannian metrics.
+A natural extension of this viewpoint is inspired by Nesterov acceleration [60] in finite-dimensional
+optimization, which, roughly speaking, introduces momentum to accelerate gradient descent; see
+Section 3. On spaces of probability densities, this leads us to study infinite-dimensional damped
+Newton systems, a particular class of damped Hamiltonian systems. Newton dynamics on such
+spaces also arise in geometric hydrodynamics; see Khesin–Misiołek–Modin [40]. Wang and Li [84]
+study such damped Newton dynamics as accelerated gradient flows on spaces of probability densi-
+ties. However, their geometric construction has serious analytic gaps even in the Otto–Wasserstein
+and Stein settings; see Section 4 and Appendix A. The authors of [71] use this framework to derive
+inertial PDEs for linear and softmax attention, but leave the underlying geometric construction at
+a formal level.
+These connections motivate the following question: Can PDE methods, functional analysis, and
+2
+
+
+geometry applied to the mean-field limit yield new insights into the dynamics of transformers with
+finitely many tokens and layers?
+Main results.
+Our paper makes the following main contributions, whose connections we sum-
+marize in Figure 1.
+1. Foundations for infinite-dimensional Nesterov acceleration. For linear and softmax at-
+tention, we develop the geometric foundations needed to make the formal gradient-flow and damped
+Hamiltonian formulations rigorous on specified domains (Corollary 6.4, Theorem 6.7, Proposi-
+tion 7.4, and Lemma 7.16). This provides the rigorous justification left open in [16, Sec. 5.4]. For
+softmax attention, we introduce a local-mobility geometry, which includes both Otto–Wasserstein
+and softmax–Wasserstein geometry on smooth probability densities over Rd (Theorem 4.3). For
+linear attention, we introduce a quotient Stein geometry adapted to the bilinear attention kernel
+(Theorem 5.3). Since a differentiable structure on the spaces of probability densities involved is not
+given a priori, we develop the associated differential calculus directly on these spaces (Appendices B
+and C).
+2. Well-posedness and blow-up for the linear-attention transformer PDE and its ac-
+celerated counterpart. By choosing coordinates adapted to the evolving density, we reduce the
+infinite-dimensional dynamics of both equations to finite-dimensional matrix ODEs. The resulting
+two-way PDE–ODE correspondences yield existence and uniqueness of strong solutions for admis-
+sible non-Gaussian initial data with potentially unbounded support (Theorems 7.6 and 7.18). In
+the accelerated case, we require a quadratic initial momentum potential. These reductions also give
+conditions for global-in-time existence and finite-time second-moment blow-up (Proposition 7.13
+and Theorem 7.23).
+3.
+From PDE blow-up to growth of token norms across layers. For accelerated linear
+attention at fixed token count, we use continuous moment growth to predict the first explicit-Euler
+layer crossing a prescribed directional second-moment threshold. The prediction has a bounded
+error in layer count as the step size tends to zero (Theorem 7.26).
+As a corollary, continuum
+moment blow-up implies that every prescribed token-norm bound is exceeded in the discrete layers
+for sufficiently small step sizes (Corollary 7.28).
+To the best of our knowledge, these are the
+first results linking continuum moment blow-up to quantitative threshold-depth predictions and
+arbitrarily large token norms in discrete attention networks at fixed token count.
+4. Numerical evaluation of geometric attention updates. We derive corrections to token
+and momentum updates from the finite-token softmax metric (Lemma 6.11). On TinyStories and
+OpenWebText, we compare practical versions of these updates with matched momentum-only con-
+trols. The corrections give small reductions in mean validation loss in some settings, at increased
+computational cost (Section 9).
+We discuss the relation to previous work in Section 10.
+Organization.
+Section 2 recalls the interpretation of attention layers as interacting particle sys-
+tems and introduces their continuum descriptions. Section 3 reviews Nesterov acceleration and
+motivates its extension to attention through geometric formulations of density dynamics. The ob-
+struction to using the full formal tangent space in Stein geometry is established in Appendix A.
+Sections 4 and 5 develop the local-mobility and quotient Stein frameworks, respectively.
+They
+identify suitable function spaces, establish invertibility of the corresponding mobility operators,
+3
+
+
+Softmax and linear attention
+Continuous dynamics and discrete layers
+Geometric foundations on Rd
+Local-mobility geometry
+Quotient Stein geometry
+Otto–Wasserstein and softmax-Wasserstein
+Linear attention
+Theorem 4.3
+Theorem 5.3
+Function spaces, metrics, and differential calculus
+Rigorous softmax
+formulations
+Conditions for gra-
+dient and damped
+Hamiltonian equations
+Corollary 6.4
+Theorem 6.7
+Linear-attention
+solution theory
+Existence, uniqueness,
+and moment blow-up
+Theorem 7.18
+Theorem 7.23
+Direct finite-token
+geometry
+Explicit geometric cor-
+rections to token and
+momentum updates
+Lemma 6.11
+PDE growth predicts
+layer depth
+Thresholds for large to-
+ken norms at a fixed
+number of tokens
+Theorem 7.26
+Corollary 7.30
+Geometric corrections
+improve prediction
+Softmax and linear ar-
+chitectures compared
+with momentum controls
+Tables 2 and 4
+Figure 1: From attention geometry to analysis and architecture. The local-mobility and quotient
+Stein constructions provide function spaces and a differential calculus for attention dynamics on
+Rd. For softmax attention, they identify when the equations admit regular gradient and Hamilto-
+nian formulations. For inertial linear attention under the stated assumptions, continuous blow-up
+predicts large token norms in discrete layers, even at a fixed number of tokens. A direct finite-token
+geometric construction motivates corrections to token and momentum updates. The reported ex-
+periments evaluate their predictive gains and additional computational cost.
+4
+
+
+and define the induced metrics and gradients. The notions of differentiability needed for the gradi-
+ent and Hamiltonian formulations are developed in Appendices B and C. Section 6 treats softmax
+attention. It distinguishes pointwise well-definedness from regular gradient and Hamiltonian formu-
+lations, identifies their admissibility conditions, and derives the finite-token geometric correction
+used in the numerical section.
+Section 7 applies the quotient Stein framework to linear atten-
+tion. It introduces covariance coordinates, establishes the ODE–PDE correspondence and strong
+well-posedness, and studies global existence and finite-time moment blow-up. It then relates con-
+tinuous growth to activation thresholds and effective depth in discrete attention layers. Section 8
+introduces the discretizations and resulting architectures, and Section 9 compares their linear and
+softmax variants in language-modeling experiments. We discuss the relation to previous work in
+Section 10.
+Part I
+Attention Models and Acceleration
+2
+Transformers as Dynamical Systems
+In this section, we recall the mean-field description of transformer dynamics and discuss possible
+geometric interpretations of the resulting PDE; see, e.g., [16, 35]. We first specify the attention
+weights and residual layers, then describe the formal passage to continuous-depth particle dynamics
+and their mean-field continuity equation, as illustrated in Figure 2. Finally, we discuss the geometric
+requirements for a gradient-flow interpretation and the obstacles to making it rigorous.
+Residual attention
+X(k)
+i
+7→X(k+1)
+i
+Particle dynamics
+˙Xi = ΓX(Xi)
+Density evolution
+∂tρ = −∇· (ρΓρ)
+h →0
+N →∞
+Figure 2: From attention layers to transport dynamics: with shared weights, the formal continuous-
+depth limit turns residual updates into an interacting particle system. A suitably normalized mean-
+field limit then describes the token distribution through a continuity equation.
+Token configurations and attention weights.
+Transformers act on token configurations
+X := (X1, . . . , XN) ∈(Rd)N.
+The literature also considers embeddings in (Sd)N; see, e.g., [13,18,21,34], which this paper does
+not handle. Self-attention combines information across tokens, whereas MLP layers apply token-
+wise non-linear transformations. Let Q, K ∈Rm×d and V ∈Rd×d, m ≤d, denote the query, key,
+and value matrices, and set A := K⊤Q ∈Rd×d. For the geometric constructions in Sections 7
+and 6, we assume that m = d and that A is a symmetric matrix. In the following, we ignore the
+causal masking, layer normalization, the standard attention scaling, the output projection, and the
+multi-head structure usually used in transformer architectures.
+5
+
+
+Recall that the softmax function is defined for w ∈Rd by
+softmax(w) :=
+ exp(wi)/
+d
+X
+j=1
+exp(wj)
+d
+i=1.
+We consider the following two choices of attention weights κ = κX : Rd × Rd →R:
+κX(Xi, Xj) =
+
+
+
+
+
+exp((Xj)⊤AXi)
+PN
+ℓ=1 exp((Xℓ)⊤AXi) = softmaxj
+ (X⊤
+ℓAXi)N
+ℓ=1
+
+softmax self-attention,
+(Xj)⊤AXi
+linear self-attention.
+(1)
+We use the term “linear self-attention” for unnormalized dot-product attention, to distinguish it
+from other linear self-attention mechanisms [39]. Note that the evaluation cost of transformers
+with softmax attention scales quadratically with sequence length. Kernel attention addresses this
+by replacing softmax with a more general kernel function. For example, [66] aims to identify kernels
+that retain the expressivity of attention while enabling quasi-linear computation.
+Residual attention and MLP layers.
+Let (X0
+1, · · · , X0
+N) be the input tokens, let h > 0 be
+the step size, and let k ∈N denote the layer index. The attention matrices usually differ between
+layers. For the continuous-depth description below, we instead keep Q, K, and V fixed across layers
+(“weight sharing”), as in architectures such as ALBERT [43]. The residual attention sublayer is
+X(k+1)
+i
+= X(k)
+i
++ h
+N
+X
+j=1
+κX(X(k)
+i
+, X(k)
+j
+)V X(k)
+j
+,
+(2)
+where we have to replace h by h/N for linear attention. For weight matrices W, f
+W ∈Rd×d, a bias
+b ∈Rd, and a non-linear function σ: R →R applied componentwise, the residual MLP sublayer is
+X(k+1)
+i
+= X(k)
+i
++ hWσ(f
+WX(k)
+i
++ b),
+(3)
+where the MLP parameters may differ between layers. The updates (2) and (3) describe the two
+sublayers separately. In the following passage to particle and density dynamics, we consider only
+the attention update (2).
+Particle dynamics.
+Given input tokens X(0) = (X1(0), . . . , XN(0)) ∈(Rd)N, we interpret the
+attention iteration as a discretization in depth. Formally, as the step size h →0, this gives
+˙Xi(t) = ΓX(t)(Xi(t)),
+1 ≤i ≤N,
+(4)
+where ΓX : Rd →Rd is the attention vector field determined by Q, K, V , and the current token
+configuration X(t). For softmax attention, it is given by
+ΓX(x) :=
+N
+X
+j=1
+exp
+ Qx · KXj
+
+PN
+ℓ=1 exp
+ Qx · KXℓ
+ V Xj,
+for x ∈Rd.
+The velocity of each token in (4) is a similarity-weighted average of the value vectors. The resulting
+dynamics form a non-linear interacting particle system.
+6
+
+
+Density continuity equation.
+For a probability density ρ, the corresponding attention field is
+Γρ : Rd →Rd,
+x 7→
+Z
+V y κρ(x, y)ρ(y) dy,
+for all ρ such that this integral is finite. The two choices in (1) lead to the density-dependent
+weights
+κρ(x, y) :=
+
+
+
+exp(y⊤Ax)
+R
+exp(z⊤Ax)ρ(z) dz
+softmax self-attention,
+y⊤Ax,
+linear self-attention.
+In the formal mean-field limit, the self-attention dynamics (4) are described on Rd by the continuity
+equation
+∂tρt = −∇· (ρtΓρt),
+t > 0,
+(5)
+see [16,35] and also [13,35,68,90].
+Geometry of the mean-field limit.
+Under suitable assumptions on the attention matrices, the
+mean-field equation (5) admits a formal gradient-flow interpretation. Recall that a Riemannian
+gradient flow on a manifold M is specified by a pair (F, G): a smooth functional F : M →R and
+a Riemannian metric G. Thus, identifying an energy is only part of the construction; the geometry
+determines the corresponding direction of steepest descent.
+Making this interpretation rigorous requires specifying the underlying space of probability den-
+sities. A central distinction is whether these densities have compact support or extend over all of
+Rd. In the latter case, additional integrability and coercivity conditions are needed to justify the
+formal geometric operators. For softmax attention, a general rigorous justification of this geometry
+for non-compactly supported densities was left open in [16, Sec. 5].
+This geometric viewpoint provides a way to introduce momentum into attention dynamics,
+following the principle of Nesterov acceleration, as discussed in the next section.
+Discretizing
+the resulting inertial equations yields attention layers that propagate both token positions and a
+momentum variable across network depth.
+We close this subsection by recalling the guiding question of this paper:
+Can PDE methods, functional analysis, and geometry applied to the mean-field limit
+yield new insights into the dynamics of transformers with finitely many tokens and
+layers?
+3
+Nesterov’s Acceleration Method and Attention Models
+The aim of this section is to explain how Nesterov acceleration provides a way to introduce mo-
+mentum into attention dynamics and to identify the geometric constructions needed to justify this
+approach.
+We first recall Nesterov acceleration in Euclidean space and its continuous-time formulation as
+the damped Hamiltonian system (10). We then describe the corresponding construction for smooth
+probability densities on compact manifolds, leading to the accelerated Otto–Wasserstein equations
+(13). This construction relies on the mobility operator being invertible between suitable cotangent
+and tangent spaces. We explain why this requirement presents an obstruction in Stein geometry.
+7
+
+
+Finally, we connect this viewpoint to the linear and softmax attention models introduced in
+Section 2. Their kernels give rise to different mobility operators and hence different formal ge-
+ometric descriptions. We state the resulting accelerated systems in (17) and (19), and identify
+the function-space and differentiability questions that must be resolved to make them rigorous.
+These questions motivate the local-mobility calculus developed in Section 4 and the quotient Stein
+geometry developed in Section 5.
+3.1
+Nesterov Acceleration on Rd
+Nesterov acceleration [60] is a well-known technique for improving the convergence rate of gradient
+descent methods. For an objective function F ∈C1(Rd; R), we consider the optimization problem
+min
+x∈Rd F(x).
+(6)
+The gradient descent sequence (x(k))k∈N starting at x0 ∈Rd with step size τ is given by
+(
+x(k+1) = x(k) −τ∇F(x(k)),
+x(0) = x0.
+Nesterov’s accelerated gradient descent is obtained by choosing an extrapolation coefficient as
+
+
+
+
+
+
+
+x(k+1) = y(k) −τ∇F(y(k)),
+y(k+1) = x(k+1) + (1 −
+3
+k+3)(x(k+1) −x(k)),
+x(0) = x0, y(0) = x0.
+(7)
+Substituting t = k√τ and letting τ →0, Nesterov’s method can be interpreted through the following
+continuous-time dynamical system; see [72,85]:
+
+
+
+¨xt + 3
+t ˙xt + ∇F(xt) = 0,
+xt|t=0 = x0, ˙xt|t=0 = 0.
+(8)
+For a convex function F possessing a minimizer, and any step size τ ∈(0, 1
+L], where L is the Lipschitz
+constant of ∇F, the discrete scheme (7) exhibits a convergence rate F(x(k)) −F ∗≤O( ∥x0−x∗∥2
+τk2
+),
+where x∗is a minimizer of F and F ∗= F(x∗) [72, p. 2]. This rate is optimal among all methods
+having only information about the gradient of F at consecutive iterates [61]. For the continuous
+dynamics (8), we have similarly F(x(t)) −F ∗≤O( ∥x0−x∗∥2
+t2
+).
+Introducing a momentum variable pt and αt := 3
+t , the second-order ODE (8) can be rewritten
+as the first-order system
+
+
+
+
+
+˙xt = pt,
+˙pt + αtpt = −∇F(xt),
+xt|t=0 = x0, p0 = 0.
+(9)
+It was observed, e.g., in [73], that with the Hamiltonian and its derivatives
+H(x, p) = 1
+2∥p∥2 + F(x),
+∇pH(x, p) = p,
+∇xH(x, p) = ∇F(x),
+8
+
+
+the first-order system (9) becomes a damped Hamiltonian flow
+(
+˙xt = ∇pH(xt, pt),
+xt|t=0 = x0,
+˙pt + αtpt = −∇xH(xt, pt),
+p0 = 0.
+(10)
+3.2
+Nesterov Acceleration on Probability Measures on Compact Sets
+In [84] (see [20,75] for alternative approaches), Nesterov acceleration is formulated on the space of
+smooth, strictly positive probability densities on a closed, connected manifold Ω. In this subsection,
+we briefly recall this approach to get a sense of the path we must follow for our transformer setting
+on the space of smooth probability densities on Rd. We focus on Otto–Wasserstein geometry from
+optimal transport [65] and Stein geometry associated with Stein variational gradient descent [25,49];
+see also the references therein.
+We begin by fixing notation for the space of smooth, strictly positive probability densities on Ω:
+P∞(Ω) :=
+
+ρ ∈C∞(Ω) : ρ > 0,
+Z
+Ω
+ρ(x) dx = 1
+
+.
+This space carries a smooth Fréchet manifold structure [36,42]. The tangent space of P∞(Ω) at a
+smooth probability density ρ is given by
+TρP∞(Ω) = C∞
+0 (Ω) := { ˙ρ ∈C∞(Ω) :
+Z
+Ω
+˙ρ dx = 0}.
+The cotangent space of P∞(Ω) at a smooth probability density ρ, to be precise its smooth dual,
+reads as T ∗
+ρ P∞(Ω) := C∞(Ω)/R. The class of a representative Φ modulo constants is denoted by
+[Φ].
+Nesterov acceleration in Otto–Wasserstein geometry.
+For all ρ ∈P∞(Ω), the Otto–
+Wasserstein mobility operator
+LW
+ρ : T ∗
+ρ P∞(Ω) →TρP∞(Ω),
+[Φ] 7→−∇· (ρ∇Φ),
+is a linear isomorphism, and the corresponding bilinear form induces a well-defined Riemannian
+metric on TρP∞(Ω), given by GW
+ρ : TρP∞(Ω) × TρP∞(Ω) →R with
+GW
+ρ ( ˙ρ, ˙η) :=
+Z
+Ω
+Φ ˙ρ ˙η dx,
+where Φ ˙ρ is uniquely defined for any given ˙ρ via
+˙ρ = LW
+ρ ([Φ ˙ρ]) = −∇· (ρ∇Φ ˙ρ) ,
+(11)
+see [42,65,79]. Note that the invertibility of LW
+ρ
+is ensured as long as we work with measures on
+compact, connected spaces. An important ingredient is that on these spaces the so-called Poincaré
+inequality holds. In our transformer setting, we have to establish such a relation for a more general
+operator related to the softmax function as well as for the whole space Rd.
+9
+
+
+Let 0 ≤t0 < T ≤∞. For every accelerated evolution considered on [t0, T), we assume that the
+damping coefficient satisfies
+α ∈C
+ [t0, T); [0, ∞)
+
+.
+For schedules singular at the origin, such as α(t) = r/t [6,7] or α(t) = r/t + m, we always choose
+t0 > 0 or translate time and use α(t0 + t) with t0 > 0. Then, instead of (6), we are looking for a
+minimizer of F : P∞(Ω) →R, i.e.,
+min
+ρ∈P∞(Ω) F(ρ).
+The gradient flow of F(ρ) in the probability density space (P∞(Ω), GW ) satisfies
+∂tρt = −LW
+ρt
+hδF(ρt)
+δρt
+i
+,
+where δF
+δρ denotes the first variation of the functional F at the density ρ. With the Hamiltonian
+defined by
+H(ρ, Φ) := 1
+2
+Z
+Ω
+ΦLW
+ρ Φ dx + F(ρ),
+ρ ∈P∞(Ω), Φ ∈T ∗
+ρ P∞(Ω)
+the accelerated dynamics by the damped Hamiltonian equations suggested in [84] satisfy
+(
+∂tρt =
+δ
+δΦt H(ρt, Φt),
+ρt|t=0 = ρ0
+∂tΦt + αtΦt = −δ
+δρt H(ρt, Φt),
+Φ0 = 0,
+(12)
+where ρ0 ∈P∞(Ω) is a given initial density function, see also [40, 80]. The system (12) can be
+rewritten as
+
+
+
+∂tρt = LW
+ρt (Φt),
+ρt|t=0 = ρ0,
+∂tΦt + αtΦt = −1
+2
+δ
+δρt
+ R
+ΩΦtLW
+ρt (Φt) dx
+
+−δF
+δρt ,
+Φ0 = 0,
+and plugging in (11), we obtain the Nesterov acceleration in the Otto–Wasserstein geometry
+
+
+
+∂tρt = −∇· (ρt∇Φt) ,
+ρt|t=0 = ρ0,
+∂tΦt + αtΦt = −1
+2∥∇Φt∥2 −δF(ρt)
+δρt
+,
+Φ0 = 0.
+(13)
+This PDE is related to damped Euler equations, whose long-time behavior under constant damping
+was studied in [14] for suitable free energies, assuming the existence of global energy-dissipating
+solutions. That work does not establish general well-posedness. For a related kinetic formulation,
+see [59].
+To connect this construction with attention dynamics, we next consider the mobility operators
+associated with the attention kernels. For softmax attention, the operator in (15) gives a modifica-
+tion of Otto–Wasserstein geometry that remains closely related to it on compact domains. Linear
+attention instead suggests a Stein-type geometry through its bilinear kernel. Here, an additional ob-
+struction arises: even for symmetric, bounded, integrally strictly positive definite kernels, the Stein
+mobility operator need not be invertible between the full formal cotangent and tangent spaces. The
+following paragraph explains why the preceding Otto–Wasserstein construction therefore requires
+further modifications in the Stein setting, even on compact domains.
+10
+
+
+Nesterov acceleration in Stein geometry and its failure.
+In [84] and follow-up papers, it
+was assumed that the Stein mobility operator
+LS
+ρ : T ∗
+ρ P∞(Ω) →TρP∞(Ω),
+[Φ] 7→−∇·
+
+ρ
+Z
+Ω
+K(·, y) ∇Φ(y) ρ(y) dy
+
+(14)
+with a symmetric, bounded, integrally strictly positive definite kernel K is also a linear isomorphism,
+so that GS
+ρ : TρP∞(Ω) × TρP∞(Ω) →R given by
+GS
+ρ ( ˙ρ, ˙η) :=
+Z
+Ω
+Φ ˙ρ(x) ˙η(x) dx =
+Z
+Ω
+Z
+Ω
+K(x, y)
+
+∇Φ ˙ρ(x), ∇Φ ˙η(y)
+
+ρ(x)ρ(y) dy dx
+with
+˙ρ = LS
+ρ ([Φ ˙ρ]),
+˙η = LS
+ρ ([Φ ˙η]).
+imposes a well-defined Riemannian metric on TρP∞(Ω). Unfortunately, this is not true, since LS
+ρ
+fails in general to be surjective, and a restriction of the formal tangent space is necessary to ensure
+surjectivity; see Appendix A.
+We close this paragraph by noting an additional geometric obstruction on general compact
+manifolds Ω. The kernel in (14) has to do more than just weighting the gradients: it must map
+tangent vectors at the integration point to tangent vectors at the evaluation point, so that they can
+be averaged in a common tangent space. Thus, an intrinsic formulation requires an operator-valued
+kernel acting between the respective tangent spaces. A scalar kernel alone does not provide this
+identification, which is implicit in the Euclidean setting. For one possible way to overcome this
+obstruction, we refer to [48].
+3.3
+Nesterov Acceleration and Attention Models on Rd
+This subsection connects the previously discussed interpretation of transformers as dynamical sys-
+tems with Nesterov acceleration on Rd, motivating the theory developed later in this paper. At a
+high level, each choice of a self-attention kernel in (1) corresponds to a choice of geometry. More
+precisely, the softmax attention kernel corresponds to softmax Otto–Wasserstein geometry, while
+the linear attention kernel corresponds to a geometry reminiscent of Stein geometry. We begin by
+stating at this point formally the analog of (13) in these geometries. At a formal level, the self-
+attention kernel determines a mobility operator, whose inverse on suitable tangent and cotangent
+spaces induces the corresponding metric. This is the mechanism through which the choice of an
+attention kernel determines a geometry.
+Attention kernel
+K(x, y)
+Mobility operator
+Lρ : T ∗
+ρ P →TρP
+Riemannian metric
+Gρ
+induces
+invert
+Figure 3: From attention to geometry: an attention kernel gives rise to a mobility operator. The
+key step is to identify suitable function spaces on which this operator is invertible. Its inverse then
+defines the metric underlying a rigorous analog of Otto calculus.
+11

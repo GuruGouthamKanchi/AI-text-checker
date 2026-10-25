@@ -1,0 +1,619 @@
+HERD: Harness-Evolving Recursive Distillation for Continual Learning
+Xun Sun1
+Thanh Thi Nguyen2
+Thuy-Trang Vu1
+Abstract
+Continual learning requires a model to keep
+acquiring new skills and knowledge without
+compromising its existing capabilities. Para-
+metric methods suffer from catastrophic for-
+getting and loss of plasticity. Non-parametric
+methods, such as prompts, skills, and harnesses,
+leverage in-context learning but are limited by
+context length and lossy plain-text compres-
+sion. To effectively combine their complemen-
+tary strengths, we propose HERD (Harness-
+Evolving Recursive Distillation), a hybrid con-
+tinual learning framework that learns efficiently
+in the harness and internalizes experience into
+cumulative capabilities via distillation.
+On
+the harness side, HERD continually refines its
+skills to capture reusable patterns, while retain-
+ing high-residual examples that the skills fail
+to capture in a bounded memory. On the pa-
+rameter side, HERD performs drift-constrained
+distillation with dual anchors, substantially re-
+ducing forgetting over long recursive runs. On
+the 25-stage task stream of TRACE+17, under
+fixed memory and compute budgets, HERD
+matches the strongest parametric baseline in
+new-task acquisition while exhibiting the least
+forgetting and the strongest retention of general
+capabilities.
+1
+Introduction
+Large language models (LLMs) are highly capable,
+yet cannot independently carry out much of the
+work people need done (Mazeika et al., 2025). One
+pressing problem in closing this gap is continual
+learning: humans keep learning from experience
+while retaining what they know, whereas models
+no longer change once deployed. Continual learn-
+ing (CL) seeks to enable this ability by learning
+from a stream of tasks without forgetting existing
+capabilities or retraining from scratch on earlier
+data (Wu et al., 2024).
+1Monash University 2University of the Sunshine Coast.
+Correspondence to: Xun Sun
+<xsun0087@student.monash.edu>, Thanh Thi Nguyen
+<tnguyen5@usc.edu.au>, Thuy-Trang Vu
+<trang.vu1@monash.edu>.
+Parametric methods, however, inevitably en-
+counter catastrophic forgetting (McCloskey and
+Cohen, 1989; Kirkpatrick et al., 2017; Huang et al.,
+2024) and loss of plasticity (Dohare et al., 2024;
+Yang et al., 2026). They also give little control over
+what is internalized: raw experience carries noise,
+duplicates, and conflicts alongside the few samples
+that matter.
+In-context
+learning
+(ICL)
+offers
+a
+non-
+parametric path to continual learning (Brown et al.,
+2020; Gutiérrez et al., 2025). New knowledge
+is stored in external memory and retrieved into
+context, so a frozen LLM learns across tasks (Shi
+et al., 2025). This appears to sidestep the flaws
+above: a frozen model forgets nothing, loses no
+plasticity, and keeps knowledge inspectable and
+editable. It is also the norm in practice: users write
+prompts, skills, and harnesses rather than post-
+train, and recent works build continual learning
+systems on harnesses (Zhang et al., 2026c; Kang
+et al., 2026). Could a harness alone, recursively
+compressing its context, solve continual learning
+once models are strong and context windows long
+enough? We argue that it cannot. External stores
+can hold unbounded data, but nothing accumulates
+in the model itself: whatever it acts on must pass
+through the context, so experience is compressed
+into bounded plain text, which loses information at
+a very high rate. The more experience accumulates,
+the more is lost.
+The resolution lies in the weights themselves.
+A few hundred gigabytes of parameters recall his-
+tory, law, medicine, and science (Allen-Zhu and
+Li, 2025; Morris et al., 2026; Roberts et al., 2020),
+or even reproduce entire books nearly verbatim
+(Cooper et al., 2026). Language models are general-
+purpose compressors (Delétang et al., 2024), and
+compression is intelligence (Hutter, 2005). Contin-
+ual learning therefore still relies on weight updates,
+but should not apply them to every example. Each
+layer should store what it is best suited for: capacity
+in the weights, selection in the harness.
+We therefore propose HERD (Harness-Evolving
+Recursive Distillation), a hybrid continual learning
+1
+arXiv:2610.31401v1  [cs.CL]  22 Oct 2026
+
+
+Stage 𝑡
+𝐻𝑡−1
+Task 𝐴𝑡
+e.g. t=5 · ScienceQA
+Which closing is 
+correct for a letter?
+A thanks, Trudy
+B Thanks, Trudy
+𝜃𝑡−1
+𝜃0 (base)
+1 Harness evolution
+Skills 𝐾𝑡: reusable rules
+Memory ℛ︀𝑡: high-residual samples
+e.g. t=5 · ScienceQA
+Skill: Output the 
+correct choice letter 
+followed by a space, 
+then …
+ℛ︀𝑡 0–1 ScienceQA samples 
+kept
+𝐻𝑡
+2 Drift-constrained distillation
+Teacher: 𝜃𝑡−1 with 𝐻𝑡
+Student: 𝜃𝑡−1 without harness
+e.g. t=5 · ScienceQA
+Teacher with skill
+B …
+Student no skill
+B …
+student learns the letter-first 
+answer
+Dual-anchor drift bounds
+𝜃𝑡−1 bounds per-stage drift
+𝜃0 bounds cumulative drift
+𝐻𝑡
+𝜃𝑡
+𝑡+ 1
+Deploy 𝜃𝑡 only, no harness
+e.g. t=12 · Reddit summary
+the same question
+HERD ✓
+B
+OPR ✗
+A wrong choice
+Seq-LoRA ✗
+Thanks, 
+Trudy
+wrong format
+Figure 1: HERD overview: one recursive stage. The harness Ht = (Kt, Rt) evolves on task At and is distilled into
+the weights; drift budgets keep the student close to two anchors, the previous checkpoint ¯θt−1 and the base θ0. Ht
+and ¯θt recur, and only ¯θt is deployed. The e.g. tiles follow one ScienceQA item, learned at t = 5 and asked again at
+t = 12: two parametric baselines fail, OPR choosing the wrong option and Seq-LoRA writing the right text without
+the choice letter, while HERD answers from its weights alone across three seeds.
+system in which the harness is the fast, selective
+learning layer and the weights are the slow, persis-
+tent layer. The design mirrors the human brain: a
+harness resembles episodic memory formed during
+the day, flexible but limited in capacity, which sleep
+consolidates into long-term memory (McClelland
+et al., 1995). HERD likewise internalizes its har-
+ness into the weights after every stage, under fixed
+memory and compute budgets and at no added in-
+ference cost. It does not eliminate forgetting, but
+preserves existing capabilities as far as possible
+while the model keeps learning.
+HERD is designed around recursion: it must
+run stably stage after stage, which raises two chal-
+lenges. First, the context is bounded, so the har-
+ness must decide what to change and what to keep.
+Second, recursive training drifts, and unchecked
+drift ends in collapse. HERD answers each with
+one module (Figure 1). For the first, the harness
+evolves with the task stream: the model iterates
+on its skills to abstract reusable rules, and retains
+in a bounded memory the high-residual samples
+the skills cannot cover. For the second, HERD
+performs drift-constrained distillation with dual
+anchors. The student is the previous checkpoint
+trained to match itself under the harness, which
+shifts the model less than SFT and thus forgets less
+(Shenfeld et al., 2026, 2025). The previous check-
+point bounds per-stage drift and the base model
+bounds cumulative drift. The harness is kept, in-
+spectable and editable, for the next stage; only the
+weights are deployed.
+Across a 25-stage stream HERD keeps more of
+what it learns than any other method: its final mean
+over all seen tasks is 0.706, above every parametric
+baseline and 27 points above the non-parametric
+ones, while its acquisition, 0.713, is statistically in-
+distinguishable from the plasticity floor set by Seq-
+LoRA (Table 1). Forgetting is 0.010, about half
+or less that of every weight-updating baseline but
+SDFT, whose generation collapses (Appendix D);
+the general test falls 6.3 points where these other
+baselines lose 20.0 to 25.5. In Figure 1, the rule
+learned at stage 5 still holds in the weights alone at
+stage 12 across three seeds.
+Our contributions are: (1) HERD, a hybrid con-
+tinual learning system that evolves a harness of
+skills and high-residual memory and recursively
+internalizes it into the weights (§2); (2) drift-
+constrained distillation with dual anchors, where
+the previous checkpoint bounds per-stage drift and
+the base model bounds cumulative drift (§2.4); (3)
+an evaluation on TRACE+17, a 25-stage stream
+of eight TRACE tasks (Wang et al., 2023b) and
+17 Super-NaturalInstructions tasks (Wang et al.,
+2022), against parametric, non-parametric, and hy-
+brid baselines (§3).
+Our code and dataset are available at https://
+github.com/a1exsun/HERD, and the project page
+is at https://a1exsun.github.io/HERD.
+2
+Methodology
+2.1
+Preliminaries
+Paradigms.
+We consider an ordered stream of
+tasks S = (T1, . . . , TT ), each with its own splits
+and a metric mt in [0, 1]. Every example is an input
+2
+
+
+and a target text; any dataset-specific instruction
+is part of the example. The learner after stage t is
+Lt = (ft, Mt): a prediction model and everything
+it retains across stages, external indexes included.
+Problem formulation.
+Stage t exposes Et =
+(Dtrain
+t
+, Dval
+t ) once and updates Lt = A(Lt−1, Et)
+from L0 = (fθ0, M0); earlier training sets are
+reachable only through M. Retained state and
+update compute are bounded, size(Mt) ≤BM
+and P
+t cost(A, Lt−1, Et) ≤BC, and any context
+attached at inference is reported with the scores.
+The learner is scored on a fixed schedule on the
+tasks seen so far and on fixed general-capability
+probes. With Rt,j the score on task j after stage t
+and ∆Ck = CT,k −C0,k the change in the score
+on probe k over the stream, we report final average
+performance, forgetting, and the worst change in
+general capability,
+AA = 1
+T
+P
+j RT,j,
+∆Cmin = mink ∆Ck,
+F =
+1
+T−1
+P
+j<T max(0, Rj,j −RT,j),
+(1)
+together with the mean change ∆C (§3.1). The ob-
+jective is to maximize AA and minimize F without
+negative ∆C or ∆Cmin, within BM and BC.
+Harness representation.
+We use harness in the
+sense of DeepSeek Harness (DSH) (DeepSeek-
+AI, 2026) and of harness-level continual learning
+(Kang et al., 2026; Zhang et al., 2026a): the state
+and procedures around a model at inference, such
+as system prompts, skills, memories, and tools, as
+opposed to its weights. The harness of HERD is
+H = (K, R). K is a registry of skills, each a rout-
+ing prefix and instructions; an input x is routed
+by prefix, and the matched instructions K(x) be-
+come the system message. R is a residual memory
+of whole training records, prompt and verified an-
+swer, kept verbatim. The budgets are BK and BR,
+with BM = BK + BR. Executing the harness
+is f(x; θ, K): the model θ answering x under the
+system message K(x).
+2.2
+HERD in One Stage
+In this notation, HERD after stage t is Lt =
+(f¯θt, (Kt, Rt, G)): merged dense weights ¯θt, the
+harness Ht = (Kt, Rt), and a fixed set G of gen-
+eral probes reserved before the stream. Figure 1
+shows one stage, which learns the task twice. First,
+the harness evolves on a bounded window of the
+task (§2.3). Second, the checkpoint, given the skill
+and the verified answer, teaches a fresh adapter
+that sees only the bare prompt, under drift budgets
+toward ¯θt−1 and θ0 (§2.4); the adapter is merged
+into ¯θt, the memory is refreshed under the merged
+weights, and the harness is carried on. Both steps
+are driven by the residual of a record (Eq. 2).
+2.3
+Harness Evolution
+Proposal.
+The harness reads the task through a
+bounded window At ⊂Dtrain
+t
+of whole records
+filled to a budget BA, the bounded context of §1:
+it must decide what to change and what to keep.
+The frozen checkpoint first answers At without a
+skill; its wrong answers go to the skill writer, so the
+skill targets what the model now gets wrong rather
+than restating the task. The base θ0 then writes the
+skill in one greedy call from the window and the
+mistakes. Keeping the writer at θ0 keeps it fixed
+across the recursion; co-evolution with the weights
+is left to future work (Appendix E).
+Guard.
+The residual r(x, y∗; θ, K) of a record
+under a model θ executing a registry K is the mean
+negative log-likelihood of its verified answer with
+the skill, but not the answer, in context,
+r = −1
+|y∗|
+|y∗|
+X
+k=1
+log p(y∗
+k | K(x), x, y∗
+<k; θ).
+(2)
+A candidate registry is committed only if the mean
+residual of At under ¯θt−1 is lower than under Kt−1;
+otherwise Kt = Kt−1: a skill survives only if it
+helps the checkpoint predict the task.
+Residual refresh.
+After distillation and merge,
+the residual of every record in Rt−1 ∪At is re-
+computed under ¯θt executing Kt, and Rt keeps
+whole records in decreasing residual until BR is
+filled. What the skill and the new weights together
+still cannot predict stays in plain text; with one
+global budget, a record the weights have just ab-
+sorbed yields its place at once. R is never replayed
+and never a training target. It supplies the probes
+of the next stage’s checkpoint-drift constraint: on
+the records the new checkpoint finds hardest, the
+student may not leave it.
+2.4
+Drift-Constrained Distillation
+Teacher and student.
+The teacher pH is the
+frozen ¯θt−1 under a privileged context: the routed
+skill Kt(x) as the system message and the verified
+answer y∗replayed as the model’s own previous
+turn. The student pS is the same weights with a
+freshly initialized LoRA adapter (Hu et al., 2021)
+3
+
+
+LEARN THE CURRENT TASK
+Teacher 𝑝𝐻: frozen 𝜃𝑡−1
+Skill 𝐾𝑡(𝑥) + prompt 𝑥 + replayed 𝑦⋆
+𝜃𝑡−1
+ℒ︀dist = mean KL(𝑝𝐻‖ 𝑝𝑆)
+on 𝑦⋆
+<𝑘 · full vocabulary
+RETAIN EARLIER TASKS
+Checkpoint anchor 𝑝𝐶: frozen 𝜃𝑡−1
+Probes ℛ︀𝑡−1 by task · per-stage bound
+same copy
+𝐷𝐶= max𝑔mean KL(𝑝𝐶‖ 𝑝𝑆)
+on 𝑦̂𝐶
+<𝑘 · 𝐷𝐶≤𝜀𝐶
+KEEP GENERAL CAPABILITIES
+Base anchor 𝑝0: immutable 𝜃0
+Probes 𝐺 by source · cumulative bound
+𝜃0
+𝐷0 = max𝑔mean KL(𝑝0 ‖ 𝑝𝑆)
+on 𝑦̂0
+<𝑘 · 𝐷0 ≤𝜀0
+(a) Distillation with two drift constraints
+ℒ︀dist, 𝐷𝐶, 𝐷0
+𝑝𝑆
+(b) Student 𝑝𝑆
+bare prompt 𝑥
++
+×
+𝜃𝑡−1
+· same copy
+𝜙= (𝑈𝑡, 𝑉𝑡)
+(d) Dual ascent
+𝐷𝑗
+𝜀𝑗
+𝜆𝑗
+over budget
+updates
+(c) Constrained update
+min𝜙ℒ︀dist(𝜙)
+s.t.
+𝐷𝐶≤𝜀𝐶,
+𝐷0 ≤𝜀0
+① Measure 𝐷𝐶, 𝐷0 (worst probe group).
+② Step on 𝜙 only with ℒ︀= ℒ︀dist + ∑𝑗(𝜆𝑗/𝜀𝑗) 𝐷𝑗.
+③ 𝜆𝑗←max(0, 𝜆𝑗+ 𝜂min(1, 𝐷𝑗/𝜀𝑗−1)); decays within budget, grows over it.
+∇𝜙ℒ︀
+Audit, merge, inherit
++
+×
+𝑊𝑡−1
+𝑉𝑡𝑈𝑡
+𝑊𝑡
+Deploy 𝜃𝑡 alone;
+new factors at 𝑡+ 1.
+frozen
+trainable
+forward
+drift constraint
+gradient
+Figure 2: Drift-constrained distillation. (a) One frozen copy of ¯θt−1 serves as both the teacher pH and the checkpoint
+anchor pC; the immutable θ0 is the general anchor p0. (b) The student adds fresh factors ϕ to the same weights
+and sees only the bare prompt. (c) Each update measures both drifts, steps on ϕ, and moves the multipliers by dual
+ascent. (d) A multiplier grows only while its budget is exceeded.
+and sees only the bare prompt (Figure 2a,b). The
+context carries no wording about the answer, so the
+student learns the answer and not the scaffolding
+around it.
+With pH
+k
+= pH(· | Kt(x), x, y∗, y∗
+<k) and
+pS
+k = pS(· | x, y∗
+<k), the student minimizes the
+full-vocabulary forward KL divergence at every
+position of the verified answer,
+Ldist = E(x,y∗)
+1
+|y∗|
+|y∗|
+X
+k=1
+KL
+ pH
+k ∥pS
+k
+
+.
+(3)
+Scoring the verified answer’s own prefix rather than
+student samples closes degenerate paths such as
+echoing the prompt, on which teacher and student
+agree and the gradient vanishes.
+Drift.
+A probe is a prompt x with the first n
+greedy tokens ˆy of an anchor a; with pa
+k = pa(· |
+x, ˆy<k) and pS
+k likewise, drift over probe groups
+Pg is the worst group’s mean divergence,
+D(P; a) = max
+g
+EPg
+1
+n
+n
+X
+k=1
+KL(pa
+k ∥pS
+k ).
+(4)
+Only the opening is scored because it decides the
+mode of a response: the failures in Figure 1, a
+wrong option and a dropped choice letter, are flips
+of the first few tokens that a long average would
+hide.
+The worst group is taken because a col-
+lapse confined to one task, Seq-LoRA’s correct Sci-
+enceQA answers falling from 94 to 15 across the
+stages of the same figure, barely moves a mean over
+all probes, which is also why we report ∆Cmin.
+Two anchors.
+Checkpoint drift DC anchors ¯θt−1
+on probes from Rt−1, grouped by task, and bounds
+per-stage drift and the recently learned tasks; base
+drift D0 anchors θ0 on G, grouped by source,
+and bounds cumulative drift and general capability.
+Each bounds what the other cannot: the previous
+checkpoint keeps every step small, but small steps
+accumulate; the base cannot protect a task it never
+knew. The budgets εC and ε0 are in units of di-
+vergence, so one pair serves every stage, which a
+penalty coefficient could not since the scale of the
+loss changes from stage to stage.
+Enforcement.
+The stage solves
+min
+ϕ
+Ldist(ϕ) s.t. DC ≤εC, D0 ≤ε0,
+(5)
+over the adapter parameters ϕ with multipliers
+λC, λ0 ≥0: each update measures both drifts,
+adds every active constraint’s worst-group diver-
+gence to the loss with weight λj/εj, steps on ϕ
+only, and moves the multipliers by bounded dual
+ascent,
+λj ←max(0, λj + η min(1, Dj/εj −1)), (6)
+4
+
+
+so that within budget a multiplier decays to zero
+and leaves learning alone, and over budget it grows
+and pulls the student back. The final adapter’s drift
+is audited against the original budgets (Figure 2c).
+One checkpoint, three roles.
+One copy of the
+previous checkpoint is resident as the student’s
+backbone, the teacher pH, its forward pass with
+the adapter disabled, and the anchor pC; both an-
+chors’ states on their fixed probes are cached. With
+a fixed number of updates and probes per stage, the
+cost does not grow with t; only ¯θt is deployed, and
+budgets and constants are listed in Appendix A.
+3
+Experiments
+Our experiments evaluate HERD under a unified
+protocol to answer three questions. Q1. Does
+HERD outperform purely parametric and purely
+non-parametric methods? Q2. As the number
+of CL stages grows, does HERD maintain long-
+horizon stability? Q3. Are harness evolution, high-
+residual memory, and the two drift anchors all in-
+dispensable?
+3.1
+Experimental Settings
+Benchmark.
+TRACE+17 appends 17 Super-
+NaturalInstructions tasks (Wang et al., 2022) to the
+eight TRACE tasks (Wang et al., 2023b), because
+eight stages are too few to tell stability from slow
+collapse. Each of the 25 tasks has 500 training,
+100 validation, and 100 test examples; no prompt
+appears in more than one task or split. A G-test
+of five categories, 200 held-out items each, tracks
+general capability: knowledge, mathematics, com-
+monsense, instruction following, and multilingual
+understanding (MMLU, GSM8K, HellaSwag, IFE-
+val, XCOPA; Hendrycks et al., 2020; Cobbe et al.,
+2021; Zellers et al., 2019; Zhou et al., 2023; Ponti
+et al., 2020). All methods start from Qwen3.5-4B
+with the same decoding, length limits, and scorers;
+all weight updates share one budget, 32 updates of
+32 records per stage. After every stage we score the
+current task; after stages 4, 8, 16, and 25 we also
+score all seen tasks and the G-test (Appendix B).
+Baselines.
+Non-parametric: ACE (Zhang et al.,
+2026c) grows a playbook; HCL (Kang et al., 2026)
+keeps a harness edit only if it improves the cur-
+rent task and breaks no retained example; both
+attach the harness to every prompt at inference.
+Parametric: Seq-LoRA trains one adapter through
+the stream and serves as the floor; uniform re-
+play keeps a memory the size of HERD’s residual
+memory, filled by uniform sampling; OPR (Chen
+et al., 2026) replays the model’s own best earlier an-
+swers; TreeLoRA (Qian et al., 2025) and MoRAM
+(Lu et al., 2026) isolate updates, in a gradient-
+similarity tree and in rank-1 experts; SDFT (Shen-
+feld et al., 2026) self-distills from a demonstration-
+conditioned teacher, without a harness. Hybrid:
+OPHSD (Zhao et al., 2026) distills a fixed harness
+into the weights and deploys without it; the harness
+never changes and drift is not budgeted. Controls:
+the base model as is, and the same model under a
+fixed harness that never learns.
+Metrics.
+Acquisition, the mean of Rj,j, is each
+task’s score right after it is learned; AA is what
+remains after stage 25; F is what is lost in between
+(Eq. 1). We report both the mean change over the
+five G-test categories, ∆C, and the worst, ∆Cmin,
+because a collapse in one category can hide be-
+hind a mean of five (§2.4). All numbers are means
+over three seeds, with standard deviations and 95%
+bootstrap intervals over items.
+3.2
+Main Results
+Table 1 reports every method after stage 25 and Fig-
+ure 3 the trajectories behind it. HERD lies on the
+frontier of the three families: it acquires as much
+as the strongest parametric method, retains more
+than any method that updates weights, loses the
+least general capability among them, and deploys
+without context.
+Non-parametric methods.
+ACE and HCL finish
+within 1.4 points of the unchanged base model (AA
+0.427 and 0.433 against 0.419): the stream leaves
+almost no trace in their harnesses. ACE’s playbook
+reaches 80 bullets and 15,410 tokens by task 2 and
+stops growing; once it fills the prompt, nearly every
+later training call exceeds the 16,384-token input
+ceiling and is rolled back, yet every test question
+still carries those 15,410 tokens of context. HCL
+commits nearly none of its proposals in 25 stages,
+so its scores amount to the base model under a fixed
+system prompt. HERD, scored bare, is 27 points
+above both; the paired 95% intervals against both
+exclude zero (Table 2).
+Parametric
+methods.
+HERD’s
+acquisition,
+0.713,
+is statistically indistinguishable from
+Seq-LoRA’s 0.715, the plasticity floor (paired
+difference −0.002, interval [−0.010, 0.007]), and
+from uniform replay and TreeLoRA; it is 0.8
+points above OPR, 1.2 above MoRAM, and 7.4
+5

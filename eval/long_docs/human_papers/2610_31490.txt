@@ -1,0 +1,735 @@
+1
+Self-Supervised Multibeam Sonar Restoration via
+Coherent Forward Modeling
+Zixin Wang, James Hopgood, and Mike Davies
+Abstract—Multibeam imaging sonar produces intensity images
+degraded by coherent speckle and system-induced blur, while
+clean reflectivity targets are rarely available. Existing despeckling
+methods often rely on simplified intensity-domain noise models,
+synthetic clean targets, or blind-spot self-supervision, and typi-
+cally do not jointly model deblurring and speckle suppression.
+We propose a physics-consistent self-supervised framework for
+joint despeckling and deblurring of multibeam imaging sonar. A
+stochastic coherent image-formation model yields a conditional-
+mean forward operator that relates latent scene reflectivity to
+expected intensity through the squared magnitude of the system
+point spread function. We then use registered multi-frame sonar
+sequences to train without clean ground truth images, showing
+that, under an idealized inter-frame conditional-mean condition,
+the expected paired loss equals the corresponding forward-
+prediction loss up to a network-independent constant. To stabilize
+the ill-conditioned inverse problem, we further adapt robust
+equivariant imaging using stochastic coherent simulation and
+introduce a paired forward prediction error metric for ground-
+truth-free evaluation. Experiments on two real multibeam sonar
+datasets demonstrate a favourable balance between forward-
+prediction agreement, homogeneous-region speckle suppression,
+and preservation of visible structural boundaries compared with
+representative baselines.
+Index Terms—Multibeam imaging sonar, coherent image for-
+mation, spatially correlated speckle, self-supervised image recon-
+struction, equivariant imaging.
+I. INTRODUCTION
+M
+ULTIBEAM imaging sonar is widely used for under-
+water perception, mapping, inspection, and robotic nav-
+igation because it remains effective in turbid water and low-
+visibility environments [1], [2], [3]. However, sonar images are
+often degraded by coherent speckle and system-induced blur,
+which obscure small targets, weaken object boundaries, and
+reduce the reliability of downstream tasks such as detection,
+segmentation, and scene interpretation [4], [5], [6]. Effective
+restoration therefore requires not only speckle suppression, but
+also recovery of structurally faithful and spatially sharp image
+content.
+A central difficulty is that practical imaging sonars usu-
+ally provide detected intensity images, while the dominant
+degradations arise from coherent acoustic image formation.
+The beamformed complex field is formed by the coherent
+superposition of echoes from unresolved scatterers and is
+subsequently converted to intensity. This process gives rise to
+signal-dependent, non-Gaussian speckle rather than simple ad-
+ditive noise [7], [8], [9]. In addition, the system response acts
+The authors are with the School of Engineering, University of Ed-
+inburgh, Edinburgh EH9 3FG, U.K. (e-mail: Z.Wang-421@sms.ed.ac.uk;
+James.Hopgood@ed.ac.uk; Mike.Davies@ed.ac.uk).
+on the coherent field before intensity detection, so speckle cor-
+relation and blur are coupled through the effective point spread
+function (PSF) of the imaging system [10], [11], [12]. Since
+clean reflectivity ground truth is rarely available, imaging-
+sonar restoration must address a coupled inverse problem
+without ground truth: joint despeckling and deblurring from
+intensity-only observations.
+Existing sonar despeckling methods, together with the
+broader Synthetic Aperture Radar (SAR) despeckling litera-
+ture, are often based on simplified intensity-domain statisti-
+cal models. Classical approaches commonly treat speckle as
+multiplicative noise, frequently with exponential or Gamma
+statistics, and sometimes transform it into an additive form
+in the logarithmic domain [10], [13], [14], [15]. These as-
+sumptions have motivated local adaptive filters, Bayesian
+estimators, diffusion-based methods, and nonlocal patch ag-
+gregation approaches [16], [17], [18], [19]. However, these
+formulations primarily describe marginal or locally filtered
+intensity statistics. Spatial correlation is typically introduced
+through filtering windows, patch matching, aggregation, or
+hand-specified correlation structures [20]. Consequently, they
+do not provide a sonar-specific analytical observation model
+in which spatially correlated speckle and point spread function
+(PSF) blur are generated jointly.
+Learning-based despeckling methods can achieve strong
+empirical performance, but supervised training generally re-
+quires clean reflectivity targets, which are rarely obtainable
+in real sonar imaging [15], [21], [22], [23], [24]. Many
+methods therefore rely on synthetic clean images, simulated
+speckle corruption, or architectures transferred from optical
+denoising [25], [26]. These strategies alleviate the lack of
+labeled sonar data, but they can introduce a mismatch between
+the training degradation and real sonar observations, where
+coherent speckle, spatial correlation, system blur, platform mo-
+tion, and sensor-specific effects are coupled by the acquisition
+process. A recent despeckling method adopts a multiplicative
+y = xn model with Gamma-distributed speckle and constrains
+log-domain residual statistics [27]. However, its formulation
+remains a single-image despeckling framework and does not
+explicitly model PSF-coupled coherent image formation or the
+spatially correlated speckle induced by the imaging process.
+Self-supervised methods reduce the dependence on clean
+targets by constructing supervision from noisy measurements
+themselves. Blind-spot, masking-based, and subsampling-
+based approaches prevent the network from directly observing
+the prediction target and have been widely used for image
+despeckling [28], [29], [30], [31], [32], [33], [34], [35], [36].
+These methods usually rely on a conditional-independence
+arXiv:2610.31490v1  [eess.IV]  22 Oct 2026
+
+
+2
+assumption: the corruption at the prediction target should be
+independent of the visible measurements given the underlying
+clean signal. This assumption is difficult to satisfy in imaging
+sonar because coherent propagation and the system response
+introduce spatially correlated speckle. Enlarging the blind spot
+or excluding neighbouring pixels can reduce noise leakage,
+but it also removes local spatial context that is important for
+preserving structure and undoing system blur.
+Noisy-pair learning provides a complementary route to self-
+supervision. Noise2Noise showed that clean targets can be
+replaced by independently corrupted observations with the
+same conditional mean, and Frame2Frame extended this idea
+to registered neighbouring video frames [37], [38]. Related
+principles have also been explored for multitemporal SAR
+despeckling and registered sonar sequences [39], [40]. In
+coherent sonar, however, neighbouring frames are not simply
+independent additive-noise observations: they are affected by
+viewpoint change, platform motion, registration error, coherent
+speckle decorrelation, and the system point spread function.
+Therefore, a registered-frame objective must specify not only
+how frames are paired, but also which physical domain the
+network output represents.
+Our preliminary work, PI-SSD [40], used registered sonar
+frame pairs for self-supervised despeckling. However, it
+matches the network output directly to the second observation,
+∥fθ(y1) −y2∥2
+2, without applying the PSF-dependent forward
+operator to the output. The network therefore targets a still
+PSF-blurred intensity image.
+Building on PI-SSD, the present work uses the coherent
+image-formation model explicitly in the learning objective
+to formulate a self-supervised inverse problem, rather than
+treating paired frames as generic noisy images. We derive
+the conditional mean intensity learning goal for the coher-
+ent speckle-contaminated forward model, showing how the
+expected intensity observation is related to the scene reflec-
+tivity and the squared magnitude of the system PSF. This
+provides a physically meaningful forward prediction target
+for training from registered multi-frame sonar observations
+without clean reflectivity ground truth. The resulting inverse
+problem remains ill-conditioned, since different reflectivity
+estimates can produce similar intensity observations. We there-
+fore extend robust equivariant imaging (REI) [41], [42] to
+sonar restoration by adapting it to the derived conditional
+mean learning goal and incorporating it within a Noise2Noise-
+type self-supervised training framework. This combines a
+physics-consistent paired loss, which exploits registered sonar
+frames with approximately decorrelated speckle, with REI
+regularization to constrain the reconstruction under known
+transformations. Finally, using the same paired-frame proto-
+col, we introduce paired forward prediction error (PFPE) to
+assess ground-truth-free forward-prediction consistency with
+registered paired observations.
+This work treats multibeam-sonar restoration as a physics-
+consistent self-supervised inverse problem, rather than as
+generic image denoising. The network estimates a latent
+reflectivity image, and supervision is imposed only after pro-
+jection through a coherent conditional-mean forward model.
+This distinguishes the proposed framework from blind-spot
+denoising and direct noisy-pair despeckling methods, which
+operate primarily in the observation/image domain. The main
+contributions of this work are summarized as follows:
+• We develop a coherent-formation-based statistical obser-
+vation model for imaging sonar restoration. The model
+explains spatially correlated speckle and system-induced
+blur as coupled consequences of coherent propagation
+and the sonar PSF, rather than imposing speckle correla-
+tion through intensity-domain post-filtering.
+• We derive the corresponding conditional mean intensity
+learning goal for the coherent speckle-contaminated for-
+ward model. This provides a physics-consistent forward
+prediction objective for learning from detected intensity
+measurements without requiring clean reflectivity ground
+truth.
+• We propose a self-supervised reconstruction framework
+for joint despeckling and deblurring using registered
+multi-frame sonar observations. Unlike direct noisy-
+pair matching, the paired loss constrains the forward
+projection Afθ(y1) of the latent reconstruction, while
+REI regularization uses stochastic coherent simulation
+from the same image-formation model to reduce the ill-
+conditioning of sonar intensity reconstruction.
+• Finally, based on the same multi-frame analysis, we intro-
+duce paired forward prediction error (PFPE) as a ground-
+truth-free measure of measurement-domain forward-
+prediction consistency under a fixed paired-frame proto-
+col. PFPE provides a complementary evaluation criterion
+for real sonar data where clean reflectivity ground truth
+is unavailable.
+II. PHYSICAL OBSERVATION MODEL
+Multibeam imaging sonar systems provide detected intensity
+images, but these images are generally impacted by speckle
+and blur as a byproduct of the coherent imaging process. Let Ω
+denote the discrete range-angle image grid of the sonar, with
+pixel index i ∈Ω. We write x ∈R|Ω|
++
+for the latent scene
+reflectivity in intensity units, where xi ≥0 is the reflectivity
+at pixel i. An observed intensity image is denoted by y ∈R|Ω|
++ .
+We model one observed intensity realization as
+y = |u ∗h|2 =
+(√x · g) ∗h
+2 ,
+(1)
+where u = √x · g ∈C|Ω| is the speckle-modulated coherent
+field, · denotes pointwise multiplication, and ∗denotes spatial
+convolution. The magnitude square in (1) is applied pointwise.
+Under the fully developed speckle model [12], g ∈C|Ω| is a
+circular complex Gaussian speckle field. At each range-angle
+bin i ∈Ω,
+gi ∼CN(0, 1),
+E[|gi|2] = 1.
+(2)
+Before processing by the imaging system, this gives E[|ui|2 |
+x] = xi.
+Here, h ∈C|Ω| is the coherent point spread function (PSF)
+of the sonar system, written as
+h := h(t, ϑ) = R(t)B(ϑ),
+(3)
+
+
+3
+5
+10
+15
+20
+25
+Spatial offset (pixels)
+−0.2
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Pearson correlation coefficient
+Azimuth
+Range
+Fig. 1. Empirical spatial correlation of detected sonar intensity
+measured from homogeneous ROIs in a representative Boat
+frame. Correlation is computed along the range and azimuth
+directions; offsets start from one pixel to exclude the trivial
+zero-offset self-correlation. Curves show the mean across
+ROIs, with shaded bands indicating one standard deviation.
+where t denotes two-way travel time, R(t) is the temporal re-
+sponse, and B(ϑ) is the angular beam pattern [11], [43], [44].
+For simplicity, we use a local shift-invariant approximation of
+h evaluated around the central beam direction, which keeps
+the forward operator tractable for local image regions.
+In imaging sonar, the coherent PSF mixes neighbouring co-
+herent returns before magnitude-square detection. Under fully
+developed speckle, the single-look intensity has exponential
+marginal statistics [8], [12]. Since the coherent field is filtered
+before detection, the resulting intensity samples are spatially
+correlated rather than independent pointwise speckle. This
+spatial correlation is illustrated in Fig. 1, where empirical
+correlation decays with range and azimuth spatial offset. This
+also explains a limitation of blind-spot self-supervision for
+sonar restoration: reducing leakage from spatially correlated
+speckle requires masking a local neighbourhood around the
+prediction target, but this removes precisely the nearby struc-
+tural information that is important for joint despeckling and
+deblurring.
+III. METHODOLOGY
+A. Problem Formulation
+Given detected sonar intensity observations generated by the
+coherent model in Section II, our goal is to estimate the latent
+reflectivity x without clean ground truth. Fig. 2 summarizes
+the proposed self-supervised framework. The reconstruction
+network is defined as
+ˆx = fθ(y).
+(4)
+This inverse problem is ill-conditioned because coherent
+speckle introduces signal-dependent stochastic fluctuations,
+while the forward operator induced by the sonar PSF sup-
+presses high-frequency reflectivity structure. Therefore, train-
+ing must constrain the reconstruction in the measurement
+domain while regularizing the latent reflectivity estimate.
+B. Paired Observation Construction
+Multi-frame sonar sequences provide the opportunity to
+exploit repeated observations when viewing an approximately
+static scene. To this end, we select and register pairs of frames
+to form observations (y1, yreg
+2 ) that share the same latent
+reflectivity but have different coherent speckle realizations.
+The paired frame can be selected from a short temporal
+window around y1. For short acquisition intervals, the domi-
+nant inter-frame motion is approximated by a two-dimensional
+translation ∆ρ = (∆ρ1, ∆ρ2), estimated by phase correlation
+[45], [46]. We denote the resulting translation warp by W2→1,
+so that yreg
+2
+= W2→1(yraw
+2
+) aligns the paired frame to y1. After
+registration, the paired frames are assumed to have aligned
+conditional means,
+E[yreg
+2 [ρ] | x] ≈E[y1[ρ] | x] ,
+(5)
+where ρ = (ρ1, ρ2) denotes a discrete range-angle image
+coordinate. For notational simplicity, we write y2 for yreg
+2
+below. A representative before-and-after registration check is
+provided in the Supplementary Section S1 to illustrate the
+structural alignment obtained by this procedure.
+C. Statistical Assumptions and Stochastic Forward Model
+For a registered pair observing the same local scene, we
+model
+yk =
+(√x · gk) ∗h
+2 ,
+k ∈{1, 2},
+(6)
+where x is the shared latent reflectivity, h is the coherent
+PSF, and gk is the coherent speckle modulation field of the
+k-th observation. We assume approximate scene stationarity
+after registration and reduced inter-frame speckle correlation.
+For the paired-loss analysis, this is expressed through the
+conditional-mean relation
+E[y2 | x, y1] ≈E[y2 | x] = µ(x),
+E[y1 | x] = µ(x). (7)
+Exact conditional independence, y1 ⊥y2 | x, is a sufficient
+but stronger condition for this relation.
+For a fixed reflectivity x, the measurement-domain target
+under the mean squared error criterion is
+µ(x) ≜Eg[y | x].
+(8)
+Let v denote the coherent field after PSF convolution:
+v = (√x · g) ∗h,
+y = |v|2.
+(9)
+For a two-dimensional index p = (p1, p2) ∈Ωand q =
+(q1, q2) ∈Ω, the spatial convolution can be written as
+vp =
+X
+q∈Ω
+hp−q√xqgq.
+(10)
+Then,
+µp(x) = Eg[|vp|2 | x]
+(11)
+=
+X
+q∈Ω
+X
+r∈Ω
+hp−qh∗
+p−r
+√xqxr E[gqg∗
+r].
+(12)
+Using the spatial whiteness and unit second moment of the
+coherent speckle modulation field [7],
+Eg[gqg∗
+r] = δqr.
+(13)
+
+
+4
+Fig. 2. Overview of the proposed framework. The framework contains four components: a coherent physical observation model,
+an image-registration module that constructs registered paired observations, a physics-consistency branch that compares the
+forward projection of the reconstruction with a registered frame, and a robust equivariant imaging branch that regularizes the
+latent reconstruction. At inference time, only the trained reconstruction network is used and it operates on a single sonar image.
+where δqr is the Kronecker delta. Hence, all cross terms
+vanish, giving
+µp(x) =
+X
+q
+xq|hp−q|2.
+(14)
+Thus, under the local shift-invariant approximation, despite the
+stochastic observation model being nonlinear in x and g, the
+conditional mean can be expressed as a linear function of x:
+µ(x) = Ax = x ∗|h|2,
+(15)
+where A is the conditional-mean forward operator induced by
+the coherent observation model.
+The same forward model is also used to simulate sonar
+measurements from a candidate reflectivity image z. We define
+the stochastic coherent simulator
+Sg(z) :=
+(√z · g) ∗h
+2 .
+(16)
+Following the speckle-averaging principle in coherent imaging
+[12], we use a J-look averaged simulator
+¯SJ(z) := 1
+J
+J
+X
+j=1
+Sgj(z),
+(17)
+where g1, . . . , gJ are independent speckle fields. Provided each
+simulated look satisfies Egj[Sgj(z) | z] = Az, the averaged
+simulator preserves the same conditional mean,
+Eg1,...,gJ
+ ¯SJ(z) | z
+
+= Az,
+(18)
+Equivalently, writing εj(z)
+=
+Sgj(z) −Az, we have
+E[εj(z) | z] = 0 and ¯SJ(z) −Az = J−1 PJ
+j=1 εj(z).
+Independence of the simulated looks eliminates the cross terms
+in expectation, giving
+Eg1,...,gJ
+h ¯SJ(z) −Az
+2
+2
+ z
+i
+= 1
+J Eg
+h
+∥Sg(z) −Az∥2
+2
+ z
+i
+.
+(19)
+Thus, J controls the strength of the simulated speckle while
+preserving the conditional mean learning goal. This supports
+the interpretation of ¯SJ as a J-look simulated sonar mea-
+surement: J = 1 corresponds to a single-look simulated
+observation, whereas ¯SJ(z) converges in mean square to A(z)
+as J →∞under the independent-look simulator.
+D. Physics Consistency Learning
+Our objective is to learn a reconstruction network that
+approximates the conditional mean of the latent reflectivity,
+ˆx = fθ(y1) ≈E[x | y1].
+(20)
+However, clean samples of x are not available. Using
+the registered-pair assumptions in Section III-C and the
+conditional mean relation in (15), we train through the
+measurement-domain prediction Afθ(y1). The physics consis-
+tency loss is
+LPC(θ) = E(y1,y2)∼ppair
+h
+∥y2 −Afθ(y1)∥2
+2
+i
+,
+(21)
+where ppair denotes the distribution of registered paired obser-
+vations. Under the assumptions above, this loss decomposes
+as
+LPC(θ) = Ex,y1
+h
+∥Ax −Afθ(y1)∥2
+2
+i
++ C,
+(22)
+where
+C = Ex
+
+Ey2|x
+
+∥y2 −µ(x)∥2
+2
+
+(23)
+
+
+5
+is independent of θ.
+Under the idealized condition E[y2 | x, y1] = Ax, the cross
+term in the squared-loss expansion vanishes, yielding (22),
+with the network-independent constant defined in (23). Thus,
+minimizing LPC matches the conditional mean projected onto
+the measurement domain, rather than fitting a single noisy
+realization.
+The minimizers are not necessarily unique in the reflectivity
+domain. If A† denotes the Moore–Penrose pseudoinverse, a
+solution can be written as
+fθ(y1) = A†A E[x | y1] + ν(y1),
+ν(y1) ∈null(A), (24)
+consistent with the equivariant splitting ambiguity of inverse
+problems [47, Lemma 1]. In practice, even when A is full
+rank, it is a blur operator and can be severely ill-conditioned.
+Therefore, the physics consistency loss alone weakly deter-
+mines high-frequency reflectivity components, motivating the
+equivariant regularization introduced next.
+E. Robust Equivariant Imaging with Stochastic Forward Sim-
+ulation
+To further constrain the latent reflectivity, we adapt ro-
+bust equivariant imaging (REI) [42] to the coherent speckle
+noise model introduced above. REI enforces consistency of
+the reconstruction system under transformations that preserve
+plausible reflectivity structure. Let Tτ denote such a transfor-
+mation, for example a small rotation or shift. Given
+ˆx = fθ(y1),
+z = Tτ ˆx,
+(25)
+the REI branch requires the network to recover z from a
+simulated sonar measurement generated using the J-look
+coherent simulator ¯SJ. The sonar-adapted REI loss is
+L(J)
+REI(θ) = Ey1,τ,g1,...,gJ
+hfθ
+  ¯SJ(Tτfθ(y1))
+
+−Tτfθ(y1)
+2
+2
+i
+.
+(26)
+The final training objective is
+Ltotal(θ) = LPC(θ) + α L(J)
+REI(θ),
+(27)
+where α > 0 controls the REI regularization strength.
+IV. EXPERIMENTS
+We evaluate the proposed framework on two real multibeam
+imaging sonar datasets acquired with a Tritech Gemini 720ik
+sonar. In the absence of clean reflectivity ground truth, real-
+sonar evaluation cannot directly measure latent reflectivity ac-
+curacy. However, when registered pairs of corrupted sonar ob-
+servations are available, the same Noise2Noise principle used
+for training provides a paired-frame proxy for measurement-
+domain predictive consistency. We therefore assess restora-
+tion using complementary evidence: the proposed paired for-
+ward prediction error (PFPE) measures measurement-domain
+forward-prediction consistency, while equivalent number of
+looks (ENL), edge preservation index (EPI), and visual com-
+parisons assess speckle suppression, edge preservation, and
+structural plausibility. In this setting, deblurring is evaluated
+indirectly through consistency with the sonar forward model
+and preservation of visible structures.
+A. Evaluation Metrics
+The PFPE metric tests whether a restoration from one frame
+can predict a registered paired observation. Let y1 be the input
+frame, y2 its registered paired observation, and ˆx the restored
+output of an evaluated method. For the proposed method, ˆx =
+fθ(y1). We define
+PFPE(y1, y2) = ∥Aˆx −y2∥2
+2 .
+(28)
+The aggregate PFPE improvement is computed from the ratio
+of empirical mean errors as
+PFPEagg
+imp = 100
+ 
+1 −PFPE(y1, y2)
+∥y1 −y2∥2
+2
+!
+,
+(29)
+Here, squared norms are normalized by the number of evalu-
+ated image pixels, and the overline denotes the empirical mean
+over all evaluated test pairs. Tables report PFPE as mean ±
+standard deviation across these pairs.
+Lower PFPE and higher PFPEagg
+imp scores indicate bet-
+ter agreement under the fixed paired-frame protocol. Under
+the idealized conditional-mean condition in Section III-C,
+expected PFPE equals expected conditional-mean measure-
+ment error plus a reconstruction-independent constant. Un-
+like single-frame consistency ∥Afθ(y1) −y1∥2
+2, the held-
+out criterion is less biased toward preserving input-specific
+speckle because the prediction is compared with a registered
+neighbouring observation. All restored outputs are scored
+using the same sonar operator A to predict a registered paired
+observation, so PFPE is interpreted under a common latent-
+reflectivity hypothesis rather than as a full-reference quality
+metric or an evaluation of each baseline’s native prediction
+target. We therefore interpret PFPE jointly with ENL, EPI,
+DEPI, and visual results.
+We also report ENL and edge preservation index deviation
+(DEPI) as complementary no-reference indicators. These met-
+rics characterize homogeneous-region smoothing and edge-
+strength preservation, respectively, but they do not measure
+reconstruction accuracy in the absence of ground truth. ENL
+measures speckle suppression in homogeneous regions,
+ENL =
+µ2
+ˆx,Ωhom
+σ2
+ˆx,Ωhom
+,
+(30)
+where Ωhom denotes homogeneous regions and µˆx,Ωhom and
+σ2
+ˆx,Ωhom are the mean and variance of ˆx within these regions.
+Higher ENL indicates stronger speckle suppression, but may
+favor oversmoothing.
+EPI measures relative edge strength in selected edge re-
+gions:
+EPIn =
+P
+(i,j)∈Ωn,edge |∇ˆxn(i, j)|
+P
+(i,j)∈Ωn,edge |∇yn(i, j)| ,
+(31)
+where Ωn,edge is selected from the observed image yn and
+held fixed across methods, and ∇denotes a finite-difference
+gradient operator. We report the mean per-image deviation
+from unity:
+DEPI = 100
+N
+N
+X
+n=1
+|1 −EPIn| ,
+(32)
+
+
+6
+where N is the number of evaluated images. A smaller DEPI
+indicates closer agreement of edge strength with the observed
+images.
+For ENL, homogeneous ROI candidates are required to have
+sufficient mean intensity, valid-pixel support, and low Sobel
+gradient energy, and the retained candidates are ranked by
+coefficient of variation; for EPI and DEPI, edge ROIs are se-
+lected separately as the patches with the highest Sobel gradient
+energy. All ROIs are selected from the input observation and
+then fixed for all compared methods. This avoids selecting
+regions according to the restored output and reduces manual
+selection bias.
+B. Datasets
+We use two datasets acquired with a Tritech Gemini 720ik
+sonar. The sensor outputs intensity images formed from 512
+beams, operates at a centre frequency of 720 kHz, and provides
+a 120◦field of view. Raw measurements are represented as
+range-beam images in polar coordinates and treated as single-
+channel intensity images.
+Boat. The Boat dataset contains complex underwater scenes
+with cluttered object responses and strong background speckle,
+seabed texture, acoustic shadows, and heterogeneous scattering
+from object boundaries and surrounding structures. These
+factors make the dataset challenging for joint deblurring and
+despeckling, since the method must suppress coherent speckle
+while preserving structural details and boundaries. It was
+acquired with a maximum imaging range of 50 m and a frame
+rate of 3 frames per second. The dataset contains 1455 raw
+frames.
+Underwater Structure. The Underwater Structure dataset
+contains more regular structural scenes and provides a com-
+plementary evaluation under relatively stable underwater in-
+spection conditions. It was acquired with a maximum imaging
+range of 25.5 m and a frame rate of 10 frames per second.
+The dataset contains 1282 raw frames.
+C. Implementation Details
+For each raw sequence, we use temporally contiguous train-
+ing, validation, and test blocks with an approximate 8 : 1 : 1
+ratio before fixed 512 × 512 patch extraction. A small buffer
+of unused frames is inserted between adjacent blocks, and
+paired-frame samples are formed only within the same split.
+This prevents temporally adjacent or registered pairs from
+crossing the train/validation/test boundaries. During testing,
+the fully convolutional network is applied to individual sonar
+frames. We compare the proposed method with representative
+model-based despeckling methods, including PPB [18] and
+SAR-BM3D [19], and recent learning-based self-supervised
+baselines, including Noise2Void [29], Blind2Unblind (B2UB)
+[35], LG-BPN [33], SS-BSN [34], SEGSID [36], and PI-SSD
+[40].
+All paired-frame experiments use a fixed main protocol with
+frame gap 1. The gap is chosen as the smallest reliable gap that
+reduces inter-frame correlation while preserving scene match
+and registration quality. Pairs are retained only when the es-
+timated translation satisfies |∆ρ1| ≤10 pixels and |∆ρ2| ≤5
+pixels, which removes pairs with large apparent motion, scene
+mismatch, or failed registration. This yields 1328 and 1137
+retained registered pairs for the Boat and Underwater Structure
+datasets, respectively, under the final pairing protocol. The
+full gap-correlation statistics and displacement diagnostics
+are reported in Supplementary Section S2. All methods are
+evaluated using the same fixed test pairs.
+The PSF is generated from the Gemini 720ik geometry and
+parameters reported in Section IV-B, together with a sound
+speed of 1540 m/s and a 96-element receive aperture with
+half-wavelength spacing.
+For the network, we use a standard U-Net backbone im-
+plemented with deepinv [48]. This compact four-scale U-
+Net keeps the inference model lightweight and is chosen
+to support future low-latency deployment on robotic sonar
+platforms. All models are trained with Adam using a learning
+rate of 1 × 10−4, a weight decay of 5 × 10−7, and a batch
+size of 2. The checkpoint with the lowest validation loss
+is selected for testing. Unless otherwise stated, the main
+experiments use J = 6, with Tτ implemented as random
+rotations with a maximum angle of 20◦for REI regularization.
+The REI weight is set to α = 0.03 for Boat and α = 0.05
+for Underwater Structure, based on validation performance.
+This dataset-specific choice reflects the different registration
+accuracy and structural complexity of the two datasets, and no
+test-set results were used for this selection. Experiments are
+implemented in PyTorch 2.2.2 and run on a single NVIDIA
+RTX 3090 GPU.
+D. Performance on Boat Dataset
+Quantitative evaluation. The Boat results are reported in the
+first four metric columns of Table I, and the corresponding
+metric distributions are shown in Fig. 3. Additional qualitative
+examples and complete metric values are provided in Sup-
+plementary Section S3, including Fig. 7 and Table V. PFPE
+measures the raw held-out forward-prediction error, while
+PFPEagg
+imp reports the aggregate improvement over the noisy
+registered-pair baseline.
+The proposed method achieves the lowest PFPE and the
+highest aggregate PFPE improvement of 14.10% under the
+stated common latent-reflectivity scoring protocol, indicating
+the strongest overall forward-prediction consistency on the
+Boat dataset. Blind2Unblind (B2UB) obtains a similar aggre-
+gate PFPE improvement of 13.39%, but its ENL decreases
+from the raw image value of 8.18 to 7.74, indicating lim-
+ited speckle suppression. In contrast, the proposed method
+increases ENL to 12.81 while keeping DEPI among the
+lowest restored results. Methods with larger ENL, such as SS-
+BSN, LG-BPN, and PI-SSD, show much larger edge-strength
+deviation and lower PFPE improvement, suggesting that their
+higher smoothness is associated with oversmoothing rather
+than stronger forward-prediction agreement. The ablation re-
+sults further show why PFPE should not be interpreted in
+isolation. As reported in Supplementary Section S5-A and
+Supplementary Table VII, a physics-consistency-only (LPC-
+only) variant improves PFPE but yields nearly zero ENL and
+extremely large DEPI, demonstrating that forward consistency

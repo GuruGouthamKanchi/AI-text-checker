@@ -1,0 +1,990 @@
+Jev-DLC: Decision-Level Continual Learning from Typed Feedback
+Yangyang Feng1,†
+Jianle Gan1,†
+Zhuoyan Feng2
+Chengwei Qin1,∗
+1The Hong Kong University of Science and Technology (Guangzhou)
+2Sun Yat-sen University
+yfeng044@connect.hkust-gz.edu.cn
+jgan307@connect.hkust-gz.edu.cn
+fengzhy28@mail2.sysu.edu.cn
+chengweiqin@hkust-gz.edu.cn
+†Equal contribution
+∗Corresponding author
+Abstract
+Individual preferences often become visible
+only after deployment, when a user accepts
+one decision or revokes it in favor of another.
+Jev-style typed interfaces make this feedback
+explicit by identifying the selected action and,
+under revocation, the decision it replaces. We
+study how these consequences persist across
+requests as Decision-Level Continual Learn-
+ing from Typed Feedback (Jev-DLC). Jev-DLC
+treats each correction as both evidence about
+a recurring action identity and a directed rela-
+tion between the preferred and rejected choices.
+It preserves these signals in complementary
+bounded channels above a frozen scorer and
+combines their scores to shape the next deci-
+sion. The method retains no raw interaction
+history, adds no scorer call, and performs no
+runtime language-model backward pass. We
+also introduce TCPA-BENCH, a chronologi-
+cal suite that credits a correction only through
+its effect on later decisions. On TCPA-Repeat,
+Jev-DLC reaches 44.83% user-macro accuracy
+overall, 2.43 points above Recent-4 history re-
+play. After at least two earlier feedback events,
+it reaches 56.07%, a 7.54-point margin over
+the strongest reported comparison at this depth.
+These results show how explicit typed correc-
+tions can become compact causal state for con-
+tinual personalization.
+1
+Introduction
+Individual preference often becomes visible only
+after deployment. A user may accept one choice,
+replace another, or correct a system only after see-
+ing its decision. Personalization methods use this
+information by retrieving or replaying past inter-
+actions, or by adapting a user-specific represen-
+tation or model from accumulated behavior (Lau
+et al., 2024; Li et al., 2024; Salemi et al., 2024).
+These approaches preserve rich evidence, while
+later predictions must reinterpret that evidence or
+consult additional mutable parameters. A typed
+One correction, two ways to persist
+The same correction can remain transcript evidence or become decision state.
+Transcript adaptation
+Jev-DLC
+decision-state adaptation
+Candidate slate:
+A
+B
+C
+D
+Model chooses
+Feedback stored in the transcript
+User: ... previous conversation ...
+Assistant: I choose B.                
+User: No, prefer C.                    
+Next candidate slate
+A
+B
+C
+D
+State shapes the
+next safe decision
+Typed feedback turns corrections into reusable state for later decisions.
+User query : ....
+B
+User feedback: "No B, prefer C"
+Next query : ....
+LM must infer the preference
+again from the transcript
+A
+B
+C
+D
+User query : ....
+Candidate slate:
+Model chooses
+B
+Typed feedback: 
+revoke B            prefer C
+Correction compiled into
+compact decision state
+C
+B->C
+Figure 1: A typed correction exposes two forms of per-
+sistence. The selected action contributes evidence about
+what may recur, while the preferred–rejected pair gives
+a direction for repairing later decisions. Jev-DLC com-
+bines both through complementary bounded channels
+above a frozen scorer.
+interface offers another possibility. When feedback
+already identifies the accepted action and the one it
+replaces, the system can preserve the consequence
+of the correction rather than reconstruct it from the
+original interaction.
+Jev-style systems make the consequence of a
+correction explicit. Given a finite set of candidate
+actions, the model commits a typed decision that
+the user can accept or revoke in favor of a named
+alternative (TypeSafe AI, 2026; Almeida, 2026).
+Jev supplies the judgment for the current request,
+but the interface leaves open how that correction
+should affect the next one. Jev-DLC addresses this
+persistence problem above a frozen typed scorer. A
+separate per-user state carries the consequences of
+earlier feedback into the next decision.
+A typed correction exposes two forms of persis-
+tence. The identity of the preferred action records
+what the user chose and can reveal a categorical ten-
+1
+arXiv:2610.31521v1  [cs.AI]  22 Oct 2026
+
+
+dency when actions recur. The preferred–rejected
+pair records how one decision should replace an-
+other and defines a local direction that can trans-
+fer to related candidate slates. Jev-DLC preserves
+both through a conservative channel that combines
+repeated action evidence with local repair and a
+responsive channel that carries correction direction
+without the count prior. Their combined scores al-
+low earlier feedback to influence the next decision
+while the frozen scorer continues to interpret its
+context and candidates.
+Causal per-user weights combine the channels
+before each decision. After the runtime commits its
+prediction, accept or revoke feedback updates both
+bounded channels and their weights for the same
+user’s next request. Each directional update makes
+the smallest capped change needed to repair the
+exposed ordering, while revealed channel losses
+adjust their relative contribution. The system re-
+tains no raw interaction history, adds no scorer call,
+and performs no runtime language-model back-
+ward pass.
+We evaluate this formulation with TCPA-
+BENCH, which counts a correction only through
+its effect on later decisions. On TCPA-Repeat, the
+chronological repeated-action track derived from
+LaMP-2 (Salemi et al., 2024), Jev-DLC reaches
+44.83% user-macro accuracy on the full stream,
+compared with 39.44% for the frozen scorer and
+42.40% for Recent-4 history replay. After at least
+two earlier feedback events, it reaches 56.07%, a
+7.54-point margin over the strongest reported com-
+parison at this depth. The results connect the re-
+tained correction state to later decision quality un-
+der a bounded serving budget. The experiments
+also examine feedback depth, changing candidate
+items, and alternative fusion strategies to character-
+ize where this persistence is useful.
+The paper makes three contributions.
+• We formulate typed continual preference
+alignment as a chronological decision prob-
+lem in which accept and revoke feedback can
+affect only later decisions for the same user,
+and instantiate this contract in TCPA-BENCH.
+• We develop Jev-DLC, which preserves recur-
+ring action evidence and correction direction
+in complementary bounded channels above a
+frozen scorer. Our analysis connects typed ac-
+tion sufficiency, local minimum-change repair,
+and the geometry through which a correction
+influences later decisions.
+• We show how this compact state improves
+repeated-action decisions without raw-history
+replay or runtime language-model training.
+Comparisons with history replay, user encod-
+ing, temporal memory, and meta-adaptation
+characterize its accuracy and serving tradeoff
+under the same chronological feedback proto-
+col.
+2
+Related Work
+2.1
+Personalization from User History
+Personalization systems often treat past behavior
+as evidence that must be revisited. In-context and
+retrieval-based methods place previous interactions
+back into the prompt, while other approaches learn
+user representations or personalized parameters
+(Jang et al., 2023; Ramé et al., 2023; Siththaran-
+jan et al., 2023; Lau et al., 2024; Li et al., 2024).
+LaMP makes this history-based formulation ex-
+plicit across classification and generation tasks
+(Salemi et al., 2024); MIND provides a large se-
+quential recommendation setting built from news-
+click histories (Wu et al., 2020). Recent-K is the
+closest system comparison for our setting because it
+preserves recent evidence and asks the same frozen
+scorer to reinterpret it at every event, following
+the history-based personalization protocol used by
+LaMP (Salemi et al., 2024). Jev-DLC studies the
+setting in which feedback has already exposed the
+decision relation and therefore lets that relation per-
+sist as a direct influence on future decisions rather
+than retaining the full evidence that produced it.
+Existing work thus solves how to infer a user’s
+preference from past behavior; we study how an ex-
+plicit typed correction persists after that inference
+has already occurred.
+2.2
+Continual and Online Adaptation
+Continual-learning methods manage the stability–
+plasticity trade-off through replay, regularization,
+parameter isolation, or dynamic capacity (Kirk-
+patrick et al., 2017; Lopez-Paz and Ranzato,
+2017; Parisi et al., 2019; De Lange et al., 2022).
+Language-model studies apply related ideas to se-
+quential tasks, instructions, and knowledge updates
+(Jang et al., 2022; Scialom et al., 2022). These
+methods make a model, adapter, or shared memory
+mutable as new information arrives. Jev-DLC in-
+stead freezes the scorer and restricts mutability to a
+per-user decision state above it. Replay, subspace,
+first-order, and second-order learners remain use-
+2
+
+
+ful comparisons because they represent different
+choices about what is allowed to change and what
+must be retained. Jev-DLC places the stability–
+plasticity trade-off at the level of a per-user deci-
+sion state and uses PA-I as its minimum-change
+update. Existing work therefore studies how a mu-
+table model remains useful across changing tasks;
+we study how a frozen scorer can adapt for one
+user through a small persistent decision state.
+2.3
+Typed Decisions and Online Decision
+Updates
+Jev-style systems expose finite candidate choices
+and read a typed decision from the model out-
+put (OpenJev contributors, 2026). This interface
+makes an accept or revoke an explicit decision-
+level correction, but it does not by itself define how
+that correction should alter later requests. Pair-
+wise preference models provide the correspond-
+ing relative-decision language (Bradley and Terry,
+1952).
+Passive-aggressive learning supplies a
+minimum-change online update with an optional
+slack cap (Crammer et al., 2006), while adaptive-
+gradient and online Newton methods provide al-
+ternative update geometries (Duchi et al., 2011;
+Shalev-Shwartz, 2012). Jev-DLC uses PA-I to con-
+nect an explicit accept/revoke interface to that up-
+date under a frozen typed scorer and a chronolog-
+ical per-user serving contract, then tests whether
+the resulting state changes later decisions. Conver-
+sation benchmarks and preference arenas evaluate
+broader response quality without making this state
+transition the object of evaluation (Zheng et al.,
+2023; Chiang et al., 2024). Existing work sep-
+arately provides a typed readout or a minimum-
+change online update; we connect the two layers
+and measure the resulting adaptation trajectory.
+3
+Problem Setup
+Continual preference alignment studies whether
+a user’s typed correction can improve later deci-
+sions without changing the scorer or replaying the
+interaction. We make the information boundary ex-
+plicit before describing any particular update rule
+or evaluation set.
+3.1
+Ordered Typed Interaction
+For user u, events arrive in chronological order as
+Eu,1, . . . , Eu,Tu. Event Eu,t contains a context xt
+and a finite candidate slate At. A frozen scorer
+assigns a score to each candidate, and a fixed mask
+Mt(a) removes actions that violate hard constraints.
+The learner predicts from the safe slate Asafe
+t
+and
+commits a decision ˆat before any feedback is avail-
+able. The committed prediction is the object evalu-
+ated at event t.
+3.2
+Typed Feedback
+After the prediction has been committed, the inter-
+face emits either accept(ˆat) or revoke(ˆat →a⋆
+t ).
+Acceptance confirms the committed action. Revo-
+cation identifies both the rejected action a−
+t = ˆat
+and its replacement a+
+t = a⋆
+t . Thus feedback su-
+pervises a decision that has already been made and,
+in the revoke case, specifies the replacement rela-
+tion directly. It is decision-level supervision, not
+an unconstrained free-text critique.
+3.3
+Persistent State and Causality
+The learner maintains a state µu,t for each user and
+updates it with the current event and the feedback
+revealed after prediction,
+µu,t+1 = U(µu,t, Eu,t, Ft).
+(1)
+The prediction at event t may depend on feedback
+from events 1:t −1 only. The feedback Ft can
+affect events t + 1:Tu, but cannot change the pre-
+diction that exposed it. State is reset between users
+and is subject to a bounded-state serving constraint.
+For a fixed user, we write this state as µt. The main
+state-based path retains neither raw previous inter-
+actions nor candidate text, and scorer parameters
+remain fixed at runtime. The scorer evaluates the
+current slate; µu,t carries only the user’s accumu-
+lated consequences of earlier typed feedback.
+3.4
+Evaluation Objective
+The central question is whether past typed feedback
+improves later decisions for the same user. The ob-
+jective is therefore to evaluate the state induced by
+the prefix of a stream, rather than to refit the event
+whose target has just been revealed. User-macro
+accuracy is the primary metric because the unit of
+personalization is the user. Other statistical infer-
+ence details and serving measurements are reported
+with the experiments and in Appendix A.6.
+4
+Method
+Jev-DLC separates current-request interpretation
+from persistent preference. A frozen typed scorer
+supplies the base judgment for the current candi-
+date slate. Two bounded user-state channels pre-
+serve the recurring action evidence and correction
+3
+
+
+direction exposed by earlier feedback. Their com-
+bined scores let these consequences shape the next
+decision without revisiting the original interactions.
+4.1
+Frozen Typed Decision Layer
+Given a rendered context and a candidate slate,
+JEV-SFT scores the option tokens at the first out-
+put position. Each safe candidate a receives a
+base logit bt(a) and a frozen hidden representa-
+tion ht(a) ∈RD. A shared linear map P ∈Rd×D
+projects the representation into the state space,
+rt(a) =
+Pht(a)
+∥Pht(a)∥2
+,
+d = 32.
+(2)
+The map is fitted once on chronological streams
+from training users, shared by all users, and frozen
+before development and test replay. The scorer
+parameters, projection, candidate order, and hard
+mask remain fixed at runtime. Alternative repre-
+sentation maps are reported in Appendix E.
+4.2
+A Typed Correction Provides a Prior and
+a Direction
+The runtime commits ˆat before feedback is re-
+vealed. A revoke identifies the rejected predic-
+tion and its replacement. An accept confirms the
+committed action, which is paired with its highest-
+probability safe competitor. We denote the pre-
+ferred and paired actions by a+
+t and a−
+t , respec-
+tively. The correction then provides two related
+signals.
+First, the preferred action contributes evidence
+to an observable semantic identity c(a+
+t ). Let nt(k)
+be the number of previous corrections assigned to
+semantic identity k, let Nt = P
+k nt(k), and let Kt
+be the number of semantic identities represented
+in the current slate. The resulting smoothed prior
+adjustment is
+qt(a) = λc log nt(c(a)) + α
+Nt + αKt
+.
+(3)
+Second, the same correction identifies a directed
+relation in the frozen candidate space,
+dt = rt(a+
+t )−rt(a−
+t ),
+βt = bt(a+
+t )−bt(a−
+t ).
+(4)
+The prior records what the user repeatedly chooses.
+The contrast records how one committed decision
+should be replaced by another.
+4.3
+Conservative and Responsive Channels
+The conservative channel combines the semantic
+prior with a local correction vector µc
+t ∈Rd. Its
+score is
+xc
+t(a) = λprt(a),
+sc
+t(a) = bt(a) + qt(a) + µc
+t
+⊤xc
+t(a).
+(5)
+The responsive channel omits the count prior and
+stores the correction geometry directly in µr
+t ∈Rd,
+xr
+t(a) = rt(a),
+sr
+t(a) = bt(a) + µr
+t
+⊤xr
+t(a).
+(6)
+Each
+channel
+yields
+a
+distribution
+pj
+t
+=
+softmaxa∈Asafe
+t
+sj
+t(a) for j ∈{c, r}.
+After feedback, both channels receive the pair
+elicited by the same committed mixture decision.
+Their contrasts and base margins are
+dj
+t = xj
+t(a+
+t ) −xj
+t(a−
+t ),
+βc
+t = bt(a+
+t ) + qt(a+
+t ) −bt(a−
+t ) −qt(a−
+t ),
+βr
+t = bt(a+
+t ) −bt(a−
+t ).
+(7)
+For j ∈{c, r}, the margin violation and minimum-
+change transition are
+ℓj
+t =
+h
+γ −βj
+t −µj
+t
+⊤dj
+t
+i
++ ,
+µj
+t+1 = µj
+t + τ j
+t dj
+t.
+(8)
+τ j
+t = min
+ 
+C,
+ℓj
+t
+∥dj
+t∥2
+2
+!
+,
+(9)
+with τ j
+t = 0 when dj
+t = 0. If a channel already
+respects the correction, it remains unchanged. Oth-
+erwise, it moves only as far as needed to repair the
+ordering, subject to the cap. The semantic count
+is incremented only after the current decision has
+been evaluated. We use γ = C = 1 and freeze all
+channel parameters before test replay.
+4.4
+Combining the Two Channels
+The two channels need not be equally reliable for
+every user or at every point in a stream. Jev-DLC
+therefore maintains two log weights gc
+t and gr
+t. Be-
+fore event t, their normalized values define the
+responsive weight
+ρt =
+exp(gr
+t)
+exp(gc
+t) + exp(gr
+t).
+(10)
+4
+
+
+The runtime combines the expert distributions geo-
+metrically,
+¯pt(a) = pc
+t(a)1−ρtpr
+t(a)ρt,
+pt(a) =
+¯pt(a)
+P
+a′ ¯pt(a′),
+ˆat = arg max
+a
+pt(a).
+(11)
+Only after the target a+
+t is revealed does the run-
+time observe each channel’s zero-one loss Lj
+t =
+1[arg maxa pj
+t(a)̸ = a+
+t ]. It applies the exponen-
+tial update ˜gj
+t+1 = gj
+t −ηLj
+t, normalizes the two
+weights, and mixes a fixed share σ back toward the
+uniform distribution,
+¯wj
+t+1 =
+exp(˜gj
+t+1)
+P
+k exp(˜gk
+t+1),
+wj
+t+1 = (1 −σ) ¯wj
+t+1 + σ
+2 ,
+gj
+t+1 = log wj
+t+1.
+(12)
+This update lets reliability change as evidence ac-
+cumulates while preventing either channel from
+becoming permanently unreachable. The initial-
+ization and frozen configuration are given in Ap-
+pendix B.
+4.5
+Serving Contract and State Budget
+At each event, one frozen scorer call produces the
+candidate logits and representations. The two chan-
+nels form their distributions from the current user
+state, the reliability weights mix them, and the run-
+time commits the result. The revealed accept or
+revoke then updates the reliability weights, the two
+correction vectors, and the semantic count state for
+the user’s next event. Every update uses the feed-
+back produced by the committed mixture rather
+than a counterfactual decision from either channel.
+The
+complete
+state
+is
+zu,t
+=
+(nu,t, µc
+u,t, µr
+u,t, gc
+u,t, gr
+u,t).
+Its maximum ob-
+served size is 324 bytes on TCPA-Repeat and 320
+bytes on TCPA-Open. Jev-DLC retains no raw in-
+teraction history, adds no scorer forward pass, and
+performs no runtime language-model backward
+pass. Resetting the counts, correction vectors, and
+reliability weights restores the frozen scorer over
+the same safe slate. The runtime interface, state
+accounting, and frozen configuration are detailed
+in Appendix B.
+5
+Theory
+The analysis explains what a typed correction pre-
+serves and how that information can influence a
+later decision. Action sufficiency identifies when
+the selected action retains the preference informa-
+tion in its realization. Minimum-change repair then
+converts the exposed ordering into a local state tran-
+sition, whose candidate-space geometry determines
+transfer to future pairs.
+5.1
+What Typed Feedback Preserves
+A typed action can replace its language realization
+when the surface form adds no preference informa-
+tion after the action is known. Let realization R
+map deterministically to action A = gx(R), and
+suppose
+pw,ζ(R | x) = qζ(R | A, x)pw(A | x),
+(13)
+where qζ is independent of preference parameter
+w.
+Proposition
+1
+(action
+sufficiency).
+Under
+Eq. 13, A is sufficient for w conditional on x. For
+any square-integrable realization-dependent update
+V (R, F) and ¯V (A, F) = E[V | A, F],
+Cov(V ) = Cov( ¯V ) + E[Cov(V | A, F)]. (14)
+Proof sketch.
+The likelihood depends on w only
+through pw(A | x), so the factorization criterion
+gives sufficiency.
+The second statement is the
+law of total covariance. Its final term is positive
+semidefinite and measures variation among realiza-
+tions of the same typed action. Typed condition-
+ing therefore removes realization nuisance while
+retaining the preference information specified by
+the factorization. Appendix C gives the complete
+sequence-level result.
+5.2
+Two Persistence Geometries
+The action identity and pairwise direction influence
+future decisions in different ways. The semantic
+term in Eq. 3 is a Dirichlet-smoothed log-frequency
+score. Up to a candidate-independent constant, it
+increases with the number of earlier corrections
+selecting the same semantic identity. It therefore
+carries repeated categorical tendency without re-
+taining the events that produced the counts.
+The pairwise signal instead defines, for each
+channel j, a feasible half-space
+Hj
+t = {µ: βj
+t + µ⊤dj
+t ≥γ}.
+(15)
+Proposition 2 (local minimum-change repair).
+For dj
+t̸ = 0, Eq. 9 is the unique PA-I state transition
+for the exposed ordering. If the state already lies in
+5
+
+
+Jev-DLC runtime pipeline
+A frozen typed scorer supplies semantics; feedback changes only compact per-user state.
+1. Current event
+2. Frozen typed scorer
+Dialogue
+context xt
+Typed
+question
+Candidate
+set At
+Hard safety
+mask Mt
+First output
+position
+Language-model
+parameters fixed
+Jev-DLC separates current-event semantic scoring from persistent preference updates.
+···
+A
+B
+C
+D
+One frozen scorer call
+Candidate 
+repr. ht(a)
+rt(a)
+Shared
+frozen P
+base logits bt(a)
+3. Two persistence channels
+shared current-event inputs: bt(a), rt(a)
+ Conservative channel
+what tends to recur
+A
+B
+C
+semantic
+counts
+correction
+state μt
+c
+Ptc
+candidate
+representation
+ Responsive channel
+how decisions are required
+correction
+state μt
+r
+Ptr
+safe candidates only apply Mt first
+4. Reliability-guided
+decision
+Feedback revealed
+after commitment
+Commit a safe decision
+A
+B
+C
+D
+Ptc
+Ptr
+rely on
+Pt
+c
+rely on
+Pt
+r
+causal 
+per-user
+reliability
+5. State update + next
+event
+Semantic
+counts
+nt → nt+1
+A
+B
+C
+μc
+μr
+Correction
+states
+μt→μt+1
+Reliability
+gt→gt+1
+Update persistent user state
+Update user state (nt+1 μt+1 gt+1)
+No runtime LM training
+No raw-history replay
+Next candidate slate
+A
+B
+C
+D
+immediate adaptation for
+the next decision
+Typed feedback
+accept(B)
+  revoke(B -> C)
+Figure 2: Typed feedback becomes persistent state above a frozen scorer. Conservative and responsive channels
+retain recurring action evidence and correction geometry. Causal per-user weights combine their distributions before
+commitment, and revealed feedback updates the channels and weights for later requests.
+Hj
+t, it remains unchanged. Otherwise, an uncapped
+step is the Euclidean projection onto the boundary;
+the cap limits the same directed move.
+Proof sketch.
+KKT stationarity makes the min-
+imizing displacement parallel to dj
+t. Complemen-
+tary slackness gives coefficient ℓj
+t/∥dj
+t∥2
+2, clipped
+at C, and strict convexity gives uniqueness. Thus
+the correction changes no state direction orthogo-
+nal to dj
+t. The complete derivation and comparator-
+relative violation bound appear in Appendix C.
+The geometry determines transfer to a later event
+s > t:
+dj
+s
+⊤(µj
+t+1 −µj
+t) = τ j
+t dj
+s
+⊤dj
+t.
+(16)
+A later pair inherits the repair according to its align-
+ment with the earlier correction. If ∥xj
+t(a)∥2 ≤κj,
+then
+∥µj
+t+1 −µj
+t∥2 ≤2Cκj,
+κc = λp,
+κr = 1.
+(17)
+The state remains fixed-dimensional, while the
+prior and direction encode respectively what recurs
+and which candidate relation was corrected.
+5.3
+From Local Repair to Persistent Decisions
+The mixture in Eq. 11 brings the two persistence
+geometries into one decision. The count term car-
+ries evidence across events sharing an action iden-
+tity, while the correction vectors transfer repair
+according to candidate-space alignment. Because
+the conservative margin includes the prior and the
+responsive margin does not, the same feedback can
+produce different updates in the two channels. The
+user state preserves both trajectories, and the pre-
+decision weights determine their contribution.
+Together, action sufficiency and local repair ex-
+plain how a correction can be retained without
+its original language realization and reused on a
+later slate. The experiments measure the resulting
+decision quality. Appendix C gives the channel-
+weighting analysis; Appendix E.4 reports other
+implementations of the same two-channel fusion.
+6
+TCPA: Chronological Evaluation of
+Typed Adaptation
+TCPA evaluates whether typed feedback changes
+later decisions for the same user. Every track fol-
+lows one causal serving contract. The runner pre-
+dicts and commits, the evaluator then reveals typed
+feedback, the runner updates the user state, and
+only subsequent decisions receive the benefit of
+that update. This ordering separates continual adap-
+tation from refitting the event that revealed its tar-
+get.
+6.1
+Predict-Then-Update Protocol
+For each user, events remain in source order and
+users are disjoint across training, development, and
+test. At event t, the runner sees the current context
+and candidate slate, applies the frozen hard mask,
+and commits a prediction before the evaluator ex-
+6
+
+
+poses the target or feedback. The evaluator returns
+either an acceptance or a revocation with its replace-
+ment. The runner then updates the user’s persistent
+state. The state is reset when a new user stream
+begins, and event t is scored before its feedback
+can affect event t + 1 or any later event. Targets
+are isolated from the serving process until the com-
+mitted prediction has been recorded. Each scored
+event exposes the correction prefix available before
+commitment. Any measured gain can therefore
+be attributed to information genuinely available
+online.
+6.2
+TCPA-Repeat
+TCPA-Repeat is our chronological repeated-action
+personalization track derived from LaMP-2. It
+presents repeated decisions under a stable finite
+ontology and preserves chronological user streams
+with enough repeated interaction to test whether ac-
+cumulated feedback improves later decisions. This
+setting makes the central continual-adaptation ques-
+tion observable because the corrected action can
+reappear after the correction. The converter, label
+mapping, filtering rules, hashes, and split construc-
+tion are specified in Appendix A.3.
+6.3
+Additional Diagnostic Tracks
+TCPA-Open is a changing-item weak-transfer
+boundary track derived from MIND. TCPA-
+Dynamics provides controlled stability, shift, re-
+currence, and noise diagnostics. Together, these
+tracks complement TCPA-Repeat by probing trans-
+fer across changing items and controlled temporal
+regimes. Their full construction and results appear
+in Appendices A.4 and F.
+User-macro accuracy is the primary metric. Sys-
+tem accounting records persistent state, retained
+history, and extra model computation so that accu-
+racy and serving cost are evaluated together. Boot-
+strap inference and the complete metric definitions
+are provided in Appendix A.6; representation anal-
+yses appear in Appendix E.
+7
+Experiments
+The experiments test whether persistent typed state
+improves later decisions and what that improve-
+ment requires at serving time. TCPA-Repeat eval-
+uates reuse across recurring actions; feedback-
+depth strata show the decisions made after dif-
+ferent amounts of prior feedback. All methods
+use the frozen JEV-SFT decision layer, whose
+Method
+Full
+d ≥2
+d ≥4
+d ≥8
+Frozen
+39.44
+41.58
+36.48
+40.38
+Recent-4
+42.40
+46.40
+37.56
+42.17
+AdaGrad
+41.99
+48.53
+39.33
+41.68
+PPlug
+40.37
+41.77
+37.86
+43.38
+TAP-PER
+41.99
+46.48
+46.45
+44.25
+MRM-style
+40.67
+42.14
+47.18
+51.88
+Jev-DLC
+44.83
+56.07
+50.47
+53.01
+Table 1: TCPA-Repeat user-macro accuracy (%). Every
+depth column evaluates decisions made after at least
+d earlier feedback events. Counts, paired bootstrap
+intervals, and the complete baseline ladder appear in
+Appendix D.
+current-event anchors appear in Appendix D.1. The
+main tables report one Jev-DLC implementation.
+Complete channel and fusion results appear in Ap-
+pendix E.4.
+7.1
+Later-Decision Accuracy
+The comparisons span different ways of carry-
+ing user feedback into the next decision. Recent-
+4 retains four typed interactions and asks JEV-
+SFT to reinterpret them in an enlarged prompt.
+PPlug encodes user behavior, TAP-PER queries
+bounded temporal memory, and MRM adapts a
+low-dimensional head. Our TCPA instantiations of
+these three methods share Jev-DLC’s frozen scorer
+cache and learned candidate projection. All com-
+parisons use the same safe slates, targets, chrono-
+logical order, and predict-then-update protocol.
+Shared components are fitted on training users and
+configurations selected on development users. Ap-
+pendix B.5 gives the source method adaptations
+and representation provenance of the archived on-
+line references, including AdaGrad.
+Persistent typed state improves TCPA-Repeat de-
+cisions above the frozen scorer. Jev-DLC reaches
+44.83% on the full stream, a 5.39-point gain over
+Frozen and a 2.43-point higher accuracy than
+Recent-4. It has the highest point estimate among
+the reported external comparisons on Full and at
+each reported feedback depth. After at least two
+earlier feedback events, it reaches 56.07%, 7.54
+points above the strongest reported comparison at
+this depth. Because every prediction precedes its
+feedback, these differences measure the use of ear-
+lier corrections rather than refitting the decisions
+that elicited them.
+At d ≥4 and d ≥8, Jev-DLC reaches 50.47%
+and 53.01%, compared with 47.18% and 51.88%
+for MRM-style, the strongest external reference
+in these strata. Each stratum evaluates decisions
+7

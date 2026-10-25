@@ -1,0 +1,600 @@
+arXiv:2610.31478v1  [cs.CV]  22 Oct 2026
+DAWOUD, ET AL: MOG-VLM
+1
+MoG-VLM: Efficient Video Anomaly
+Detection through Motion-Guided
+Vision-Language Models
+Khaled Waleed Dawoud 1
+khaled.dawoud@mbzuai.ac.ae
+Muhammad Zaigham Zaheer1
+Zaigham.Zaheer@mbzuai.ac.ae
+Khan Muhammad2
+khanmuhammad@skku.edu
+Muhammad Haris Khan1
+muhammad.haris@mbzuai.ac.ae
+1 Mohamed bin Zayed University of
+Artificial Intelligence,
+Abu Dhabi,
+United Arab Emirates
+2 Sungkyunkwan University,
+Seoul 03063,
+South Korea
+Abstract
+Vision-Language Models (VLMs) have shown strong potential for video anomaly
+detection, but dense frame-level inference makes them impractical for real-time deploy-
+ment. Existing acceleration commonly relies on uniform sampling, which ignores con-
+tent dynamics and can either waste computation on static segments or miss localized
+anomalies. We propose MoG-VLM a motion-adaptive anomaly detection framework that
+leverages motion purely as a lightweight control signal to decide when VLM inference
+is necessary. To this end, we introduce Temporal Gradient Magnitude (TGM) which
+performs content-aware sampling to concentrate computation on informative regions
+while avoiding redundant processing. We further introduce a hierarchical dual-stream
+design in which dense multi-frame VLM reasoning is activated only around frames
+with elevated anomaly likelihood, via anchor-triggered context-window expansion with
+early termination. A fusion module then reconciles these instantaneous semantic cues
+with temporal action dynamics. Across four benchmarks, our method achieves 91.91%,
+84.30%, 87.88%, and 78.96% AUC-ROC on XD-Violence, UCF-Crime, MSAD, and
+ShanghaiTech, respectively, establishing new state of the art on three benchmarks un-
+der the zero-shot, training-free setting. On XD-Violence, we improve over the previ-
+ous best result by +0.57% while delivering a 1.31× inference speedup. These results
+demonstrate that content-aware allocation of VLM capacity, processing fewer frames
+more intelligently rather than all frames uniformly, is a more effective axis of progress
+than uniformly densifying VLM inference across frames. Code is available on GitHub:
+https://github.com/kdawoud91/MoG-VLM.
+1
+INTRODUCTION
+The proliferation of camera systems has generated unprecedented volumes of video data,
+creating an urgent need for automated anomaly detection systems capable of identifying rare
+© 2026. The copyright of this document resides with its authors.
+It may be distributed unchanged freely in print or electronic forms.
+
+
+2
+DAWOUD, ET AL: MOG-VLM
+Input Video
+30 FPS  ·  UCF-Crime: Explosion
+Ground-Truth Anomaly Window
+0s
+2s
+4s
+6s
+8s
+10s
+time
+(a) Dense Sampling
+30 FPS  ·  baseline
+(b) Uniform Sampling
+1 FPS  ·  blind to content
+↓  Motion gate (TGM)
+Motion magnitude curve  →  cells sampled when curve > θ_z
+θ_z
+(c) TGM Sampling
+Ours · motion-gated 3 FPS
+↓  Anchor-triggered hierarchical refinement
+(d) TGM + Anchor
+Ours · best AUC
+[5]
+[15]
+[30]
+Hierarchical retrospective windows
+Skipped
+Sampled
+Motion-gated
+Anchor-triggered
+Anomaly region
+Figure 1: Comparison of frame sampling strategies for video anomaly detection. (a)
+Dense sampling, incurring prohibitively high computational cost [20]. (b) Uniform sam-
+pling, which can waste computation on static segments [12, 36]. (c) Our motion-adaptive
+sampling method based on Temporal Gradient Magnitude (TGM) dynamically selects frames
+according to motion patterns, reducing processed frames.
+(d) Our introduced anchor-
+triggered processing selectively expands time windows around high-confidence detections.
+and unpredictable events in real-time [6, 21]. Traditional approaches [6, 12, 36] that process
+every frame with equal computational intensity or uniform stride are fundamentally mis-
+aligned with the nature of video footage, where anomalous events are sparse and localized.
+This inefficiency becomes particularly pronounced when deploying computationally expen-
+sive Vision-Language Models (VLMs), which offer unprecedented semantic understanding
+but impose prohibitive inference costs for continuous real-time processing [3, 11]. Mod-
+ern video-capable architectures such as Video-LLaMA [37] and the Qwen-VL family [3]
+demonstrate remarkable improvements in temporal coherence and semantic depth compared
+to earlier contrastive models [2, 18], making them particularly well-suited for applications
+where abnormality is often defined by context. However, this representational power comes
+at a substantial computational cost. Without mechanisms to adapt inference effort to content
+dynamics in video anomaly detection (VAD), this representational power remains largely
+inaccessible under the computational and memory constraints of real-time deployment [36].
+Current VLM-based anomaly detection methods overwhelmingly adopt uniform process-
+ing paradigms, sampling frames at fixed strides [12, 35, 36] or analyzing entire videos
+exhaustively [20] regardless of content dynamics. This is wasteful: many video intervals
+are static or low-activity yet incur the same per-frame VLM cost as dynamic, anomaly-
+rich segments. Recent zero-shot extensions [12, 36] and parameter-efficient fine-tuning ap-
+proaches [34, 35] have advanced reasoning quality, but inherit this uniform-sampling as-
+sumption and overlook the spatial and temporal sparsity inherent to surveillance footage.
+In contrast, our framework operates from a deliberately coarse baseline sampling rate and
+selectively densifies only where motion dynamics indicate informative content. As illustrated
+in Fig. 1, dense (Fig. 1a) and uniform (Fig. 1b) sampling process frames indiscriminately,
+while our motion-adaptive approach (Fig. 1c-d) concentrates computation on temporally dy-
+namic segments intervals exhibiting high or sudden motion changes characteristic of fights,
+explosions, or vehicle collisions and suppresses redundant inference on static footage.
+This gap between semantic capability and computational tractability motivates a fun-
+
+
+DAWOUD, ET AL: MOG-VLM
+3
+damental question: Starting from a coarse uniform sampling baseline, can we adaptively
+allocate additional computation only when video dynamics demand it to achieve real-time
+VLM-based anomaly detection? Addressing this question requires moving beyond accuracy-
+centric evaluation toward a holistic framework that explicitly balances detection performance
+with computational efficiency. Specifically, there exists no prior work that systematically
+investigates adaptive mechanisms for content-aware resource allocation in vision-language-
+based anomaly detection, nor sufficient analysis of the trade-offs between computational cost
+and video anomaly detection performance.
+In this work, we introduce a motion-adaptive anomaly detection framework that funda-
+mentally reimagines how computational resources are allocated across video content. Unlike
+classical approaches that employ motion as a direct classification feature [7, 8, 17, 19], we
+take advantage of motion purely as a lightweight control mechanism, a semantic activation
+signal that determines when VLM inference is necessary. We introduce TGM analysis to
+establish a motion quantification mechanism, thereby dynamically adjusting the sampling
+density based on detected temporal dynamics. We further introduce an anchor-triggered hi-
+erarchical refinement mechanism that preserves computational efficiency while recovering
+fine-grained temporal context. Adaptively sampled frames that exhibit high anomaly con-
+fidence serve as anchor points, triggering progressive multi-window analysis, ensuring that
+dense coverage is applied exclusively where anomalous patterns emerge. In parallel, we
+introduce a complementary temporal stream that captures action dynamics through video-
+language modeling. This branch processes non-overlapping temporal windows, generating
+video-level semantic descriptions that encode motion trajectories and behavioral sequences.
+The two pathways converge through adaptive scoring, combining frame-level instantaneous
+detections with temporal-level behavioral context into unified predictions.
+Contributions. We summarize our key contributions as follows: Motion-Adaptive Sam-
+pling Framework: A novel motion quantification mechanism using multiscale TGM anal-
+ysis and adaptive z-score that dynamically adjusts sampling density based on temporal dy-
+namics, achieving substantial computational savings. Anchor-Triggered Hierarchical Re-
+finement: A progressive multi-window expansion mechanism where adaptively sampled
+frames exhibiting high anomaly trigger conditional retrospective analysis, examining pre-
+ceding context with early termination to prevent unnecessary computation on low-confidence
+detections. Tier-Aware Adaptive Fusion: A fusion mechanism in which the mixing weight
+λ between frame-level and temporal-level streams is not learned but inherited from the TGM
+motion tier of each frame, with λ taking a piecewise-constant value determined by whether
+the frame is unflagged, motion-flagged, or anchor-triggered. This tier-driven weighting is
+agnostic to dataset specifics and scene dynamics. Comprehensive Efficiency-Accuracy
+Analysis: A systematic study of the compute-accuracy trade-off in zero-shot VLM-based
+anomaly detection, a dimension largely absent from prior work. MoG-VLM attains 84.30%,
+91.91%, 87.88% and 78.96% AUC-ROC on UCF-Crime, XD-Violence, MSAD and Shang
+setting a new zero-shot training-free state of the art on three benchmarks.
+2
+Related Work
+Video anomaly detection (VAD) aims to temporally localise frames containing events that
+deviate from expected behaviour. Early supervised methods required frame-level annota-
+tions [21], while weakly-supervised formulations reduced the annotation burden to video-
+level labels through multiple-instance learning (MIL) [4, 21, 25, 26, 27]. The emergence of
+
+
+4
+DAWOUD, ET AL: MOG-VLM
+large vision–language models (VLMs) and large language models (LLMs) has opened a new
+paradigm for VAD by inferring anomaly scores from natural-language scene descriptions at
+test time, without gradient-based training. LAVAD [36] pioneered this direction by caption-
+ing each frame with a frozen VLM, summarising temporal windows with an LLM, and refin-
+ing anomaly scores through cross-modal similarity. Despite strong results, its uniform pro-
+cessing of every sampled frame regardless of scene content leads to 71.4 GPU-hours on the
+XD-Violence test set alone, allocating identical computation to static backgrounds and fast-
+evolving anomalous events alike. Subsequent work has focused on reasoning quality rather
+than efficiency. Unified-reasoning [12] introduces a score-based gate that triggers a second
+LLM pass with automatically extracted anomaly-tag priors for ambiguous videos, raising
+AUC-ROC to 84.28% on UCF-Crime and 91.34% on XD. Yet the underlying sampling stays
+content-blind, a fixed stride of 16 frames is applied uniformly, expending VLM inference
+on static footage regardless of scene dynamics. Other VLM-based methods relax the strictly
+zero-shot constraint. VERA [35] steers a frozen VLM with verbalized guiding questions
+optimised from labelled data, without modifying model weights, though the prompt optimi-
+sation itself requires an annotated training set. Holmes-VAU [38] and Hawk [22] instruction-
+tune multimodal LLMs on anomaly clips to produce rich explanations, but they remain tied
+to seen anomaly types and incur high annotation costs. STPrompt [30] learns spatio-temporal
+prompts under weak class-level supervision. AnyAnomaly [1] proposes customisable VAD
+by casting detection as context-aware visual question answering with a frozen LVLM, and
+EventVAD [20] combines graph architectures with multimodal LLMs through temporal rea-
+soning. The literature has overwhelmingly prioritised detection accuracy [1, 20, 39] over
+computational efficiency, leaving the deployment feasibility of VLM-based VAD unclear.
+Among the methods discussed above, only Unified [12] reports timing information. This
+gap is significant: real-world video systems must process hours of continuous footage, and
+the practical feasibility of VLM-based anomaly detection depends critically on throughput,
+not solely on AUC-ROC. The principle of allocating computation only where content de-
+mands it has a long history in video understanding. In action recognition, AdaFrame [32]
+trains a policy network to adaptively select informative frames, SCSampler [10] routes only
+salient clips to a heavy 3D backbone, AR-Net [15] learns per-frame resolution selection,
+FrameExit [9] conditions early-exit decisions on intermediate features, and LiteEval [31] al-
+ternates between a coarse and fine network via a gating module. The shared design pattern
+is a two-stage architecture: a cheap first pass produces a saliency signal, and a more ex-
+pensive pass is activated selectively. Our framework inherits this two-stage philosophy but
+differs in three respects. First, our gating mechanism is entirely training-free, we threshold a
+multiscale Temporal Gradient Magnitude (TGM) via adaptive z-scores, requiring no learned
+parameters, whereas the methods above learn sampling policies from labelled data, an im-
+practical requirement in anomaly detection where positive examples are scarce. Second, we
+target untrimmed footage spanning minutes to hours rather than trimmed classification clips,
+where the informative-to-static ratio is far more extreme. Third, motion serves purely as a
+control signal that decides when VLM inference is invoked, it does not enter the anomaly
+score itself, avoiding the conflation of motion salience with anomaly likelihood.
+3
+Methodology
+Our framework introduces motion-adaptive sampling with hierarchical VLM-based process-
+ing through a dual-stream architecture that balances computational efficiency with detection
+
+
+DAWOUD, ET AL: MOG-VLM
+5
+Frame-Level Analysis (Anchor-Triggered)
+Anchor
+Frame
+Selection
+VLM 
+Captioning
+Temporal-Level Analysis (Multi-Frame Context)
+Temporal
+Window
+Sampling
+Video-VLM
+Multi-frame
+reasoning
+LLM
+Scoring
+Frame-Level
+Temporal-Level
+Refinement Effect
+LLM
+Scoring
+Skipped frame
+Stride frame
+TGM-triggered frame
+Adaptive Sampling via Temporal Gradient Magnitude
+Motion-gated densification with anchor-triggered hierarchical refinement
+30 FPS stream
+θ_z
+TGM(t)
+Sampling
+0s
+1s
+2s
+3s
+4s
+5s
+6s
+Stream A
+Stream B
+Anchor-triggered frame
+Input Video
+Tier-Aware Adaptive Fusion
+λ inherited from sampling tier — training-free
+1.  Sampling tier  τ_t
+τ ∈ {0, 1, 2}  per frame
+2.  Tier  →  λ  lookup
+τ = 0
+→λ_base
+τ = 1
+→λ_motion
+τ = 2
+→λ_anchor
+3.  λ_t  over time  (smoothed)
+0
+λ_b
+λ_m
+λ_a
+1
+raw
+smoothed
+4.  Per-frame fusion
+Stream A   →   sᶠₜ
+Stream B   →   sᵗₜ
+sft
+stt
+λt  :  1 − λt
+0.62 0.38
+s̃t
+Anomaly region
+Hierarchical Window Processing
+ti
+W3  ·  15 fr
+W2  ·  10 fr
+W1  ·  5 fr
+lookback (past)
+Figure 2: Overview of the MoG-VLM framework. Motion-adaptive sampling via TGM
+categorizes frames into three tiers: baseline uniform (orange), TGM-triggered densifica-
+tion (green), and anchor-triggered (magenta). Baseline stride frames and TGM-triggered
+frames with high anomaly scores become anchors, initiating hierarchical lookback windows
+(W1, W2, W3). Stream B conducts temporal-level Video-VLM multi-frame reasoning and
+LLM scoring. Tier-aware adaptive fusion combines both streams using motion-tier-inherited
+weights (λbase, λmotion, λanchor) without training.
+accuracy. Fig. 2 illustrates the complete pipeline.
+3.1
+Frame-Level Anomaly Detection via Motion-Adaptive Sampling
+We propose a motion-adaptive sampling strategy that dynamically adjusts processing den-
+sity based on temporal dynamics, enabling efficient allocation of computational resources to
+informative regions while maintaining detection accuracy.
+3.1.1
+Temporal Gradient Magnitude Analysis
+Given a video sequence V = {It}T
+t=1, we extract frames at a baseline sampling rate to es-
+tablish coarse temporal coverage. For each sampled frame It, we compute the Temporal
+Gradient Magnitude (TGM) at multiple temporal scales W = {w1,...,wK} to capture mo-
+tion patterns ranging from instantaneous changes to sustained activities. At each scale w,
+we form per-pixel velocity vw = (It −It−w)/w and acceleration aw = (It −2It−w +It−2w)/w2,
+and reduce the resulting TGM map to a scalar via its 90th percentile:
+mw(t) = P90
+q
+v2w +β a2w
+
+,
+(1)
+where β = 0.35 controls the relative contribution of acceleration to the combined motion
+signal. The per-scale summaries are aggregated by magnitude-weighted averaging,
+TGM(t) = ∑
+w∈W
+˜αw(t)mw(t),
+˜αw(t) =
+mw(t)
+∑w′∈W mw′(t).
+(2)
+Scales exhibiting stronger response contribute proportionally more to the aggregated signal.
+
+
+6
+DAWOUD, ET AL: MOG-VLM
+3.1.2
+Adaptive Z-Score Anomaly Detection
+To identify temporal regions exhibiting anomalous motion patterns, we employ adaptive
+z-score normalization over a sliding exponential moving average (EMA) of TGM statistics.
+This approach enables context-aware anomaly detection that adapts to scene-specific activity
+levels while remaining sensitive to deviations from normal behavior.
+For each frame t, we compute the adaptive z-score:
+z(t) = TGM(t)−µt
+σt +ε
+(3)
+where µt and σt are the running mean and standard deviation maintained via EMA updates
+with decay factor α. Critically, we implement a freezing mechanism during anomaly detec-
+tion windows: when z(t) > θanom (where θanom is the anomaly threshold), we freeze updates
+to µt and σt to prevent contamination of the reference distribution by anomalous behavior.
+This ensures that detected anomalies do not erroneously recalibrate, which would reduce
+sensitivity to sustained anomalous activities.
+3.1.3
+Motion-Guided Adaptive Sampling
+Upon detecting motion anomalies via z-score thresholding, we trigger adaptive refinement of
+the temporal sampling rate in the identified region. Specifically, when z(t) > θanom, we ex-
+tend the detection window to [t −∆t,t +∆t] and increase the sampling rate to rhigh within this
+temporal neighborhood, while maintaining the baseline rate rbase elsewhere. This produces
+a non-uniform sampling schedule:
+r(t) =
+(
+rhigh
+if ∃τ : z(τ) > θanom and |t −τ| ≤∆t
+rbase
+otherwise.
+(4)
+This adaptive sampling strategy concentrates computational resources on temporally dy-
+namic regions while avoiding redundant processing of static or slowly-changing segments.
+3.2
+Vision Language Frame-Level Captioning
+For each adaptively sampled frame, we employ a vision–language model to generate descrip-
+tions of the visual content. Given a sampled frame It, frame-level captioning is formulated
+as:
+ct = FVLM(It;Pframe).
+(5)
+FVLM denotes the vision–language model and Pframe is a task-specific prompt designed to
+emphasize anomaly-relevant attributes such as objects, persons, and spatial relationships.
+For exact prompts please see Supplementary Section C.3.1
+3.3
+Language-Based Anomaly Scoring
+Given a frame caption ct, we prompt the language model to assess the anomaly likelihood
+through structured reasoning. The prompt template Pframe
+score is designed to emphasize in-
+stantaneous anomaly indicators, instructing the model to identify unusual actions, danger-
+ous situations, suspicious behaviors, violence, accidents, or any visual patterns that deviate
+
+
+DAWOUD, ET AL: MOG-VLM
+7
+from typical video footage. (see Supplementary C.3.2 for the full prompts) The frame-level
+anomaly score at time t is computed as:
+sframe
+t
+= FLM(ct; Pframe
+score ).
+(6)
+FLM denotes the language model and sframe
+t
+∈[0,1] represents the frame-level anomaly score.
+3.4
+Anchor-Triggered Multi-Frame Analysis
+While the frame-level analysis provides efficient anomaly detection through motion-adaptive
+sampling at an elevated rate rhigh in dynamic regions, certain anomalous activities require
+even denser temporal coverage to fully capture their fine-grained dynamics. Rather than
+indiscriminately escalating the sampling rate across all dynamic segments, we introduce
+an anchor-triggered multi-window mechanism that selectively activates dense multi-frame
+processing only around adaptively sampled frames that exhibit high anomaly likelihood.
+3.4.1
+Anchor-Based Processing
+From the motion-adaptive sampling pipeline (Section 3.1), we obtain frame-level anomaly
+scores sframe
+t
+at non-uniform positions determined by the adaptive sampling rate r(t) (Eq. 4).
+The full set of adaptively sampled frames is Tsample = Tbase ∪Tmotion, where Tbase contains
+frames sampled at the baseline stride rate rbase and Tmotion contains additional frames densi-
+fied at rhigh within motion-gated regions. Each frame ti ∈Tsample serves as a potential anchor
+for triggering fine-grained window analysis.
+A frame ti ∈Tsample qualifies as a trigger anchor when its frame-level anomaly score
+exceeds an activation threshold θtrigger. We define the set of trigger anchors as:
+Tanchor =
+
+ti ∈Tsample
+ sframe
+ti
+> θtrigger
+	
+.
+(7)
+Since Tsample inherits the non-uniform structure of r(t), anchor candidates emerge naturally
+from motion dynamics rather than fixed intervals. Dynamic regions (where r(t) = rhigh) yield
+denser anchor candidates, while static regions (where r(t) = rbase) yield anchor candidates
+at the baseline uniform sampling density. For each ti ∈Tanchor, we initiate a hierarchical
+temporal analysis that progressively examines preceding frames at the native video frame
+rate to capture fine-grained dynamics.
+3.4.2
+Hierarchical Window Processing
+For each anchor frame ti ∈Tanchor, we apply a three-stage hierarchical processing strategy
+that progressively expands the amount of pre-anchor context examined at full resolution. We
+define three non-overlapping lookback windows of increasing duration, parameterized by
+0 < ∆1 < ∆2 < ∆3: W1(ti) = [ti −∆1,ti), W2(ti) = [ti −∆2,ti −∆1), and W3(ti) = [ti −∆3,ti −
+∆2). At each stage k ∈{1,2,3}, we run the same frame-level pipeline on frames in Wk(ti) to
+obtain scores sframe
+τ
+, and compute the mean score over that window:
+¯sk(ti) =
+1
+|Wk(ti)| ∑
+τ∈Wk(ti)
+sframe
+τ
+.
+(8)
+Stage progression is conditioned on ¯sk(ti) > θtrigger for k ∈{1,2}, so additional high-
+resolution is only processed when earlier evidence suggests sustained anomalous activity.
+
+
+8
+DAWOUD, ET AL: MOG-VLM
+3.5
+Temporal-Level Anomaly Detection via Multi-Frame Context
+While frame-level analysis captures fine-grained semantic understanding of individual mo-
+ments, many anomalous activities exhibit temporal dependencies spanning multiple frames.
+To capture these dynamics, we introduce a complementary temporal-level stream that pro-
+cesses multi-frame sequences through a video-language model.
+3.5.1
+Temporal Window Construction
+We construct temporal windows at regular intervals along the video to capture local motion
+patterns and activity evolution. For a video sequence V = {It}T
+t=1, target frames are selected
+at a stride s, and around each target t(i)
+target we form a window Wi of duration 2ω seconds by
+sampling nframes frames:
+Wi =
+
+It(i)
+j
+nframes
+j=1
+,
+t(i)
+j
+∈
+h
+t(i)
+target −ω, t(i)
+target +ω
+i
+,
+(9)
+where the nframes sample positions are spaced across the interval. This ensures the video-
+language model receives a fixed-size input that spans the full window duration.
+3.5.2
+Video-Language Temporal Captioning and Scoring
+For each window Wi, we employ a video-language model that incorporates spatio-temporal
+attention to capture motion patterns, action progressions, and inter-frame dependencies across
+the sequence. The temporal caption is generated as:
+ctemporal
+i
+= FVideoLLM(Wi; Ptemporal),
+(10)
+where FVideoLLM denotes the video-language model and Ptemporal is a prompt template de-
+signed to elicit descriptions of activities, motion dynamics, and behavioral patterns. (see
+Supplementary C.3.3 for the full prompts). Following the frame-level scoring procedure, the
+temporal anomaly score for window i is then obtained via the same language model:
+stemporal
+i
+= FLM(ctemporal
+i
+; Ptemporal
+score
+),
+(11)
+with stemporal
+i
+∈[0,1]. Window-level scores are propagated forward in time until the next
+window, so every frame in the evaluation timeline inherits the most recent window-level
+score, mirroring the forward-fill rule used for frame-level scores.
+3.6
+Tier-Aware Adaptive Fusion
+The frame and temporal streams provide complementary evidence: sframe
+t
+captures instanta-
+neous semantics from adaptively sampled frames, while stemporal
+t
+encodes action dynamics
+over multi-frame windows. We fuse them per frame through a combination with a time-
+varying weight λt ∈[0,1]:
+˜st = λt sframe
+t
++ (1−λt)stemporal
+t
+.
+(12)
+Rather than treating λt as a global hyperparameter, we condition it on the sampling tier
+τt ∈{0,1,2} inherited from the motion-adaptive pipeline: base (τt=0, baseline rate rbase),
+
+
+DAWOUD, ET AL: MOG-VLM
+9
+motion (τt=1, TGM-densified to rhigh), and anchor (τt=2, hierarchical refinement at full
+resolution). Tier membership maps to λt through three scalars:
+λt =
+
+
+
+
+
+
+
+λbase,
+τt = 0,
+λmotion,
+τt = 1,
+λanchor,
+τt = 2,
+λbase < λmotion < λanchor.
+(13)
+Each frame’s fusion coefficient λt corresponds to its tier, and trust in sframe
+t
+increases
+monotonically with tier level. Base-tier frames are uniformly sampled and receive the small-
+est coefficient, which shifts emphasis to the temporal stream. Motion-tier frames are densi-
+fied by TGM and receive an intermediate coefficient. Anchor-tier frames are refined hierar-
+chically, receive the largest coefficient, and dominate the fused score. A frame’s tier reflects
+the highest level of processing it receives, baseline-stride and TGM-densified frames are up-
+graded to τt = 2 when they qualify as anchors (Eq. 7). We smooth λt with a 1-D Gaussian
+and clip to [0,1] before applying Eq. 12 to avoid discontinuities at tier boundaries, then apply
+a second Gaussian to ˜st for evaluation stability.
+4
+Experiments
+4.1
+Datasets & Evaluation Metrics
+XD-Violence Dataset [28]. XD-Violence (XD) is a large-scale anomaly detection bench-
+mark that contains 800 videos for testing, covering six violence categories. UCF-Crime
+Dataset [21].
+UCF is a large-scale anomaly detection benchmark with 290 untrimmed
+videos for testing across 13 categories. MSAD [40] is a recent multi-scenario benchmark
+offering 360 test videos across 14 scene types with varied camera perspectives. Shang-
+haiTech Dataset [14]. ShanghaiTech contains 107 testing videos with abnormal events cap-
+tured from fixed cameras. Given its scale and category diversity, we anchor our ablation and
+efficiency analysis on XD-Violence and report supporting numbers on the remaining bench-
+marks. Evaluation Metrics. We report frame-level AUC-ROC, the standard threshold-
+independent metric for video anomaly detection.
+4.2
+Implementation Details
+Motion-Adaptive Sampling. We extract frames at a baseline rate of 1 FPS to establish
+coarse temporal coverage. For TGM computation, we employ multiscale temporal analysis
+with window sizes W = {1,2,4} frames to capture motion patterns at different temporal
+scales. Adaptive z-score anomaly detection uses an exponential moving average (EMA) de-
+cay factor of α = 0.95 for baseline statistics tracking, with anomaly threshold θanom = 2.3
+standard deviations. When motion anomalies are detected, we increase sampling density
+to rhigh = 3 FPS within a temporal window of ∆t = 1 seconds around the detected frame.
+Vision-Language Models. We employ Qwen3-VL-8B-Instruct for frame-level captioning
+and VideoLLaMA3-7B for temporal-level processing, where each input consists of nframes =
+10 frames uniformly sampled from a non-overlapping 64-frame window at the video frame
+rate. Language-Based Anomaly Scoring. For both frame-level and temporal-level, we
+employ Qwen3-4B-Instruct-2507. The scoring prompts employ chain-of-thought reasoning,
+instructing the model to first analyze the caption content, then assess anomaly likelihood on a

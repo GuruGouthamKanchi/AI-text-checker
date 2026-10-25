@@ -1,0 +1,674 @@
+BeNice! Closing Looping’s Inference-Memory Gap via KV-Sharing
+Hayden Prairie1,2,*, Jacob M. Ryan1,*, Taylor Berg-Kirkpatrick1, and Daniel Y. Fu1,2
+1University of California, San Diego
+2Together AI
+{hprairie,jmryan,tberg,danfu}@ucsd.edu
+Abstract
+Looped architectures scale quality while keeping parameter count fixed by repeatedly passing
+activations through the same block of layers.
+During inference, each recurrence generates
+independent KV-caches, causing memory to grow linearly. To address this challenge, prior
+work has proposed KV-sharing (i.e., sharing KV-caches across depth), finding that, in some
+cases, the KV-cache of the final recurrence can be shared with the earlier recurrences without
+quality loss, a property we denote as KV-shareability. However, the mechanisms underlying
+KV-shareability remain poorly understood, with even identically trained looped architectures
+not consistently exhibiting it. In this paper, we study how KV-shareability can be enabled in
+looped models. We propose a two-stage method: in the first stage, we use stochastic depth during
+pretraining, which induces contractive residual dynamics that drive representations toward a
+common limit across recurrences. In the second stage, we propose BeNice!, a post-training
+method that broadcasts the final recurrence’s KV-cache into the first recurrence, training it to
+produce compatible residuals while preserving the original model’s quality. As a result, BeNice!
+enables KV-shareability while matching standard finetuning’s unshared validation perplexity.
+Using BeNice!, we show that KV-sharing is complementary to alternative KV-compression
+methods, composing with memory-efficient sequence mixers (e.g., multi-latent attention, Kimi
+delta attention) and low-precision KV-cache quantization (e.g., fp8, mxfp8, nvfp4). Finally, in
+simulated low-memory, long-context inference, KV-sharing improves cache hit rates by up to
+31.4%, increases throughput by up to 23.6%, and reduces p90 time-to-first-token by up to 83.6%.
+1
+Introduction
+As inference deployments move to the edge [43, 45] and take up a large portion of compute [67],
+looped architectures create a new, predictable avenue to scale quality while keeping parameter
+count fixed [20, 41, 50]. Unfortunately, while looped architectures keep the memory overhead of
+parameters capped, they still create KV-caches at each recurrence [19, 50, 80], causing memory
+overhead to still grow linearly with recurrence count at inference time. One potential direction
+to reduce inference-memory overhead is KV-sharing (i.e., sharing KV-caches across recurrences).
+Specifically, some recent looped models have been shown to support reuse of the final recurrence’s
+KV-cache for all prior recurrences with minimal impact to quality [20, 21], a property we term
+KV-shareability (Figure 1 [right]).
+Unfortunately, the mechanisms underlying KV-shareability remain poorly understood, with more
+recent work reporting significant quality degradation with KV-cache reuse [19, 80]. Moreover, even
+∗Equal contribution. Order decided by Blokus.
+1
+arXiv:2610.31633v1  [cs.LG]  22 Oct 2026
+
+
+KV-Cache Shared
+Recurrence
+Post-Training: BeNice!
+$$(K,V)_1$$
+$$(K,V)_T$$
+$$(K,V)_{T-1}$$
+Inference: KV-Shareability
+KV-Cache Deleted
+Attn
+Attn
+Attn
+$$q_{T-1}$$
+$$q_{T}$$
+$$q_{1}$$
+KV-Caches
+$$(K,V)_1$$
+$$(K,V)_{\boldsymbol{T}}$$
+Attn
+Attn
+$$q_{\boldsymbol{T}}$$
+$$q_{1}$$
+$$\color{#F28E2B} CE (y, p_\theta^{(1 \gets \boldsymbol{T})})$$
+$$\color{#000000}{CE ( y, p_\theta^{(\boldsymbol{T})})}$$
+Standard Loss
+Auxiliary Loss
+Pre-Training: Stochastic Depth
+Batch
+$$\mathrm{Recurrence}\;\; \boldsymbol{T \sim \Lambda}$$
+$$T_1$$
+$$T_2$$
+$$T_3$$
+Seq. 1
+Seq. 2
+Seq. 3
+$$(K,V)_{\boldsymbol{T}-1}$$
+Attn
+$$q_{\boldsymbol{T}-1}$$
+Figure 1: Stochastic Depth, BeNice!, and KV-Shareability. (Left) During pretraining,
+stochastic depth induces contractive residual dynamics. (Middle) BeNice! post-trains by injecting
+the final recurrence KV-caches into the first recurrence. Together, they enable KV-shareability in
+looped models, retaining only the final recurrence’s KV-cache without degrading quality (Right).
+models trained under identical setups can differ in whether they exhibit KV-shareability (see Table 1).
+In this paper, we hypothesize that contractive recurrent dynamics drive residual states toward fixed
+points, whose agreement under shared and unshared KV-caches enables KV-shareability.
+To encourage contractive residual dynamics, we train with stochastic depth, randomly sampling
+depth throughout training (Figure 1 [left]). By requiring low-loss predictions across multiple depths,
+stochastic depth discourages residual drift and promotes convergence across recurrences. Contractive
+residual dynamics are what allow KV-shareability, which we formally analyze and empirically validate
+by showing that replacing intermediate caches with the final cache perturbs the attention output by
+a term bounded by the difference between their input residuals (see Section 3.1).
+Unfortunately, even though stochastic depth creates contractive residual dynamics, it does not
+guarantee that residual states converge to the same fixed point with and without KV-sharing.
+Instead, KV-sharing sometimes introduces token-independent residual errors in the first recurrence,
+shifting the model’s fixed point and harming downstream quality (see Section 3.2).
+To enable KV-shareability, we pair stochastic depth pretraining with a targeted correction of the
+residual errors introduced by KV-sharing. We propose a two-stage method: first, stochastic depth
+pretraining to induce contractive residual dynamics; second, BeNice! to correct first recurrence
+residual errors created from KV-sharing. Specifically, BeNice! jointly optimizes both the first
+recurrence with KV-cache reuse and the final recurrence without reuse (Figure 1 [middle]), balancing
+KV-shareability and base-model quality. To further study KV-sharing with other KV-compression
+techniques, we extended BeNice! to memory-efficient sequence mixers, including multi-latent
+attention (MLA) [13] and Kimi delta attention (KDA) [65], by reusing the final recurrence’s latent
+or state, respectively. Overall, BeNice! unlocks near-lossless KV-cache reuse across recurrences,
+facilitating predictable quality scaling using extended looping [50] while keeping parameter count
+and KV-cache memory constant as depth grows.
+We evaluate KV-shareability and BeNice! on end-to-end quality, compatibility with other KV
+compression methods, and how it accelerates inference workloads:
+• End-to-End Quality. BeNice! improves shared quality by up to 8.35 and 4.56 points for Core
+and Core-extended [38], respectively. Compared with standard finetuning, BeNice! improves
+validation perplexity by 9.75 points when sharing, while matching quality in the unshared case.
+• Complementary to other KV Compression Methods. To evaluate KV-sharing with other
+KV-compression methods, we study its composition with memory-efficient sequence mixers and
+KV-quantization. We find that KV-sharing composes with both MLA and KDA sequence mixers
+and low-precision KV-quantization (e.g., fp8, mxfp4, nvfp4).
+• Accelerating Inference Workloads. Under simulated long-context inference traffic, we observe
+2
+
+
+that memory reductions in KV-sharing improve cache-hit rates by up to 31.4% (8.1 points),
+increasing throughput by up to 23.6%, and reducing p90 TTFT by up to 83.6%.
+2
+Background
+We first provide a brief background on prior looped models (Section 2.1) and the inference overhead
+of language models (Section 2.2). Looped architectures have been widely explored in synthetic
+problem solving tasks [7, 29, 31, 57, 70]; however, our work focuses on looped language models
+[14, 20, 50, 80]. These models differ in where recurrence occur (pre-, mid, post-, or full-looping) [2],
+how it is halted (i.e., explicit router [80] or implicitly within the residual [20, 50]), and how gradients
+are computed (explicit or implicit backpropagation [5]). We study middle-looped models using
+implicit halting and explicit differentiation, with an emphasis on how pretraining for fixed-point
+convergence enables memory-efficient inference. An extended literature review is found in Section B.
+2.1
+Prior Looped Models
+Most prior looped language models [20, 50, 80] follow a middle-looped structure sequentially composed
+of an initial prelude block P, a middle recurrent block R, and a final coda block C. For an input
+sequence s ∈Vn, computation proceeds sequentially as e = P(s), ht+1 = R(ht, e), p = C(hT ),
+where a model is looped T times and h0 is initialized randomly (i.e., h0 ∼N(0, Iσ2); [20, 50]) or
+with e (i.e., h0 ←e; [80]). Intuitively, P maps a sequence s into a latent embedding e ∈Rn×de,
+R iteratively refines a hidden state ht ∈Rn×dh conditioned on e, and then C maps the final hT to
+an output p ∈Rn×|V|. To condition R on e, input injection at each recurrence is often used (i.e.,
+ht+1 = R(A · ht + Be), where A ∈Rdh×dh and B ∈Rdh×de; [20, 50, 73]), and following Prairie et al.
+[50] is constrains ρ(A) < 1 where ρ(·) is the spectral radius, to prevent state explosion.
+During training, prior works either sample depth stochastically [20, 50] or use adaptive computation
+time (ACT) [23]. Specifically, Parcae [50] and Huginn [20] sample a depth T ∼Λ independently
+per sequence/batch, where Λ is a distribution (e.g., Poisson) with mean µrec, training R to produce
+meaningful representations across depths. Ouro [80] uses ACT: a learned router predicts a halting
+probability at each recurrence, with computation stopping once the cumulative probability exceeds a
+threshold [23]. We will show the advantages of training with stochastically sampled depth in this
+work. Finally, to bound training memory, some models use truncated backpropagation through time
+(TBPTT) [20, 50], propagating gradients through only the final µbwd < T recurrences.
+2.2
+Inference Overhead of Looped Language Models
+We will study how memory overhead at inference scales with context length and model depth,
+particularly within the scope of looped architectures [20, 50]. Under uniform numerical precision,
+inference memory M for a P-parameter model, with L context length, D depth, and dkv KV
+width is M = Mθ + Mkv, where model-weight memory is Mθ = O(P) and KV-cache memory is
+Mkv = O(LDdkv). Beyond lowering numerical precision, prior work reduces Mkv overhead primarily
+by shrinking per-layer footprint Ldkv (e.g., MLA [13], GQA [1], KDA [65]), leaving its linear
+dependence on depth D unchanged. For a looped model evaluated with T recurrences, the effective
+depth is D = DP + T · DR + DC. Although looping keeps Mθ fixed as T increases, conventional
+inference stores a distinct KV cache for each recurrence, causing Mkv to grow linearly with T.
+3
+
+
+Model
+Lambada BPB (↓)
+Core (↑)
+Core-Extended (↑)
+Unshared Shared
+∆
+Unshared
+Shared
+∆
+Unshared
+Shared
+∆
+Fixed-Point
+Parcae 140M
+0.962
+0.962
+0.000
+14.07
+14.17
+0.10
+10.13
+10.09
+-0.04
+Parcae 370M
+0.762
+0.764
+0.002
+20.47
+19.85
+-0.62
+13.23
+13.24
+0.01
+Parcae 770M
+0.645
+1.460
+0.814
+25.05
+21.10
+-3.94
+15.69
+13.95
+-1.74
+Parcae 1.3B
+0.601
+2.281
+1.680
+28.76
+21.37
+-7.40
+16.73
+13.48
+-3.25
+Huginn 3.5B
+0.429
+0.429
+0.000
+40.97
+40.53
+-0.44
+29.06
+28.61
+-0.44
+ACT
+Ouro 1.4B
+0.353
+1.280
+0.927
+54.57
+25.17
+29.40
+53.11
+32.13
+20.98
+Ouro 2.6B
+0.301
+0.744
+0.443
+59.78
+26.58
+33.20
+61.42
+37.57
+23.84
+Table 1: Emergence of KV-shareability in Looped Models. Quality of looped architectures
+with and without a shared KV-cache. Observe that KV-shareability is not universal to all looped
+architectures ( Bolded models have KV-shareability ). See Section C for evaluation details.
+3
+Understanding KV-shareability in Looped Models
+In this section, we study KV-shareability in looped architectures. To evaluate KV-shareability, we
+compare shared evaluations, which reuse the final-recurrence cache across all recurrences, against
+unshared evaluations, which retain every recurrence’s cache. Details on reproducing accurate KV-
+sharing inference setups for our benchmarks are provided in Section C.
+We motivate our investigation by observing that KV-shareability is not universal to all looped models
+(see Table 1). We establish that stochastic depth enables contractive recurrent dynamics, which
+we formally analyze and empirically validate allows KV-shareability when fixed points agree under
+shared and unshared KV-caches (Section 3.1). However, stochastic depth alone is insufficient to
+guarantee agreement, leading to models not exhibiting KV-shareability (e.g., Parcae 1.3B in Table 1).
+Analyzing failure cases, we find that KV-sharing creates a token-independent basis shift, causing
+convergence to different fixed points and degraded quality under KV-sharing (Section 3.2).
+3.1
+Stochastic Depth Enables Contractive Residual Dynamics
+In this section, we characterize how stochastic-depth training induces fixed-point convergence, driving
+KV-caches near a common limit and correlating with the emergence of KV-shareability.
+Setup.
+We train Parcae-style [50] models from scratch at four scales (140M, 370M, 770M, and
+1.3B), varying only whether recurrence depth is stochastic (i.e., randomly sampled during training)
+or static (i.e., fixed throughout training). KV-shareability is evaluated on final models and never
+trained for explicitly. Training and evaluation details are in Section G and Section C, respectively.
+Fixed-Point Convergence encourages Shareable KV-Caches.
+Our key insight is that KV-
+shareability often emerges as a downstream consequence of fixed-point convergence in the recurrent
+block R. Specifically, consider a looped architecture in which R is a contraction on the hidden
+state ht, such that ht →ˆh where ˆh is a fixed point (e.g., Parcae [50]; Huginn [20]; see Section F
+for empirical evidence). Since the key and value projections are locally-Lipschitz in h, their caches
+4
+
+
+2
+4
+6
+8
+10
+12
+14
+T
+10
+−1
+10
+1
+10
+3
+Relative Change
+Residual
+2
+4
+6
+8
+10
+12
+14
+T
+10
+−2
+10
+−1
+10
+0
+Relative Change
+Attention
+140M
+370M
+770M
+1.3B
+Static
+Stochastic
+Figure 2: Residuals and Attention Convergence. Relative step-to-step change of the residual
+stream (∥hi−hi−1∥/∥hi−1∥, left) and attention pattern (∥Ai−Ai−1∥/∥Ai−1∥, right) across recurrence
+depth T. Stochastic-depth training exhibits fixed-point convergence, while static-depth does not.
+Size
+∆Val PPL (↓)
+∆Core (↓)
+Stochastic
+Static
+Stochastic
+Static
+140M
+-0.02
+1.31
+0.08
+0.62
+370M
+0.02
+2.70
+0.13
+0.78
+770M
+0.01
+3.10
+0.13
+1.06
+1.3B
+0.01
+2.84
+0.25
+2.00
+Table 2: KV-Sharing Relies on Stochastic
+Depth. We report the quality delta between un-
+shared and shared KV-caching. Extended results
+and training details are in Section G.
+0
+2
+4
+6
+8
+10
+12
+Source Recurrence
+10
+−4
+10
+−2
+Δ Val PPL (↓)
+Last-Recurrence Minimizes KV-Sharing Error
+140M
+370M
+770M
+1.3B
+Figure 3: Final-Recurrence KV is Optimal.
+We find the best quality results are from con-
+verged KV caches.
+also converge: k(l)
+t , v(l)
+t
+→ˆk(l), ˆv(l) for every layer l in R. Moreover, ∥k(l)
+t
+−k(l)
+T ∥is bounded by the
+step-to-step residual ∥ht −ht−1∥(see Section D), as illustrated in Figure 2.
+KV-cache convergence is necessary for KV-shareability: replacing an intermediate cache (k(l)
+t , v(l)
+t )
+with a fixed-point cache (ˆk(l), ˆv(l)) perturbs the attention output by a term bounded by the fixed-point
+residual ∥ˆh −ht∥. To test this, we train Parcae models from scratch using stochastic and static
+depth training. Stochastic depth training induces a contraction∗and coincides with the emergence of
+KV-shareability (Table 2). In contrast, static-depth lacks an incentive to keep intermediate latents
+near a common limit, as reflected in their attention patterns (Figure 2) and shared quality (Table 2).
+Consistent with this mechanism, the final-recurrence cache is empirically the optimal broadcast
+target (Figure 3), as (k(l)
+T , v(l)
+T ) lie closest to a fixed point across all t, minimizing substitution error.
+While KV-shareability is still surprising, it suggests that looped architectures should favor stochastic
+fixed-point training over ACT objectives. By inducing a contraction towards a common fixed point,
+stochastic-depth training can enable KV-shareability without explicitly optimizing for it.
+3.2
+KV-Sharing Fails to Converge to a Common Fixed Point
+We now investigate why contractive residual dynamics alone are insufficient (e.g., 770M and 1.3B
+Parcae use stochastic depth and are fixed-point [Section F], yet lack KV-shareability [Table 1]).
+∗Intuitively, stochastic-depth training induces a contraction because a single set of tied weights must produce
+low-loss latents at many depths under a shared readout, discouraging successive states from drifting.
+5
+
+
+−10
+0
+10
+PC1
+−10
+0
+10
+PC2
+Parcae 140M
+0
+100
+PC1
+−50
+0
+50
+PC2
+Parcae 370M
+0
+250
+PC1
+−200
+0
+200
+PC2
+Parcae 770M
+0
+500
+PC1
+−500
+−250
+0
+250
+PC2
+Parcae 1.3B
+Unshared KV
+Shared KV
+Figure 4: KV-Sharing Failures Converge to Incorrect Fixed Points. We visualize fixed points
+of several tokens after T = 8 test-time recurrence with unshared and shared KV-caches. Models with
+KV-shareability (e.g., 140m and 370m) converge to the same fixed point under both setups, while
+models without KV-shareability (e.g., 770M and 1.3B) do not. See Section H for extended details.
+Cache Compression
+Val. PPL. (↓)
+770M
+1.3B
+Unshared
+11.86
+10.80
+Layer > 1, Recurrence > 1
+11.86
+10.80
+Naive Patching
+11.87
+10.84
+Shared
+34.24
+1.71e4
+Table 3: Pinpointing Parcae Failures. Pre-
+serving first-layer KVs from the first recurrence
+or applying naive patching matches the unshared
+baseline, whereas full KV-sharing fails.
+In Subspace
+Complement
+Random Subspace
+0.0
+0.5
+1.0
+Mean Pairwise
+Cosine Sim
+Error Subspace is Token-Independent
+770M
+1.3B
+Figure 5: KV-Sharing Error Subspace Simi-
+larity. We find that tokens are strongly aligned
+within the subspace, but orthogonal in its com-
+plement and a random 8-dimensional subspace.
+Setup.
+We focus our analysis on the released Parcae models [50], focusing on 770M and 1.3B scales
+that both fail to preserve quality under KV-sharing, yet were trained with stochastic depth and an
+equivalent setup to 140M and 370M Parcae models. We evaluate them using the setup in Section C.
+KV-Sharing Fails to Converge to Similar Fixed Points.
+Figure 4 visualizes the converged
+representation with and without KV-sharing. We quantify the fixed-point agreement by the mean
+relative difference between final latents, ∥h(shared)
+T
+−h(unshared)
+T
+∥/∥h(shared)
+T
+∥.
+Models with KV-
+shareability (e.g., Parcae 140M and 370M in Table 1) converge to similar fixed points, with a mean
+relative difference of at most 1.69%. In contrast, models without KV-shareability (e.g., Parcae 770M
+and 1.3B in Table 1) exhibit mean relative differences reaching up to 177.5%.
+KV-Sharing Failures are Token-Independent Basis Shifts
+Analyzing the source of KV-
+sharing failure, we observe that caching only the first layer KV of the first recurrence, on top of all
+final recurrence caches, restores quality (i.e., Layer > 1, Recurrence > 1 in Table 3). This localizes
+the failure to just the first layer of the first recurrence. More surprisingly, this failure manifests as a
+token-independent basis shift, altering the fixed point under KV-sharing and degrading quality.
+Table 3 and Figure 5 confirm this empirically: by constructing a subspace B from the error delta
+between the first layer output with and without KV-sharing (see Section E for derivation) and
+projecting each token into B, we observe an average projected pairwise cosine similarity of 0.99.
+6
+
+
+This confirms that KV-sharing errors act as a token-independent residual basis shift. To test this,
+we add the mean projected error to the residual after the first layer during shared evaluations (see
+Section E for details). This correction eliminates the need to separately cache the first layer and
+recurrence when sharing (see Naive Patching in Table 3).
+4
+Learning to Share Across Recurrences
+One way to induce KV-shareability is to train directly on KV-sharing rollouts (i.e., sequentially rolling
+out KV-sharing dynamics token-by-token). However, this would be computationally infeasible and
+slow during training. Alternatively, using our analysis in Section 3, we propose a two-stage method
+to enable KV-shareability (as visualized in Figure 1). In the first stage, we follow our observations in
+Section 3.1 and pretrain models with stochastic depth to induce contractive residual dynamics that
+drive KV-caches to a common limit across recurrences (Section 4.1). In the second stage, we correct
+the token-independent basis shift observed in Section 3.2 with BeNice! by optimizing both the first
+recurrence with KV-cache reuse and the standard final recurrence without reuse (Section 4.2).
+4.1
+Stochastic-Depth Pretraining: Enabling Contractive Recurrent Dynamics
+In the first stage of our method, we train with stochastic depth, driving KV-caches to a common
+shareable limit across recurrences and setting the groundwork for KV-shareability based on Section 3.1.
+Specifically, following Prairie et al. [50], we utilize per-sequence stochastic depth training, assigning
+a different depth for each sequence in a batch. This sampling structure was empirically observed
+to reduce loss spikes in prior work. We further follow Prairie et al. [50], sampling per-sequence
+depth from T ∼Λ(µrec), where Λ is a Poisson distribution with mean µrec. Lastly, to keep memory
+bounded during pretraining, we use truncated backpropagation through recurrences, with a backprop
+depth of µbwd = ⌊µrec
+2 ⌋[50].
+4.2
+BeNice! Post-training: Correcting First Recurrence Residual Errors
+In the second stage of our method, we correct token-independent issues that still emerge when
+KV-sharing, even with stochastic-depth training. Using our analysis from Section 3.2, we know
+quality degradations are primarily introduced in the first recurrence (see Table 3). This suggests
+that KV-sharing compatible inference can be recovered by training the first recurrence pass to be
+compatible with future KV-caches, rather than directly creating KV-sharing rollouts. Specifically,
+consider the ordinary T-recurrence predictor p(T)
+θ
+and a hybrid predictor p(1←T)
+θ
+that uses first-
+recurrence queries and residuals with final-recurrence KV (see Figure 1 [middle]). We define the
+BeNice! loss as:
+LBeNice! = CE
+
+y, p(T)
+θ
+
++ γ CE
+
+y, p(1←T)
+θ
+
+(1)
+where CE(·) denotes cross-entropy loss and γ controls auxiliary loss strength. Intuitively, the auxiliary
+term trains the first recurrence to be compatible with future recurrences’ KV-caches, while the
+standard language-modeling term maintains base quality at later depths. Finally, during finetuning,
+we sample T from the same recurrence-depth distribution Λ used during pretraining.
+Additionally, to study if KV-sharing is complementary to other KV compression methods, we
+further generalize BeNice! to multiple memory-efficient sequence mixers. For example, we can
+7
+
+
+Model
+Core (↑)
+Core-Extended (↑)
+Unshared
+Shared
+∆
+Unshared
+Shared
+∆
+140M
+Parcae
+15.50
+14.97
+-0.53
+10.43
+10.10
+-0.33
++ BeNice!
+15.47
+15.61
++0.14
+10.28
+10.19
+-0.09
+370M
+Parcae
+20.74
+15.16
+-5.58
+12.99
+9.68
+-3.31
++ BeNice!
+23.90
+23.51
+-0.39
+14.39
+14.24
+-0.15
+770M
+Parcae
+30.45
+26.92
+-3.52
+19.22
+16.67
+-2.55
++ BeNice!
+30.79
+30.53
+-0.26
+19.18
+19.13
+-0.05
+1.3B
+Parcae
+37.27
+33.94
+-3.33
+25.41
+23.46
+-1.95
++ BeNice!
+37.40
+37.43
++0.04
+25.69
+25.59
+-0.10
+Table 4: BeNice! Maintains Quality and Enables KV-Shareability. We train Parcae models
+[50] and then post-tune with BeNice!. BeNice! maintains and improves base model quality, while
+fully enabling KV-sharing. Best results are bolded.
+extend BeNice! to multi-latent attention [13] and Kimi delta attention [65] by swapping the final
+recurrence’s latent or hidden state, respectively, over the KV-cache (see Section K for details).
+5
+Results
+We evaluate end-to-end quality of finetuning methods for enabling KV-shareability (Section 5.1), its
+composition with other KV compression techniques (Section 5.2), and its latency and throughput
+gains in memory-bound setups (Section 5.3). Overall, we find BeNice! enables KV-shareability,
+improving shared Core and Core-Extended [38] quality by up to 8.35 and 4.56 points, respectively.
+Furthermore, BeNice! is complementary to memory-efficient sequence mixers (e.g., MLA [13],
+KDA [65]) and KV-quantization. Lastly, in synthetic memory-constrained inference workloads,
+KV-shareability improves cache-hit rate by up to 31.4% (8.1 percentage points), increases throughput
+by up to 23.6%, and reduces p90 TTFT by up to 83.6%.
+5.1
+Enabling KV-Shareability while Maintaining End-to-End Quality
+On newly trained Parcae [50], BeNice! enables KV-shareability and improves base quality. BeNice!
+achieves comparable results to standard finetuning, while enabling KV-shareability.
+Setup.
+We follow Parcae [50], training 140M, 370M, 770M, and 1.3B model classes (see Section N for
+definitions) on over 100B climbix [16] tokens. Baselines [50] are tuned by sweeping hyperparameters,
+using our hyperparameter-transfer observations in Section M. We finetune BeNice! with three seeds,
+and then evaluate using a test-time recurrence of T = µrec, following Prairie et al. [50]. Individual
+hyperparameter sweeps are done for standard finetuning and BeNice! (see Section O).
+BeNice! Enables KV-Shareability and Maintains Base Model Quality.
+Table 4 shows
+that KV-sharing failures emerge at all scales, reducing Core and Core-Ext [38] by up to 5.58 and 3.31
+points, respectively. Finetuning with BeNice! further improves base model quality; it also enables
+KV-shareability, improving shared Core and Core-Ext by up to 8.35 and 4.56 points, respectively.
+8

@@ -1,0 +1,743 @@
+Diffusion Language Models for Perplexity-Aware Black-Box Attacks
+Ali Al-Lawati∗, Elsayed Eshra∗, Dongwon Lee, Suhang Wang
+The Pennsylvania State University, USA
+{aha112,eme5375,dongwon,szw494,}@psu.edu; ∗Equal Contribution
+Abstract
+Continuous-space attacks find prompts that trig-
+ger malicious behaviors, such as overthinking,
+in black-box LLMs by sampling or optimiz-
+ing over a low-dimensional Gaussian latent
+space and decoding it to text through a ran-
+dom mapping and nearest-token lookup. Be-
+cause the random mapping is not learned from
+language, its prompts can be highly unnatu-
+ral, and as such easily detectable through input
+guardrails, and the risk estimates they yield are
+not grounded in natural prompts. In this paper,
+we demonstrate that the same continuous latent-
+space framework can be coupled directly to a
+learned generative distribution over language, a
+continuous diffusion language model (dLLM),
+which removes the artificial random mapping
+while preserving the standard-Gaussian latent
+formulation and the downstream sampling or
+optimization procedure. We evaluate this ap-
+proach under two settings: sampling-based esti-
+mation using RareTrap and optimization-based
+search using ThinkTrap. We find that character-
+level perplexity drops from 103–107 to 3–5 in
+RareTrap and from 20–28 to 4.3–5.4 in Think-
+Trap. We also find that model risk estimates
+can differ by an order of magnitude across the
+two mappings.
+1
+Introduction
+A novel class of attacks on black-box LLMs has
+recently been introduced, showing effectiveness
+in triggering malicious behaviors, such as over-
+thinking (Kumar et al., 2025; Li et al., 2025a),
+through optimization (Li et al., 2025b) or sam-
+pling (Eshra et al., 2026a). These attacks, which
+we refer to as continuous-space attacks, introduce
+a low-dimensional continuous latent space and use
+random projection matrices (Rahimi and Recht,
+2007) to map latent vectors to discrete prompts.
+This reduces adversarial prompt search to a con-
+tinuous low-dimensional space while allowing the
+target LLM to be queried only through its outputs.
+Gaussian latent  z ∼(0, I)
+Random mapping
+random matrix Az
++ nearest-token lookup
+rare-script string
+(Hangul, Arabic, CJK)
+char. PPL 103-107
+dLLM-based (Ours)
+Cola-DLM prior
++ Text-VAE decoder
+“...parted money to
+the Pitavumium...”
+char. PPL 3-5
+unchanged
+Sampling/Optimization
+target LLM
+prompt
+length r(y)
+101
+102
+103
+104
+105
+char. perplexity (RareTrap)
+DeepSeek-R1-Llama-8B
+Phi-4-reasoning
+Qwen3.5-9B
+Qwen3-14B
+Mistral-7B-v0.3
+Nemotron-Nano-9B-v2
+GPT-OSS-20B
+GPT-5.4
+Claude Sonnet 4.6
+random
+Ours
+Figure 1: (Top) The dLLM-based mapping substitutes
+random mapping, while the search and the target LLM
+are unchanged. (Bottom) It lowers hit-prompt character
+perplexity on target models.
+We refer to this latent-to-prompt transformation
+as random mapping. Random mappings enable
+tractable continuous-space search on a black-box
+target model by decoupling the search process from
+the target model. However, despite their effective-
+ness, this class of attacks suffers from a key weak-
+ness: since random mappings are not learned from
+natural language, their geometry reflects the statis-
+tical structure of token embeddings rather than the
+structure of actual texts. Consequently, the discov-
+ered prompts from continuous-space attacks do not
+resemble natural language and, as a result, exhibit
+extremely high perplexity that makes them readily
+distinguishable from authentic instructions (Zhang
+et al., 2026). Thus, the prompts that trigger the
+attack may be easily flagged by the input guardrails
+1
+arXiv:2610.31558v1  [cs.LG]  22 Oct 2026
+
+
+of the LLM ecosystem. Moreover, because legiti-
+mate users are unlikely to issue prompts with such
+abnormally high perplexity, the LLM reliability es-
+timates (Eshra et al., 2026a) based on a random
+mapping distribution do not provide an effective
+measure of LLM robustness to inputs that may or-
+ganically occur in real deployment.
+Therefore, it is critical to develop an effective
+framework that generates adversarial and more
+natural prompts that trigger malicious behaviors,
+e.g., overthinking, and that can either estimate how
+likely such behaviors are or search for prompts
+that maximize them. However, there are several
+challenges to developing such a framework: (i) the
+mapping must be deterministic and preserve con-
+tinuity to enable effective optimization and prob-
+ability estimation; (ii) the framework must make
+prompts natural without giving up black-box ac-
+cess. Continuous-space attacks offer a natural foun-
+dation for these tasks, but their effectiveness de-
+pends on the mapping from latent to prompt space.
+To address these challenges, the recent intro-
+duction of continuous diffusion language models
+(dLLMs) motivates us to propose an embarrass-
+ingly simple yet effective framework. A dLLM can
+serve the role of the random mapping by trans-
+forming continuous noise into discrete text through
+a learned generative process, while additionally
+providing a representation shaped by language. Re-
+cent work demonstrates that dLLMs can generate
+almost entirely in continuous embedding space be-
+fore realizing tokens (Hu et al., 2026), leverage
+learned embedding geometry for substantial likeli-
+hood gains (Yang et al., 2026), and formulate gener-
+ation as a mapping from a latent prior to text (Guo
+et al., 2026). As a result, a representation learned
+directly for language modeling potentially offers a
+more natural decoding space for continuous-space
+attacks.
+Therefore, in this paper, we investigate a novel
+problem of whether a dLLM-based representation
+can serve as a drop-in replacement for the ran-
+dom mapping used in continuous-space attacks
+(Figure 1). Using a pretrained dLLM’s standard-
+Gaussian input noise as the latent keeps the map-
+ping space continuous and keeps the attack black-
+box, since the dLLM needs no access to the tar-
+get beyond its outputs.
+To this end, we ask
+two research questions. (RQ1) Can dLLMs pro-
+vide a viable alternative to the random mapping
+in continuous-space attacks? (RQ2) Does using
+a dLLM-based mapping produce attack prompts
+that better resemble natural language? To answer
+these questions, we conduct a focused study using
+RareTrap (Eshra et al., 2026a), a sampling-based
+attack framework for targeted behavior evaluation,
+and ThinkTrap (Li et al., 2025b), an optimization-
+based attack. Together, these frameworks cover
+both sampling- and optimization-based approaches
+to continuous-space attacks, allowing us to eval-
+uate dLLM-based representations across comple-
+mentary search paradigms.
+Our main contributions are:
+(i) We pro-
+pose a plug-in framework in which a dLLM-
+based mapping substitutes the random mapping in
+both sampling- and optimization-based continuous-
+space attacks without changing the search proce-
+dure. RareTrap still finds over-generating prompts
+on nine of ten targets, ThinkTrap makes compa-
+rable progress across mappings, and the mapping
+adds only 3–11% to the compute of ThinkTrap
+(Findings 1, 2, and 4); (ii) We show that the dLLM-
+based mapping’s prompts are far closer to natu-
+ral text. Hit prompts (that trigger over-generation)
+have character-level perplexity of 3–5 in RareTrap,
+against 103–107 under the random mapping, and
+4.3–5.4 in ThinkTrap, against 20–28, and condition-
+ing on the behavior selects more natural prompts
+(Findings 5–6); and (iii) We find that risk esti-
+mates built from unnatural prompts can misjudge a
+model’s risk on natural prompt inputs. The random
+mapping overstates over-generation on most targets
+and understates it on GPT-OSS-20B and Claude
+Sonnet 4.6. It places Claude Sonnet 4.6 about 40×
+below GPT-5.4 in terms of over-generation risk,
+while under the dLLM-based mapping the two are
+within a factor of 1.6 (Finding 3).
+Together, these results show that the mapping
+shapes both the prompts found by continuous-space
+attacks and the behavior their risk estimates char-
+acterize, independently of the search procedure.
+Replacing the random mapping with a pretrained
+dLLM preserves black-box access to the target, and
+adds little computational cost. Furthermore, it turns
+continuous-space sampling methods into more re-
+liable tools to evaluate models, based on natural
+prompts.
+2
+Related Work
+Continuous-space attacks. Continuous-space at-
+tacks build on prompt-tuning methods that opti-
+mize a low-dimensional vector projected by a fixed
+random matrix into a model’s embedding space,
+2
+
+
+using gradients (Wu et al., 2026) or, for black-
+box models, gradient-free search (Sun et al., 2022).
+ThinkTrap (Li et al., 2025b) uses this approach
+to find prompts that induce long reasoning, while
+RareTrap (Eshra et al., 2026a) uses it to estimate
+over-generation and degenerate repetition. Both
+methods decode the projected embeddings into
+their nearest tokens in discrete space (Wen et al.,
+2023). The Gaussian latent therefore defines a
+tractable distribution over prompts. A complemen-
+tary line of work searches a learned generative
+model’s latent space to find inputs that remain close
+to natural data. Zhao et al. (2018) search a GAN’s
+latent space to produce natural adversarial exam-
+ples, while REALISTA (Liang et al., 2026) attacks
+LLMs by searching combinations of latent direc-
+tions, each corresponding to a rephrasing of a given
+prompt. We combine these ideas by preserving the
+Gaussian latent interface of continuous-space at-
+tacks while replacing the random mapping with a
+learned mapping based on dLLMs.
+Continuous diffusion language models. Continu-
+ous dLLMs generate text by starting from Gaussian
+noise in a continuous word-embedding space (Li
+et al., 2022; Dieleman et al., 2022; Hu et al.,
+2026; Yang et al., 2026) or an autoencoder’s latent
+space (Lovelace et al., 2023; Jiang et al., 2026),
+and iteratively denoising it into representations that
+are then mapped to tokens. In this work, we uti-
+lize Cola-DLM (Guo et al., 2026), whose learned
+prior turns standard Gaussian noise into continu-
+ous latent representations that are then decoded
+into tokens. This provides a learned mapping from
+Gaussian inputs to input prompts, similar to how
+random mappings are used in continuous-space
+attacks.
+Readable attacks and perplexity filters. Perplex-
+ity filters (Alon and Kamfonas, 2023; Jain et al.,
+2023) flag unnatural, high-perplexity prompts.
+These filters have motivated attacks that generate
+more natural, readable adversarial prompts (Liu
+et al., 2024; Zhu et al., 2023; Chao et al., 2023;
+Paulus et al., 2025; Guo et al., 2024; Lucas et al.,
+2026). However, these attacks often require gra-
+dients, log-probabilities, or access to an attacker
+LLM to optimize the adversarial prompts. In con-
+trast, we improve the naturalness of continuous-
+space attacks by replacing their random mapping
+with a dLLM-based mapping, while retaining the
+original sampling or optimization procedure. This
+yields substantially lower prompt perplexity with-
+out requiring these additional sources of access or
+z ∼N(0, ID)
+E = Az
+p = NN-decode(E)
+y = M(p), r(y)
+latent
+projection
+decoding
+query & objective
+sampling or optimization proposes the next z
+Figure 2: A latent is mapped to a prompt, the target’s
+response is scored, and the sampling or optimization
+procedure uses the score to propose the next latents.
+supervision, while preserving black-box access.
+Resource exhaustion attacks. Prior work stud-
+ies resource-exhaustion attacks, including sponge
+examples (Shumailov et al., 2021) and Engorgio
+prompts (Dong et al., 2025), as well as overthinking
+attacks on reasoning models (Kumar et al., 2025;
+Li et al., 2025a,b). NaturalSloth (Chen et al., 2026)
+further shows that benign-looking instructions can
+induce excessive computation. More broadly, rare-
+behavior evaluation and red-teaming (Jones et al.,
+2025; Wu and Hilton, 2024; Williams et al., 2026;
+Perez et al., 2022) depend on the distribution from
+which prompts are drawn. Our work keeps the
+attack procedures fixed and changes only this dis-
+tribution, from the one induced by the random map-
+ping to one learned from text.
+3
+Methodology
+Our approach replaces the random mapping used
+by existing continuous-space attacks with a map-
+ping learned by a dLLM, while keeping the down-
+stream search and evaluation procedure unchanged.
+We apply this substitution to two such attacks,
+RareTrap (Eshra et al., 2026a) and ThinkTrap (Li
+et al., 2025b), which pair a random mapping with,
+respectively, a sampling-based rare-event estima-
+tor and a derivative-free optimizer. This controlled
+substitution allows us to isolate the effect of the
+prompt representation.
+3.1
+Preliminaries: RareTrap and ThinkTrap
+Both frameworks, RareTrap and ThinkTrap, search
+for prompts indirectly through a continuous latent
+variable z ∈RD, decoded to a discrete prompt by
+a fixed, deterministic projection, and both reduce
+the target’s response to a scalar behavioral measure
+r(y) (output length, in our experiments). As Fig-
+ure 2 shows, a latent z ∼N(0, ID) is projected
+to embeddings E = Az, decoded to a prompt
+p = NN-decode(E), and sent to the target, where
+A is a fixed random matrix mapping the latent into
+an embedding space. The response y = M(p) is
+scored by r(y). The sampling or optimization pro-
+cedure then uses r(y) to propose the next latents.
+3
+
+
+ThinkTrap draws the entries of A independently
+from N(0, 1/D) for each prompt token. RareTrap
+instead builds A from random orthonormal blocks
+multiplied by the square root of the surrogate’s em-
+bedding covariance, and adds the embedding mean
+as a bias, so projected embeddings are geometry-
+aware: centered and scaled like the surrogate’s
+token embeddings. In both methods, NN-decode
+replaces each projected position with its nearest
+token embedding in a surrogate model’s table (the
+target is assumed black-box). Let hRP denote the
+composition z 7→p from RD to the prompt space
+P, such that the pipeline is r(M(hRP(z))), and
+M is the target model. Both frameworks query M
+only through hRP, and thus require only black-box
+access to the target.
+Sampling-based estimation.
+RareTrap estimates
+the probability that the response length reaches or
+exceeds a severity threshold τ. Defining g(z; τ) =
+τ −r(M(hRP(z))) as the difference between the
+threshold and the response length, we follow Eshra
+et al. (2026a) and write this probability as:
+pF(τ) = P
+
+g(z; τ) ≤0
+
+,
+z ∼N(0, ID).
+Because this event is rare for large τ, RareTrap uses
+Subset Simulation (Au and Beck, 2001) to reach
+pF(τ) through a sequence of increasingly severe
+intermediate thresholds. At each level, it evaluates
+g only at latent vectors z of its choosing, requiring
+access to M solely through the composition M ◦
+hRP. The estimator’s validity thus requires only
+that hRP be a deterministic function of a standard
+Gaussian input.
+Optimization-based search.
+ThinkTrap instead
+treats −r(M(hRP(z))) as an objective to min-
+imize directly.
+It maintains a search distribu-
+tion over z, initialized at N(0, ID), and uses a
+derivative-free optimizer, CMA-ES (Hansen and
+Ostermeier, 2001), to iteratively update that distri-
+bution toward latents whose decoded prompt makes
+the target generate longer output. At every itera-
+tion it only evaluates r(M(hRP(z))) at a batch of
+candidate z’s it proposes, and only requires hRP to
+be a deterministic map from RD to prompts.
+Issues with the random mapping.
+The map-
+ping hRP is not trained to produce natural lan-
+guage. It first applies a random matrix A to the
+latent vector, then uses NN-decode to select a to-
+ken independently at each position, without ac-
+counting for neighboring tokens. As a result, the
+mapping does not favor coherent word sequences,
+RareTrap
+ThinkTrap
+Pipeline
+hRP →hdiff
+hRP →hdiff
+Objective
+g(z; τ)
+−r(y)
+Search method
+Subset Sim.
+CMA-ES
+Changes
+reference dist.
+search landscape
+Table 1: Only hRP is replaced, while objective, search
+method, and target model remain unchanged.
+and prompts drawn from z ∼N(0, ID) exhibit ex-
+tremely high perplexity (§4.3), making them easy
+to flag with perplexity-based filters. For RareTrap,
+this also means that pF(τ) reflects how often unnat-
+ural prompts trigger the behavior. Both limitations
+arise from the mapping itself, not from the search
+method, motivating us to replace the random map-
+ping while leaving the underlying search methods
+unchanged.
+3.2
+Random Mapping →dLLM-based
+Mapping
+We instantiate a learned mapping hdiff using Cola-
+DLM (Guo et al., 2026), which generates text by
+transforming Gaussian noise into continuous text
+representations before decoding them into tokens.
+The dLLM-based mapping replaces both the ran-
+dom projection and nearest-token decoding with
+Cola-DLM. Its input z is the Gaussian noise Cola-
+DLM consumes, whose dimension D is set by the
+framework’s prompt length (Appendix A). We de-
+fine:
+hdiff(z) = Decode (Φψ(z)) ,
+(1)
+where Φψ is Cola-DLM’s learned prior, which
+transforms Gaussian noise into continuous text la-
+tents block-wise, conditioning each block on those
+that precede it, and Decode is Cola-DLM’s de-
+coder from latents to tokens. The input noise fol-
+lows N(0, ID). With inference settings and batch
+size fixed, and greedy decoding, hdiff is a deter-
+ministic function of z and can replace hRP without
+changing the downstream attack procedure. The
+only change is the dimension of the latent search
+space. Unlike NN-decode, which picks each to-
+ken independently, Cola-DLM is trained on text
+and generates each block conditioned on the previ-
+ous ones to yield more natural prompts, while still
+operating in Gaussian space.
+Integration into RareTrap.
+We replace hRP
+with hdiff
+inside g,
+i.e.,
+g(z; τ)
+=
+τ −
+r
+ M(hRP(z))
+
+becomes
+g(z; τ) = τ −r
+ M(hdiff(z))
+
+(2)
+while leaving τ, r, M, and Subset Simulation
+4
+
+
+itself unchanged. Subset Simulation never inspects
+the mapping and only calls g at the z’s it pro-
+poses, so this substitution requires no change to
+the estimator itself except dimension. The result-
+ing pF(τ) is therefore defined with respect to the
+dLLM-induced prompt distribution.
+Integration into ThinkTrap.
+The same substitu-
+tion is made inside ThinkTrap’s objective, i.e.,
+−r
+ M(hRP(z))
+
+−→−r
+ M(hdiff(z))
+
+,
+while leaving the attack objective’s functional form,
+the optimizer (CMA-ES), its initialization, popula-
+tion size, and search budget unchanged. CMA-ES
+only calls the objective at the candidate z’s its own
+update rule proposes, so only the function evalu-
+ated at each query changes. Since ThinkTrap does
+not estimate event probabilities, we compare the in-
+crease in output length realized by CMA-ES under
+each mapping within the same token budget.
+Table 1 summarizes RareTrap and ThinkTrap un-
+der our framework. RareTrap measures how hdiff
+changes the prompt distribution over which rare-
+event probabilities are estimated, and ThinkTrap
+tests whether CMA-ES still makes progress in the
+resulting search space.
+4
+Experiments
+We evaluate the dLLM-based mapping on RareTrap
+and ThinkTrap, measuring its effect on attack ef-
+fectiveness and prompt perplexity relative to ran-
+dom mapping. Section 4.1 describes the protocols,
+baselines, and metrics. Section 4.2 asks whether
+the dLLM-based mapping still finds the behavior,
+what the change of mapping reveals about the mod-
+els, and at what cost (RQ1), and Section 4.3 asks
+whether its prompts read as natural language (RQ2).
+Section 4.4 then discusses two details that affect
+how results compare across the frameworks.
+4.1
+Experiment Setup
+RareTrap protocol.
+We follow RareTrap’s over-
+generation protocol, enabling native thinking mode
+where supported and using greedy decoding with a
+20,003-token output cap. The random mapping
+uses 40-token prompts with D = 200. To ap-
+proximately match their length, the dLLM-based
+mapping uses 47-token prompts, yielding D =
+16 × 47 = 752 because Cola-DLM allocates 16
+latent dimensions per token (Appendix A).
+As with RareTrap, we estimate the probability of
+triggering a response of at least 20,000 tokens using
+Subset Simulation at 1,000 samples per level. We
+keep the top 10% of each level as seeds for the next,
+and run at most five levels. If at least 20 of the first
+200 initial samples satisfy the event, we estimate
+its probability using direct Monte Carlo instead.
+We run the dLLM-based mapping with three seeds
+per target and report the median, with per-seed
+values and 95% intervals in Appendix E. For the
+random-mapping baseline, we use RareTrap’s pub-
+lished results. For API targets, decoding uses the
+provider’s default temperature, and output length
+includes both reasoning and visible tokens.
+ThinkTrap protocol.
+We follow ThinkTrap’s
+overthinking protocol, which decodes the target’s
+responses at temperature 1.0 with a 4,096-token
+output cap. In each CMA-ES generation, 12 la-
+tent vectors are sampled, decoded into prompts,
+and sent to the target, and the search distribution
+moves toward those whose responses are longest.
+At these targets’ output lengths, each generation
+costs about 7,000–23,000 tokens (Table 3), so the
+10,000–100,000-token budgets ThinkTrap reports
+would allow only a few generations, which may be
+too few to measure search progress. We therefore
+use a budget of 300,000 generated tokens, which
+allows 13–40 generations. The dLLM-based map-
+ping’s latent is Cola-DLM’s input noise for one
+generation block, 16 dimensions for each of the
+15 tokens generated after a one-token prefix, so
+D = 240, thus matching ThinkTrap’s 15-token
+prompt. We run both mappings with the same bud-
+get and targets, over three seeds.
+Target LLMs.
+We evaluate RareTrap on ten tar-
+gets, eight open-weight models and two cloud API
+models, as detailed in Appendix B. ThinkTrap
+uses DeepSeek-R1-Distill-Llama-8B (DeepSeek-
+AI, 2025), Qwen3-14B (Yang et al., 2025), and
+Phi-4-reasoning (Abdin et al., 2025).
+Baselines.
+For RareTrap we compare against its
+random mapping with the Qwen3-0.6B surrogate,
+40-token prompts, and D = 200. For all ten targets
+we use the estimates reported by RareTrap and its
+released random-mapping populations (Eshra et al.,
+2026b) (Appendix D), and we score the prompts
+in those populations for the perplexity findings be-
+low (§4.3). For ThinkTrap we rerun its random
+mapping, the plain Gaussian form of hRP (§3.1),
+with our reimplementation of its published map-
+ping, using the same Qwen3-0.6B surrogate and
+ThinkTrap’s D = 20 (Li et al., 2025b).
+5
+
+
+Metrics.
+For RareTrap we report the estimated
+probability pF(τ), and for ThinkTrap the gain
+in output length and the longest output found
+within the budget. We measure prompt naturalness
+using character-level perplexity: PPLchar(x) =
+exp
+ −1
+N log p(x)
+
+,
+where N is the number of characters in prompt
+x and p(x) is its likelihood under the scoring
+language model, rather than token-level perplex-
+ity because tokenizers may split a rare character
+into several byte tokens whose continuations are
+easy to predict, which deflates token-level per-
+plexity. This makes token-level perplexity depend
+on the scorer’s vocabulary and distorts compar-
+isons across prompt families (§4.3).
+We score
+each prompt under the target model itself and,
+to cover the API targets, under a fixed reference
+scorer, Llama-3.1-8B (Grattafiori et al., 2024) (Ap-
+pendix H). We compute perplexity over RareTrap’s
+hits (Tables 4 and 5), where a hit is a prompt whose
+response reaches the threshold. For ThinkTrap,
+we consider the 12 prompts yielding the longest
+outputs for each setup (Table 3).
+4.2
+RQ1 Findings
+We first ask whether each framework successfully
+triggers the behavior when random mapping is sub-
+stituted with dLLM-based mapping (RQ1). We
+test whether dLLM-based RareTrap still reaches
+the rare event with stable estimates, and dLLM-
+based ThinkTrap still raises output length, and at
+what cost in terms of extra compute.
+4.2.1
+Search success
+Finding 1. The dLLM-based mapping finds
+over-generating prompts on nine of ten RareTrap
+targets,
+and its longest ThinkTrap output
+matches or exceeds the random mapping’s on
+every target.
+RareTrap with the dLLM-based mapping suc-
+cessfully triggers the intended behavior on nine of
+the ten targets (Table 2). On Olmo-3, it does not
+reach the threshold within the maximum config-
+ured depth, so we report an upper bound. Under
+ThinkTrap, the dLLM-based mapping achieves a
+best output at least as long as that of the random
+mapping on every target (Table 3). However, it also
+starts from longer outputs on every target, so part
+of this advantage comes from the initial population
+rather than the search process.
+Target
+Random mapping
+dLLM-based (Ours)
+Agree (within 2×)
+Phi-4-reasoning
+1.000
+1.000
+Qwen3.5-9B
+0.385
+0.465
+Qwen3-14B
+3.94 × 10−3
+2.02 × 10−3
+Lower under the dLLM-based mapping
+DeepSeek-R1-Distill-Llama-8B
+0.160
+1.17 × 10−2
+Mistral-7B-Instruct-v0.3
+9.04 × 10−2
+2.11 × 10−3
+Nemotron-Nano-9B-v2
+9.30 × 10−3
+3.88 × 10−4
+GPT-5.4 (reasoning effort xhigh)
+1.31 × 10−2
+4.64 × 10−3
+Olmo-3-7B-Instruct
+1.63 × 10−2
+≤10−5
+Higher under the dLLM-based mapping
+GPT-OSS-20B
+1.82 × 10−2
+0.115
+Claude Sonnet 4.6 (effort high)
+3.35 × 10−4
+3.68 × 10−3
+Table 2: Over-generation probability at τ = 20,000.
+Random-mapping values are from RareTrap (Eshra
+et al., 2026a), and dLLM-based values are medians over
+three runs (full results in Table 8).
+Target
+Map
+Gens.
+Best len.
+Mean len.
+Char. PPL
+DeepSeek-R1-8B
+Random mapping
+34
+4,096
+721 →812
+27.5
+dLLM-based mapping
+28
+4,096
+842 →1,043
+4.3
+Qwen3-14B
+Random mapping
+39
+1,772
+600 →729
+19.7
+dLLM-based mapping
+30
+2,232
+751 →862
+5.4
+Phi-4-reasoning
+Random mapping
+16
+3,396
+1,681 →1,547
+22.7
+dLLM-based mapping
+14
+4,038
+1,915 →1,837
+4.4
+Table 3: ThinkTrap medians over three seeds (per-seed
+values in Table 9). Gens. are generations completed
+within budget. Mean len. of the first →last five genera-
+tions. PPL of the 12 longest-output prompts under the
+target.
+Finding 2. ThinkTrap optimization progresses
+at similar rates across the two mappings, but
+RareTrap probability estimates do not consis-
+tently move in the same direction.
+Under ThinkTrap, the search makes compara-
+ble progress through both mappings (Table 3).
+Mean output length rises under both on DeepSeek-
+R1-Distill-Llama-8B and Qwen3-14B. On Phi-4-
+reasoning, where long responses are observed on
+the initial population, neither mapping increases it
+within the generation budget (§4.4). We observe
+that across seeds the length-gain intervals of the
+two mappings overlap on every target (Table 9).
+Across three seeds, RareTrap’s estimates under
+the dLLM-based mapping agree within a factor
+of 1.5 on seven of the ten targets (Appendix E).
+However, the two mappings do not always agree
+on how likely the behavior occurs.
+4.2.2
+Comparing models across mappings
+As per Finding 2, the two mappings’ RareTrap
+estimates diverge on most targets. Here we ask
+what this divergence means for comparing models.
+Finding 3. The discrepancy between the random
+mapping and the dLLM-based mapping informs
+whether a model over-generates more on natural
+or unnatural prompts.
+Relative to the random mapping, the dLLM-
+6

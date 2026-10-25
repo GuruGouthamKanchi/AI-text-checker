@@ -1,0 +1,518 @@
+Efficient and Optimal Learning of Discrete
+Distributions with Person-Level Privacy
+Gautam Kamath‗
+Mahbod Majid†
+Ankur Moitra‡
+Argyris Mouzakis§
+Jonathan Ullman¶
+Abstract
+We study learning a discrete distribution under person-level differential privacy in the
+batched setting. We are given 𝑛users, each contributing a batch of 𝑚i.i.d. samples from an
+unknown distribution 𝜇over [𝑘], and seek an estimate of 𝜇up to total-variation error 𝛼. We
+give polynomial-time algorithms under both pure and approximate differential privacy. Under
+pure (𝜀, 0)-DP, we achieve
+𝑛= e
+𝑂
+
+𝑘
+𝛼2𝑚+
+𝑘
+𝛼√𝑚𝜀
++ 𝑘
+𝜀
+
+,
+the first polynomial-time pure-DP guarantee for this problem that matches the information-
+theoretic optimum up to logarithmic factors. Under approximate (𝜀, 𝛿)-DP, we achieve
+𝑛= e
+𝑂
+
+𝑘
+𝛼2𝑚+
+𝑘
+𝛼√𝑚𝜀
++ 𝑘+ log(1/𝛿)
+𝜀
+
+.
+At 𝛿= 2−Θ(𝑘), the bound remains e
+𝑂(𝑘) for fixed 𝛼, 𝜀, 𝑚, and failure probability. Our algorithms
+use a new degree-6 sum-of-squares estimator for learning from untrusted batches. Its key
+ingredient is a trace-bounded diagonal majorizer for the difference between the empirical
+covariance of the repaired batch averages and the multinomial covariance predicted by their
+mean. We prove that clean data admit this certificate through semidefinite-programming duality
+and a new application of the stronger symmetric form of Grothendieck’s inequality due to
+Friedland and Lim. The certificate preserves the mean-dependent variance of multinomial
+batch averages, yielding the near-optimal robust rate 𝑂(𝜂
+p
+log(1/𝜂)/𝑚) and providing the score
+required by the privacy reduction. We also prove a statistical query lower bound that rules out a
+uniformly smaller order of error under fixed polynomial SQ resource bounds.
+‗New York University (g@csail.mit.edu). Supported by an NSERC Discovery Grant and an Ontario Early Researcher
+Award.
+†Massachusetts Institute of Technology (mahbod@mit.edu).
+‡Massachusetts Institute of Technology (moitra@mit.edu). Supported in part by DARPA expMath, a Microsoft
+Trustworthy AI Grant, NSF-CCF 2430381, an ONR grant, and a David and Lucile Packard Fellowship.
+§University of Texas at Austin and University of Waterloo (argymouz@cs.utexas.edu). Supported by an Ontario Early
+Researcher Award and a David R. Cheriton Graduate Scholarship.
+¶Northeastern University (jullman@ccs.neu.edu). Supported by NSF CNS-2232692 and CNS-2247484.
+1
+arXiv:2610.31612v1  [cs.LG]  22 Oct 2026
+
+
+Contents
+1
+Introduction
+3
+1.1
+Results . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+4
+1.2
+Techniques . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+7
+1.3
+Related Work
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+11
+2
+Preliminaries
+12
+2.1
+Data Model and Notation
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+13
+2.2
+Probability Simplex . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+13
+2.3
+Concentration Bounds . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+15
+2.4
+Sum-of-Squares . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+16
+2.5
+Subset-Variance Control and the Diagonal-Majorizer SDP . . . . . . . . . . . . . . . .
+17
+2.6
+Robustness to Privacy . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+19
+3
+Robust Estimation for Discrete Batches
+21
+3.1
+Sum-of-Squares Based Robust Algorithm . . . . . . . . . . . . . . . . . . . . . . . . .
+22
+3.2
+Proof of the Main SoS Lemma . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+27
+3.3
+Covariance Closeness Guarantees . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+30
+3.4
+Heterogeneous Clean Batches . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+32
+4
+Private Estimation for Discrete Batches
+33
+4.1
+Properties of the Score . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+36
+4.1.1
+Well-Definedness of the Score Function . . . . . . . . . . . . . . . . . . . . . .
+36
+4.1.2
+Bounded Sensitivity
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+36
+4.1.3
+Quasi Convexity
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+37
+4.1.4
+Efficient Computability
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+37
+4.2
+Problem-Specific Consequences . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+38
+4.2.1
+Efficiently Finding Low Scoring Points . . . . . . . . . . . . . . . . . . . . . . .
+38
+4.2.2
+Volume . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+39
+4.2.3
+Proof of the Pure-DP Theorem . . . . . . . . . . . . . . . . . . . . . . . . . . .
+43
+4.2.4
+Proof of the Approximate-DP Theorem . . . . . . . . . . . . . . . . . . . . . .
+44
+5
+Statistical Query Lower Bound for Discrete Batches
+50
+5.1
+Testing Problem . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+50
+5.2
+SQ Hardness . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+51
+5.3
+From Estimation to Testing . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+54
+5.4
+Binomial Moment Construction . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+54
+References
+57
+A Details for the Approximate-DP Section
+62
+B
+Pure DP Lower Bounds
+68
+B.1
+Projection Notation for Lower Bounds . . . . . . . . . . . . . . . . . . . . . . . . . . .
+68
+2
+
+
+1
+Introduction
+Federated learning [MMR+17, KMA+21] is motivated by the tension between two important goals
+in modern machine learning:
+1. to train machine learning models from large and diverse data sets, and
+2. while doing so, to preserve the data privacy, security, and ownership of the data, since data is
+increasingly distributed across a network of devices.
+Motivated by such considerations, Qiao and Valiant [QV18] introduced the following problem
+which they called learning from untrusted batches. There exists an unknown discrete distribution 𝜇
+on [𝑘] and data is drawn in 𝑛batches, each of size 𝑚. When all batches are drawn i.i.d. from 𝜇and
+can be used without restriction, the empirical distribution achieves total-variation error 𝛼, provided
+that the number of batches satisfies
+𝑛= Θ
+ 𝑘+ log(1/𝛽)
+𝛼2𝑚
+
+,
+where 𝛽is the failure probability. This follows from the classical bound for 𝑛𝑚independent
+samples [Can20].
+However, in federated learning, we can rarely assume that all the batches are sampled i.i.d. from
+𝜇, and instead must consider the possibility that some are corrupted, possibly in an adversarial way.
+To address this question, Qiao and Valiant studied the problem with the twist that an 𝜂-fraction
+of the batches are adversarially corrupted. Again, it is helpful to compare to a naive baseline. If
+we ignore the batch structure and treat the data as a single dataset of 𝑛𝑚samples, then it is easy
+to see that we cannot learn the distribution to accuracy better than 𝜂in total variation distance,
+no matter how much data we have. Qiao and Valiant demonstrated that when we exploit the
+batched structure of the data, it is possible to do much better. In particular, they showed that it is
+information-theoretically possible to achieve error 𝑂(𝜂/√𝑚), and that this is the best possible. Batch
+information makes it possible to robustly distinguish distributions at much finer scale. Without
+batch information, we cannot distinguish two distributions 𝜇and ˜𝜇that are 𝛾-close in total variation
+distance in the face of an adversary, because they can convert one distribution to the other by
+moving just a 𝛾fraction of the probability mass. But when data is batched and the adversary’s
+corruptions must respect the batch structure, the total variation distance between 𝜇⊗𝑚and ˜𝜇⊗𝑚
+grows at least as Ω(min{1, 𝛾√𝑚}), meaning the adversary has to corrupt a much larger fraction of
+batches to make these distributions indistinguishable.
+Qiao and Valiant gave two algorithms that solve the learning from untrusted batches problem,
+running in time exponential in 𝑘or 𝑚, respectively. Jain and Orlitsky [JO20b] gave a semidefinite-
+programming algorithm based on Grothendieck’s inequality that roughly matches the information-
+theoretic bounds and runs in polynomial time. In independent and concurrent work, Chen, Li,
+and Moitra [CLM20a] gave similar algorithms and explored extensions to more complex settings,
+including improving sample complexity when there are shape constraints on 𝜇.
+Qiao and Valiant motivated their model by the need to learn from batches supplied by potentially
+malicious agents. Privacy, communication, and computational costs are also central concerns in
+federated learning. Keeping raw data local does not by itself ensure privacy: shared gradients can
+still leak private training data [ZLH19].
+In this work, we revisit the learning from batches problem using the lens of differential
+privacy [DMNS06]. There is an unknown discrete distribution 𝜇on [𝑘] and data is drawn in 𝑛
+3
+
+
+batches of size 𝑚. As is common in federated learning, we think of each batch of data as belonging
+to one person (e.g. a batch consists of the data on one person’s device), and want to design a
+batch-level differentially private1 algorithm that, informally, hides the information of any one batch
+of data. Formally, two datasets are adjacent if they differ in one person’s entire batch. Batch-level
+privacy protects a person’s entire contribution, whereas sample-level privacy protects only one data
+item. Differential privacy bounds how much the output distribution can change when one person’s
+data is replaced.
+We pursue three goals. First, we require the strong guarantee of pure batch-level differential
+privacy, formally (𝜀, 0)-DP.2 Second, we seek the information-theoretically optimal user complexity.
+Prior work established that, up to logarithmic factors, the optimum for learning to total-variation
+error 𝛼is [GKK+23b, Theorem 43]
+𝑛= e
+𝑂
+
+𝑘
+𝛼2𝑚+
+𝑘
+𝛼√𝑚𝜀
++ 𝑘
+𝜀
+
+.
+Our final goal is to attain this bound in polynomial time.
+Several groups have considered private learning from batches, but none give an algorithm
+satisfying all three goals. Liu et al. [LSY+20] introduced the problem, giving an efficient algorithm
+achieving the weaker notion of approximate differential privacy, or, formally, (𝜀, 𝛿)-differential
+privacy. One can strengthen the privacy guarantee of their algorithm to (𝜀, 0)-differentially private
+by appealing to basic composition of pure differential privacy instead of advanced composition
+of approximate differential privacy [DRV10], but doing so would increase the required number
+of batches by a poly(𝑘) factor and would not achieve optimal sample complexity. Ghazi, Kamath,
+Kumar, Manurangsi, Meka, and Zhang [GKK+23b] presented a pure differentially private algorithm
+with the information-theoretically optimal sample complexity, but their stated construction applies
+private hypothesis selection over an exponentially large cover and is not polynomial-time.
+We use the efficient robustness-to-privacy reduction of Hopkins, Kamath, Majid, and
+Narayanan [HKMN23]. Our contribution is to identify the robust certificate that makes this
+reduction work for discrete batches. It is a single degree-6 sum-of-squares (SoS) certificate that
+represents discarded batches, mean feasibility, and the mean-dependent covariance of multinomial
+batch averages. This certificate simultaneously yields a robust estimator and the score used for
+privacy.
+1.1
+Results
+Our certificate is satisfied by clean data at the right scale, forces every feasible pseudo-mean to
+be close to the truth, remains stable when batches are discarded, and admits polynomial-time
+optimization. It yields the robust estimator in Theorem 1.1 and, through the reduction of Hopkins
+et al. [HKMN23], the private algorithms in Theorem 1.3.
+Theorem 1.1 (Robust SoS Estimation from Discrete Batches). Let 𝜇∈Δ𝑘−1, 𝛽∈(0, 1), and 𝑚∈N. Let
+𝜂> 0 be smaller than a sufficiently small absolute constant. Then there exists a polynomial-time algorithm,
+obtained by solving a degree-6 SoS relaxation, that takes in 𝑛user batches of size 𝑚forming an 𝜂-corruption
+of independent clean batches
+𝐵★
+𝑖= (𝑈★
+𝑖,1, . . . , 𝑈★
+𝑖,𝑚),
+𝑈★
+𝑖,1, . . . , 𝑈★
+𝑖,𝑚
+iid∼𝜇,
+1This notion of privacy is also frequently called person-level or user-level differential privacy in the literature.
+2For readers unfamiliar with the formalism of differential privacy, 𝜀> 0 quantifies privacy loss, and pure differential
+privacy is the most stringent standard variant.
+4
+
+
+and outputs an estimate ˆ𝜇such that, with probability at least 1 −𝛽,
+∥ˆ𝜇−𝜇∥TV ⩽𝑂
+
+𝜂
+p
+log(1/𝜂)/𝑚
+
+,
+provided that
+𝑛= Ω
+ 𝑘+ log(1/𝛽)
+𝛼2𝑚
+
+for 𝛼= Θ
+
+𝜂
+p
+log(1/𝜂)/𝑚
+
+.
+Remark 1.2 (Robustness to per-batch distribution shift). Our robust estimator also tolerates mild
+heterogeneity across the clean batches, with the modified covariance allowance in Corollary 3.11. Namely, in
+addition to the 𝜂-corruption model in Theorem 1.1, one may allow the samples in each clean batch 𝑖to be
+drawn i.i.d. from a distribution 𝜇𝑖satisfying ∥𝜇𝑖−𝜇∥TV ⩽𝜔. In that case the guarantee worsens by only an
+additive 𝑂(𝜔) term, giving
+∥ˆ𝜇−𝜇∥TV ⩽𝑂
+
+𝜂
+p
+log(1/𝜂)/𝑚+ 𝜔
+
+.
+The diagonal-majorizer certificate defines a low-sensitivity, quasi-convex score (Definition 4.5),
+so the efficient robustness-to-privacy reduction gives the private guarantees stated next.
+Theorem 1.3 (Main Result, Private Estimation from Discrete Batches). Let 𝜇∈Δ𝑘−1 be a discrete
+distribution over [𝑘]. Let 𝛼, 𝛽∈(0, 1), 𝜀> 0, and 𝑚∈N. Suppose that the batches are independent across
+users and each of the 𝑛users contributes a batch
+𝐵𝑖= (𝑈𝑖,1, . . . , 𝑈𝑖,𝑚),
+𝑈𝑖,1, . . . , 𝑈𝑖,𝑚
+iid∼𝜇.
+Then the following guarantees hold.
+(i) There is a polynomial-time (𝜀, 0)-DP algorithm that outputs ˆ𝜇satisfying ∥ˆ𝜇−𝜇∥TV ⩽𝛼with
+probability at least 1 −𝛽, provided
+𝑛= e
+𝑂
+ 𝑘+ log(1/𝛽)
+𝛼2𝑚
++ 𝑘+ log(1/𝛽)
+𝛼√𝑚𝜀
++ 𝑘+ log(1/𝛽)
+𝜀
+
+.
+(ii) For every 𝛿∈(0, 1), there is a polynomial-time (𝜀, 𝛿)-DP algorithm with the same accuracy and failure
+probability, provided
+𝑛= e
+𝑂
+
+𝑘+ 𝑘+ log(1/𝛽)
+𝛼2𝑚
++ 𝑘+ log(1/𝛽)
+𝛼√𝑚𝜀
++ log(1/𝛿) + log(1/𝛽)
+𝜀
+
+.
+The e
+𝑂notation suppresses logarithmic factors in 1/𝛼; Remark 4.16 gives explicit bounds,
+including the square-root logarithm in the approximate-DP privacy term. Our pure-DP rate
+matches known lower bounds up to logarithmic factors [LSY+20, GKK+23b]; Theorem B.5 gives the
+dependence on the failure probability explicitly.
+Prior polynomial-time approximate-DP results cover different user regimes. Suppressing
+logarithmic factors other than those displayed below, the relevant privacy terms and user-count
+requirements are
+Liu et al. [LSY+20]:
+𝑘
+p
+log(1/𝛿)
+𝛼𝜀√𝑚
+,
+𝑛≳
+p
+𝑘log(1/𝛿)
+𝜀
+,
+(few users) Esfandiari et al. [EMN22]:
+𝑘log(𝑘/𝛿)
+p
+log(1/𝛿) log(𝑘𝑛/𝛽)
+𝛼𝜀√𝑚
+,
+𝑛≳log(1/(𝛽𝛿))
+𝜀
+.
+5
+
+
+Esfandiari et al.’s few-user guarantee removes the dimension-dependent user floor required by
+Liu et al. Their all-regime result combines this guarantee with earlier algorithms for the high-user
+regime; its larger logarithmic factor is the cost of reaching the few-user regime. For negligible
+approximate-privacy parameters 𝛿= 2−𝑘Ω(1) and fixed 𝛼, 𝜀, 𝑚, the privacy terms of both Liu et al.
+and Esfandiari et al. are superlinear in 𝑘. Our bound has additive dependence on log(1/𝛿) and
+includes a e
+𝑂(𝑘) user term for clean-data feasibility. At 𝛿= 2−Θ(𝑘), our bound is e
+𝑂(𝑘) for fixed
+𝛼, 𝜀, 𝑚, and failure probability.
+Dependence on the batch size.
+For constant failure probability and 0 < 𝜀⩽1, when 𝛼√𝑚⩽1,
+the term 𝑘/(𝛼√𝑚𝜀) absorbs 𝑘/𝜀, so the pure-DP theorem already gives the approximate-DP rate up
+to logarithmic factors. When 𝛼√𝑚⩾1, we cap the internal corruption parameter at a sufficiently
+small constant. The robust error is then at most 𝛼, giving a pure-DP rate of e
+𝑂(𝑘/𝜀).
+The additional 𝑘in the approximate-DP bound is inherent in using our robust estimator at its
+stated accuracy. For any fixed sufficiently small corruption fraction 𝜂, Theorem 1.1 guarantees error
+𝑂(𝜂
+p
+log(1/𝜂)/𝑚) = 𝑂(1/√𝑚), which requires Ω(𝑘) users even without corruptions or privacy.
+Indeed, the nonprivate sample bound Ω(𝑘/(𝛼2𝑚)) becomes Ω(𝑘) at this accuracy. This requirement
+is already implicit in the robust theorem through 𝛼= Θ(𝜂
+p
+log(1/𝜂)/𝑚), and is absorbed by 𝑘/𝜀for
+pure DP. It appears explicitly for approximate DP because the other terms can be smaller than 𝑘.
+For larger batches, the target error 𝛼can be much larger than 1/√𝑚, and approximate DP can
+use fewer than 𝑘users [EMN22]. Exploiting this regime through robustness-to-privacy requires
+a robust guarantee adapted to the coarser target accuracy. Remark 4.17 describes how splitting
+batches reduces the user requirement while retaining additive dependence on log(1/𝛿), and how to
+combine our estimator with that of Esfandiari et al. using only the public parameters.
+On optimality under efficient computation.
+Our polynomial-time robust algorithm achieves
+error 𝑂(𝜂
+p
+log(1/𝜂)/𝑚), while the information-theoretic optimum is 𝑂(𝜂/√𝑚) [QV18]. Such an
+extra
+p
+log(1/𝜂) factor has precedent in statistical query (SQ) lower bounds for robust estimation
+of binary product distributions [DKS22] and Gaussians [DKS17]. In Section 5, we prove a lower
+bound directly for categorical batches. For every fixed integer 𝑡⩾1, we give a query–tolerance
+tradeoff at error a constant 𝑐𝑡> 0 times
+𝜂min
+(
+1,
+r
+log(1/𝜂)
+𝑚
+)
+.
+For all sufficiently large 𝑘depending on 𝑡and every batch size, achieving this error requires either
+a query of tolerance less than 2𝑘−(𝑡+1)/8 or exp(Ω(
+√
+𝑘)) queries. Consequently, no SQ estimator
+with fixed polynomial resource bounds in 𝑘, 𝑚, 1/𝜂achieves uniformly smaller order of error.
+This rate matches the dependence on 𝑚and 𝜂of our robust estimator when 𝑚⩾log(1/𝜂). For
+smaller batches, the contaminated empirical distribution attains error 𝑂(𝜂) with sufficiently many
+samples. Our construction uses moment matching as in [DKS22], with a discrete polynomial
+correction and a balanced subset of the original alphabet.
+If this SQ lower bound captures
+the computational threshold for robust estimation, then the privacy-to-robustness connection of
+Georgiev and Hopkins [GH22] predicts a corresponding threshold for private estimation with
+high success probability. For 0 < 𝜀⩽1 and 𝛽= exp(−Θ(𝑘)), group privacy gives robustness to an
+𝜂= Θ(𝑘/(𝑛𝜀)) fraction of corrupted batches, provided this fraction is sufficiently small. When 𝛼√𝑚
+is small and 𝑚⩾log(1/𝜂), substituting this value into the robust threshold predicts a privacy term
+6
+
+
+of order
+𝑘
+q
+log(1/(𝛼√𝑚))
+𝛼√𝑚𝜀
+.
+This agrees with the explicit privacy term in Remark 4.16, including the square-root logarithm.
+Georgiev and Hopkins derive an analogous conditional square-root logarithmic gap for Gaussian
+mean estimation [GH22, full version, Corollary 4.2]. This interpretation also applies to approximate
+DP for 𝛿⩽𝜀exp(−𝐶𝑘) with a sufficiently large constant 𝐶.
+Remark 1.4 (Robustness of the private estimators to corruptions). For 0 < 𝜀⩽1, both private
+estimators tolerate an 𝜂-fraction of fully corrupted user batches, under their respective sample bounds in
+Theorem 1.3, provided
+𝛼⩾𝐶𝜂
+p
+log(1/𝜂)/𝑚
+for a sufficiently large absolute constant 𝐶and sufficiently small 𝜂. Both algorithms also tolerate clean-user
+distributions 𝜇𝑖satisfying ∥𝜇𝑖−𝜇∥TV ⩽𝜔, provided the algorithm is given 𝜔and the accuracy floor includes
+an additive 𝐶𝜔term. For approximate DP, a sufficient sample bound includes an additional e
+𝑂(𝑘𝜔/(𝛼𝜀))
+term, which is absorbed by the stated bound when 𝛼√𝑚⩽1 or when 𝜀is constant. We prove these claims in
+Corollary 4.18.
+1.2
+Techniques
+We first describe the subset-variance condition that identifies the unknown distribution, then
+encode it by a polynomial-size semidefinite constraint. We define the score used by the privacy
+reduction as the minimum number of batches that must be discarded to satisfy this constraint.
+Subset-variance control.
+Let 𝑦𝑖∈Δ𝑘−1 denote the empirical distribution of the 𝑖th batch. Fix a
+subset 𝑆⊆[𝑘] and let 𝑠∈{0, 1}𝑘be its indicator. Then ⟨𝑦𝑖, 𝑠⟩is simply the fraction of the 𝑖th batch that
+falls in 𝑆, and has variance 𝜇(𝑆)(1 −𝜇(𝑆))/𝑚. We write this variance as 𝑉(𝜈, 𝑠) ≔⟨𝜈, 𝑠⟩(1 −⟨𝜈, 𝑠⟩)/𝑚
+when the underlying distribution is 𝜈.
+A statistically natural goal is to find a set 𝑇⊆[𝑛] with |𝑇| ⩾(1 −𝜂)𝑛such that, for ¯𝜇𝑇≔
+|𝑇|−1 Í
+𝑖∈𝑇𝑦𝑖,
+
+1
+|𝑇|
+Õ
+𝑖∈𝑇
+⟨𝑦𝑖−¯𝜇𝑇, 𝑠⟩2 −𝑉( ¯𝜇𝑇, 𝑠)
+ ⩽𝑂
+𝜂log(1/𝜂)
+𝑚
+
+for every 𝑠∈{0, 1}𝑘.
+(1)
+This condition says that, in every subset direction, the empirical variance should agree with the
+multinomial variance predicted by the empirical mean ¯𝜇𝑇.
+Representing this condition poses a problem: there are exponentially many subset directions,
+and listing all of them does not give the succinct, low-sensitivity certificate needed for privacy.
+Earlier robust algorithms do not directly provide such a certificate. Jain and Orlitsky [JO20b] obtain
+the right rate through filtering and randomized rounding. Their guarantee does not directly supply
+the efficiently computable, sensitivity-one, quasi-convex score needed by the privacy reduction.
+Chen, Li, and Moitra [CLM20a] give an SoS formulation. Bounding only second moments in their
+argument gives 𝑂(
+p
+𝜂/𝑚) error, polynomially worse in 𝜂than our rate. Their higher-moment
+formulation gives error 𝑂(𝜂1−1/𝑡p
+𝑡/𝑚) using degree-𝑂(𝑡) constraints; obtaining 𝑂(𝜂
+p
+log(1/𝜂)/𝑚)
+by this approach uses 𝑡= Θ(log(1/𝜂)) and hence quasipolynomial resources.
+7

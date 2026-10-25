@@ -1,0 +1,594 @@
+CellTrack-Bench: Microscopic Cell Tracking
+Benchmark for Vision–Language Models
+Ilan Theodoro
+Jordão Bragantini
+Loïc A. Royer
+Biohub
+San Francisco, CA
+{ilan.silva, jordao.bragantini, loic.royer}@biohub.org
+Abstract
+Large language models have shown outstanding perfor-
+mance on text-first tasks such as coding, math, and writ-
+ing. Recent efforts are shifting models’ training to include
+scientific problems that often live in highly specialized do-
+mains beyond text, such as protein structure and biological
+images. However, in these scenarios, their general-purpose
+accuracy compared with specialized algorithms remains in
+question. One such domain is cell tracking, which requires
+spatiotemporal awareness of cell dynamics.
+To evaluate
+this, we created a new benchmark, CellTrack-Bench, which
+assesses Vision-Language Models’ (VLMs) cell-tracking-
+related performance against specialized trackers. The full
+benchmark draws from 15 standard cell-tracking datasets
+across four imaging modalities and comprises 1,537 prob-
+lems corresponding to 9,041 cell-linking decisions. We se-
+lected a hard subset requiring greater reasoning effort by
+identifying failures shared across distinct algorithmic track-
+ers.
+With this proposed dataset, we: (i) evaluated dif-
+ferent environment harnesses for VLMs; (ii) benchmarked
+9 frontier closed-source models and 13 open-weight mod-
+els; and (iii) provided a detailed analysis of their failure
+modes.
+Code, the stored model outputs, and a pipeline
+that regenerates the benchmark from the source datasets
+are available at https://github.com/royerlab/
+celltrack-bench.
+1. Introduction
+Cells exhibit complex behaviors, including proliferation,
+differentiation, and migration, throughout their life, result-
+ing in complex biological patterns such as embryonic de-
+velopment [24, 30], tissue mechanics [20], and immune re-
+sponse [25]. To quantify this dynamic cellular behavior at
+This work has been submitted to the IEEE for possible publication.
+Copyright may be transferred without notice, after which this version may
+no longer be accessible.
+the single-cell level, it is necessary to identify individual
+cells and to track them over time [31].
+Cell tracking shares many similarities with Multi-Object
+Tracking (MOT) [12] in the traditional natural imag-
+ing domain, as both involve identifying and tracking ob-
+jects. They’re commonly solved through the paradigm of
+tracking-by-detection, where an algorithm segments or de-
+tects the objects and then links them over time. However,
+cell tracking benefits from specialized solutions [7, 28, 45]
+because objects are almost identical, can be divided, and
+quickly undergo morphological changes, unlike objects in
+natural images (e.g., cars, pedestrians).
+Here, we take a different approach. Rather than dividing
+the problem from the algorithmic point of view, we view
+the operations in two different regimes: (i) a highly me-
+chanical scenario where it’s easy to design an algorithm
+to automatically link the objects, for example, with opti-
+mal matching [13, 21]; and (ii) a highly cognitive scenario
+where one must reason about what is happening within the
+image, considering cell state, if undergoing division, if near
+the boundary of the field of view, and many other experi-
+mental conditions, see Figure 1 for a practical example.
+This motivates the development of a system where ex-
+isting cell tracking algorithms perform the mechanical as-
+pect of tracking, while VLMs perform the highly cognitive
+correction of mistakes made by these approaches. This is
+analogous to a scenario where an annotator is fixing the
+tracking mistakes. To validate this novel paradigm for cell
+tracking, we built CellTrack-Bench from 15 cell-tracking
+datasets across four imaging modalities. Thirteen datasets
+contribute 1,537 problems, amounting to 9,041 linking in-
+stances.
+For CellTrack-Bench, we define three tasks that progres-
+sively change the role of the VLM from directly construct-
+ing associations, to correcting an existing tracking solution,
+to identifying errors for review: (i) cell linking; (ii) track
+repair; and (iii) track inspection.
+In cell linking, the model directly predicts the correspon-
+dence between cells in two consecutive frames. In track
+1
+arXiv:2610.31566v1  [cs.CV]  22 Oct 2026
+
+
+Figure 1. Cognitive aspect of cell tracking. Cell tracking is dom-
+inated by a majority of trivial associations that can be retrieved
+using simple proxies such as a proximity-based one. In (a), we
+show a human specialist cognitive process on one of those links.
+However, in some cases of cell-state changes, such as a division in
+(b), it requires a more global comprehension and understanding of
+biological processes.
+repair, it is given a graph from an algorithmic tracker and
+has to determine the set of link corrections that will fix
+the graph. In track inspection, it detects the tracker de-
+cisions that need review, corresponding to a human-in-the-
+loop triage scenario. Taken together, these tasks highlight
+different aspects of tracking that the model can collectively
+cover the operations needed to correct tracking errors across
+a dataset.
+We apply these three tasks to difficult cell tracking cases
+that are local rather than to complete time-lapse sequences.
+In a normal cell-tracking problem, an algorithm handles a
+complete time-lapse series of microscopy images; in our ap-
+proach, each problem is concentrated on the more difficult
+cell links (see Figure 2). This is necessary since, in most
+datasets having sufficient temporal resolution, cells do not
+move much until a cell-state change takes place, at which
+point their visual appearance may change and they can ex-
+hibit erratic movement and displacement. Although such
+events are rare and more prone to error, the overall tracking
+performance can mask them. We identify the difficult cases
+algorithmically by looking at failures that are common to
+multiple trackers.
+After having chosen the difficult cases and defined the
+tasks, assessing the VLMs also required controlling the way
+in which these problems are presented to the model. For
+this reason, we conducted a study looking at various envi-
+ronment strategies, recently known as harnesses, such as
+the method of presenting cells, the way in which coordi-
+nate information is given, the use of multi-turn settings,
+and visual hints like segmentation outlines. For our study
+we carried out a validation-only investigation into environ-
+mental changes with respect to the VLM and kept the best-
+performing configuration for the test evaluation. We also
+introduce proximity-debiased metrics which separately as-
+sess associations that are not already accounted for by a
+nearest-neighbor rule, together with division-specific and
+graph-level measures. Our protocol also takes into account
+the composition of the dataset and the output-token budget.
+In summary, our contributions are:
+• A benchmark comprising 1,537 hard-mined adjacent-
+frame problems, with 9,041 linking associations spanning
+15 datasets and four imaging modalities, structured as a
+series of tasks concerning cell linking, track repair, and
+track inspection.
+• A controlled evaluation protocol for VLM-based cell
+tracking, including validation-only harness selection,
+proximity-debiased, and division-specific metrics, a Cell
+Tracking Challenge (CTC) comparable graph score,
+dataset-stratified evaluation, and inference budget.
+• A study evaluating 9 frontier closed-source and 13 open-
+weight VLMs by means of a fixed interface, together with
+geometric and specialized tracking references, looking at
+proximity shortcuts, interface sensitivity, and token bud-
+get effects, and task relationships.
+This work is organized as follows. The Section 2 posi-
+tions our work within the literature. In Section 3, we explain
+how the benchmark is created and how we define the evalu-
+ation protocol. Finally, in Section 4 we conduct a discussion
+over the results of closed-source and open-weight models,
+followed by our final considerations in Section 5.
+2. Related Works
+Cell-tracking methods and benchmarks.
+With recent
+advancements in instance segmentation models [18, 40, 41],
+cell-tracking methods have almost exclusively relied on
+the tracking-by-detection paradigm, focusing on association
+(edge) prediction, as TrackMate [21, 43] and btrack [44] on
+the algorithmic side. On the deep learning front, Track-
+astra [14] predicts pairwise cell detection associations us-
+ing a transformer over temporal windows, while HOCT [8]
+2
+
+
+Figure 2. CellTrack-Bench construction. Three trackers with distinct inductive biases run across four imaging modalities; errors are
+ranked by a cross-tracker hard-mining score, all-three-wrong first (illustrated: the division S2 →{T2, T3} that every tracker resolves as
+S3 →T3), then by hardness h(e), backfilled in rank order to a per-dataset cap, split sequence-disjointly, and instantiated as linking, repair,
+and inspection tasks (scales and counts: Section 3.2).
+models the higher-order cell-to-cell interactions among the
+competing candidate links.
+The most widely regarded
+benchmark is the Cell Tracking Challenge (CTC), which
+standardized performance evaluation using lineage-aware
+graph-edit metrics [28, 45] and includes a hidden test eval-
+uated by the organizers. Our proposed benchmark uses a
+similar methodology, assuming cell segmentation is given,
+and evaluating performance based on local associations be-
+tween consecutive frames.
+Because even very effective trackers still produce a few
+mistakes, human-in-the-loop review is often necessary. Pop
+et al. [37] framed the verification as a multi-armed bandit
+problem.
+OrganoidTracker flags suspicious links for re-
+view [23]. Meanwhile, its successor, OrganoidTracker 2,
+computes probabilities for each link [6]. These interactive
+approaches motivate our track repair and track inspection
+tasks, in which a VLM serves as an external assistant that
+either corrects or prioritizes links for revision. Because the
+difficulty of tracking individual cells is heavily skewed to-
+wards easy cells, existing metrics fail to assess the quality of
+hard instances; therefore, CellTrack-Bench extends evalua-
+tion from tracker-specific metrics to a more specific assess-
+ment of the model’s ability to link, repair, and inspect hard
+instances across multiple trackers and imaging modalities.
+Biomedical VLM benchmarks.
+The µ-Bench [27]
+attempts to measure perception and cognition with re-
+spect to light, fluorescence, and electron microscopy. Mi-
+croVQA [9] focuses on expert scientific reasoning using
+single- and multi-image questions and answers. OmniMed-
+VQA [19] evaluates medical image understanding on a
+large scale.
+Both MedFrameQA [47] and general video
+benchmarks like MVBench [26] also look into temporal
+reasoning. These benchmarks primarily consist of classi-
+fication, localization, or question-answering tasks. In con-
+trast, CellTrack-Bench evaluates cell-identity correspon-
+dence, including continuations, divisions, appearances, and
+disappearances, as well as explicit changes to lineage
+graphs.
+Shortcut-resistant and controlled evaluation. Bench-
+mark performance might overestimate a model’s visual un-
+derstanding if the model makes use of linguistic or visual
+shortcuts [10, 15]. In cell tracking, the main shortcut is spa-
+tial proximity: a nearest-neighbor rule accounts for much
+of the association distribution. CellTrack-Bench therefore
+uses sequence-disjoint validation/test splits, implements a
+ranked tracker-error mining, per-dataset sampling caps, and
+uses debiased metrics with respect to proximity or division
+events.
+VLM performance can also depend on how the
+problem is presented and the models’ harness [48]. There-
+fore, the evaluation protocol includes the renderer, the coor-
+dinate exploration interface, the prompt, and the inference
+budget. We selected these components based on validation
+data and kept them fixed during testing. The result is a con-
+trolled diagnostic benchmark for VLM-assisted cell linking
+and track inspection, not a new tracker or training method.
+3. CellTrack-Bench
+In this section, we explain how we constructed CellTrack-
+Bench. First, in Section 3.1 we describe the standard pro-
+tocol used in the Cell Tracking Challenge (CTC) [28, 45],
+and in Section 3.2 we document the data we gathered. Then,
+in Section 3.3, we explain how we use state-of-the-art and
+classical tracking algorithms to identify hard instances that
+may indicate data requiring stronger cognitive abilities, fol-
+lowed by how we transformed these instances into real tasks
+for the VLMs in Section 3.4. In Section 3.5, we then pro-
+pose the metrics and evaluation protocol used throughout
+this work. Finally, we empirically explore prompting and
+harnessing design choices to enable models to find solutions
+more effectively in Section 3.6.
+3
+
+
+BF-C2DL-HSC
+BF-C2DL-MuSC
+DIC-C2DH-HeLa
+PhC-C2DH-U373
+PhC-C2DL-PSC
+Fluo-N2DH-GOWT1
+Fluo-N2DH-SIM+
+Fluo-N2DL-HeLa
+Fluo-C2DL-MSC∗
+Fluo-C2DL-Huh7∗
+Bacteria-cib
+Bacteria-metA
+Bacteria-pheA
+Bacteria-rpsM
+Bacteria-trpL
+Figure 3.
+Example frames from all 15 source datasets, span-
+ning four imaging modalities: bright-field (BF), differential in-
+terference contrast (DIC), phase contrast (PhC), and fluorescence
+(Fluo).
+3.1. Preliminaries
+The tracking problem is formulated as constructing a bi-
+nary forest (i.e., each node can have at most two children)
+from a candidate graph, GC = (VC, EC), which contains
+a superset of valid tracking solutions; throughout the text,
+we will refer to the predicted graph as a solution graph
+Gpred = (Vpred, Epred) and the ground-truth graph com-
+puted from the annotations as Ggt = (Vgt, Egt).
+The nodes V· from all graphs come from each frame t
+of the segmentation sequence (video), such that segments
+from a single frame are V t ⊂VC.
+CellTrack-Bench retains the images, segmentations, and
+lineage annotations from existing tracking datasets but
+changes the unit of evaluation from a complete sequence
+to local transitions, eij ∈Egt ∪Epred between frames t
+and t + 1 where i ∈V t and j ∈V t+1, allowing errors to
+be isolated and diagnosed at the frame level. Each instance
+contains a compact group of source cells that includes the
+specific error, and the linking, repair, and inspection tasks
+share the same local transition (construction detail in Sec-
+tion 3.4).
+3.2. Source Data
+CellTrack-Bench draws from 10 CTC and five bacterial
+datasets (35 sequences), encompassing fluorescence, phase-
+contrast, differential-interference-contrast, and bright-field
+microscopy. Object size, density, morphology, and motion
+vary widely. See Figure 3.
+We partition sequences before ranking or selecting links
+to avoid temporal leakage, so visually adjacent transitions
+from the same lineage cannot appear in both partitions. In
+CTC datasets, we assign sequence 01 to validation and
+02 to test. Similarly, we split the multi-sequence bacterial
+datasets into identifier-ordered halves (per-dataset assign-
+ments in Appendix A). Every benchmark decision is eval-
+uated using the validation dataset, and the test dataset was
+only used for the final leaderboard score.
+3.3. Specialized Trackers as Difficulty Probes
+We argue that trackers’ errors are not independent and likely
+identify mistakes in challenging links. We thus use three
+different trackers with different inductive biases and use
+their shared errors as a hard-mining signal to find such dif-
+ficult links and mitigate uncorrelated wrong links, which
+might be just a tracker’s shortcoming.
+All three trackers jointly fail at 0.28% of the 1.5M can-
+didate links (4,222 links exactly), so the dependence ar-
+gument is supported empirically, as we would expect only
+0.0022% shared errors under independence (33.2; stratify-
+ing by sequence already accounts for some sequences being
+uniformly harder; see Appendix A.3). Moreover, given one
+tracker error, another tracker is 11.3–49.6 times more likely
+to commit the same error. The trackers are:
+• Hungarian Matching on Distance. It is a one-to-one
+assignment baseline based uniquely on centroid distance.
+As such, it doesn’t model appearance and divisions. Al-
+though simple, this baseline scores fairly high on the
+CTC’s LNK metric of 0.888. This reinforces that cell po-
+sition is already a strong tracking feature.
+• Trackastra.
+This tracking method feeds cell-segment
+features as tokens in a transformer network and directly
+learns the association matrix.
+Its LNK score is 0.963.
+4
+
+
+This difference relative to the linear-assignment baseline
+directly shows its ability to predict over a broader range
+of difficulty.
+• HOCT. As a natural extension to Trackastra, this is a
+higher-order method that segments the cells and the edges
+as tokens, it scores 0.946 on LNK.
+Each model is trained and evaluated with k-folds, by
+splitting the 15 tracking datasets into three groups of five
+datasets each. To get the errors for one fold, we train on
+the other two and evaluate on the held-out fold. All track-
+ers are trained using the provided segmentation masks, so
+we focus on association rather than detection quality. Ap-
+pendix A provides the tracker roles and held-out protocol.
+In the next subsection, we detail how we select the errors.
+3.4. Tracking Errors to Benchmark Tasks
+We defined an extended set of candidate edges, Et
+C, for each
+transition, with Et
+C ⊆(V t
+C∪{at})×(V t+1
+C
+∪{dt+1}), where
+at and dt+1 are artificial nodes that represent appearing and
+disappearing nodes. Ground-truth links are Et
+gt ⊆Et
+C and
+tracker m produces Et
+pred,m ⊆Et
+C. An error is a missing
+ground-truth link, a spurious predicted link, or a link with
+incorrect continuation or division semantics. For a link e,
+let zm(e) ∈{0, 1} indicate that tracker m is mistaken at e;
+the hard-mining count is q(e) = P
+m zm(e) ∈{0, 1, 2, 3}.
+The two learned trackers also produce link scores sm(e):
+given binary target y(e), hardness is the mean prediction
+error h(e) = 1
+2 (|sHOCT(e)−y(e)|+|strackastra(e)−y(e)|).
+The Hungarian tracker contributes to q(e) but not to h(e)
+because its distance cost is not a calibrated link probability.
+For every dataset from Section 3.2, we cap top-K scor-
+ers in the hard-mining metric using function q as the main
+classifier and h as the tie-breaker. For the harder selection,
+we select with K = 64. While for the extended bench-
+mark, we select K = 256. Knowing the locations of the
+link errors, we construct the candidate graph by randomly
+selecting a compact neighborhood of 5 cells in the source
+frame t, provided the source error cell is within that neigh-
+borhood. Then the target cells are selected based on the
+original candidate cell for each of the 5 source cells. This
+candidate graph will be used in the following format:
+• Cell Linking. The VLM is informed of all cells in the
+candidate graph and will be instructed to reconstruct the
+correct linkage. Only the links in the hard instances pool
+are evaluated in this scenario.
+• Track Repair. The VLM is given one of the solved track
+graph solutions that originated the hard instances. Given
+its edge set Et
+pred,m, it predicts links to add, At, and
+remove, Rt, which yield the repaired graph Et
+rep,m =
+(Et
+pred,m \ Rt) ∪At; the objective is whether it can im-
+prove the current solution.
+• Track Inspection. The model does not modify the graph,
+but returns the set F t of asserted or rejected tracker deci-
+sions that require review. This can be used as a triage
+system for selecting instances for human or VLM anno-
+tation.
+3.5. Metrics and Evaluation Protocol
+Let D be the set of dataset indices and Id the bench-
+mark items from dataset d, with I = S
+d∈D Id. For task
+τ ∈{link, repair, inspect} and item i, let Yi,τ and bYi,τ be
+the sets of ground-truth and predicted tuples, respectively.
+These are task edge tuples for linking, task edges after ap-
+plying the predicted edits for repair, and complete review-
+decision tuples for inspection. Such that
+F1(bY , Y ) = 2|bY ∩Y |
+|bY | + |Y |
+Overall F1. The primary metric for task τ is the dataset-
+macro average of per-item F1:
+Overall F1τ =
+1
+|D|
+X
+d∈D
+1
+|Id|
+X
+i∈Id
+F1(bYi,τ, Yi,τ).
+For repair, edit-operation F1 is reported separately.
+NN-Residual F1. As we’ve seen in Section 3.3, a sim-
+ple nearest-neighbor policy skews the link evaluation into
+easy instances.
+Hence, a weak tracker naturally learns
+to link the behaviors of the nearest neighbors but fails at
+harder instances, which might require more cognitive ef-
+fort. Nearest-neighbor (NN) matching is therefore a nec-
+essary solving policy for a tracker, but not sufficient. The
+NN-Residual F1 metric is an attempt to remove the NN bias
+from the evaluation by sampling the F1 score only on links
+that are not explained by such heuristic. Let Ui be the task
+candidate-edge tuples for item i, Ni the endpoint pairs re-
+turned by nearest-centroid matching, and π(e) the endpoint
+pair of task edge e. For Ri = {e ∈Ui : π(e) /∈Ni}, and
+R := {i ∈I : Ri̸ = ∅} where the neighborhoods have at
+least one edge not explained by the nearest-neighbor rule, it
+follows
+bY NN
+i
+= bYi,link ∩Ri,
+Y NN
+i
+= Yi,link ∩Ri,
+NN-Residual F1 =
+1
+|R|
+X
+i∈R
+F1(bY NN
+i
+, Y NN
+i
+).
+Division F1.
+Similar to the previous item, divisions
+are infrequent and challenging in the distribution of links
+(see Appendix A). This infrequency can create a low-recall
+problem for this class. To diagnose this, we create this met-
+ric by sampling the F1 score on division links. For Bi =
+5
+
+
+{e ∈Ui : sem(e) = division}, and B = {i ∈I : Bi̸ = ∅},
+bY div
+i
+= bYi,link ∩Bi,
+Y div
+i
+= Yi,link ∩Bi,
+Division F1 = 1
+|B|
+X
+i∈B
+F1(bY div
+i
+, Y div
+i
+).
+Subgraph-LNK. The previous F1 metrics do not use
+the graph-edit metric from the CTC benchmark [29], which
+measures the number of operations (e.g., add or remove el-
+ements) to convert a predicted graph into the ground-truth
+through a weighted sum.
+We adapt the LNK metric to
+the disjoint union of the local neighborhoods following the
+original CTC definition. Let bEi,τ be the edge set induced by
+task τ for item i, and let N i,τ
+miss, N i,τ
+spur, and N i,τ
+sem count its
+missing edges, spurious edges, and matching endpoint pairs
+with incorrect edges semantics relative to Egt,i. Define
+Ci,τ = 1.5N i,τ
+miss + N i,τ
+spur + N i,τ
+sem,
+C0 = 1.5
+X
+i∈I
+|Egt,i|,
+LNKsub,τ = 1 −min{P
+i∈I Ci,τ, C0}
+C0
+.
+Thus, a perfect graph scores 1 and an empty prediction
+scores 0. Each task induces a graph for scoring. For link-
+ing, this is the predicted graph. For repair, it is the pro-
+posed graph after applying the predicted edits. For inspec-
+tion, it is the proposed graph after an oracle replaces every
+flagged source’s outgoing edges with its ground-truth out-
+going edges. Because Subgraph-LNK applies CTC graph-
+edit costs to local neighborhoods with fixed segmentation, it
+is comparable, but not identical, to full-sequence CTC LNK
+(Appendix A.6.1).
+3.6. Prompting and Harness Design
+As described above, a benchmark instance specifies the
+task, the candidate graph, and the ground-truth graph, and
+their respective scene from the original image data, but not
+the way in which this information is presented to a VLM.
+As in previous work [48], we call this harness the envi-
+ronment the models are subject to; it includes the image
+rendering, the prompt template, the localization cues, the
+available tools, the generation budget, the answer schema,
+and the parser. The way these elements are chosen can have
+a significant effect on performance by making cell localiza-
+tion and visual comparison easier or more difficult.
+We look at eight conditions, as summarized in Ta-
+ble 1. Those were chosen considering different ways that
+the model could operate. In each case, we use the same
+frames, candidate graph, task instruction, answer schema,
+and scorer; the only difference is the evidence interface.
+The conditions vary by whether the cells are identified us-
+ing normalized bounding boxes (text-based) or visual out-
+lines (image-based), whether close-up crops are provided
+in advance or requested by the model, and whether the
+global two-frame overview is available. They involve two
+main types of interface: an evidence-supplied single-turn
+interface, which offers annotated frames and pre-rendered
+cell crops, and an evidence-requested multi-turn interface,
+in which the model chooses the areas to examine using
+a crop_and_zoom tool. Condition c7 omits the global
+overview and is considered merely as an information-loss
+ablation. Appendix A.5 illustrates the two interface fami-
+lies and all eight evidence presentations in Figures 4 and 5,
+respectively.
+The harness selection uses only the validation partition
+that is disjoint in sequence. We assess all eight conditions
+on the 205 validation neighborhoods and all three tasks us-
+ing gpt-5.5 with a low level of reasoning effort, which
+yields 4,920 turn-based conversations considering all prob-
+lems, tasks, and conditions. Each request is given a total
+budget of 8,192 tokens for both reasoning and tool use,
+2,048 of which are set aside for the final structured an-
+swer. The selection statistic, reported in Appendix Table 5,
+is the average of the three dataset-macro Overall F1 scores;
+not to be confused with the diagnostic NN-residual link-
+ing F1 shown in Table 1. By this selection statistic, con-
+dition c1 has the highest validation mean, 0.609, compared
+with 0.547 for the next-best condition, c8. The difference
+is 0.061, and the 95% hierarchical-bootstrap confidence in-
+terval is [0.005,0.120]. We therefore chose c1, where the
+model is given an unannotated overview of the two frames
+and the normalized bounding boxes for each candidate cell,
+and it can obtain closer views by using crop_and_zoom.
+A post-hoc check carried out with claude-opus-4.8
+confirms the advantage of tool-bearing coordinate interfaces
+over the evidence-supplied interface, even though it does
+not independently identify c1 as being better than c8.
+We freeze the renderer, prompt, tool implementation,
+parser, token budget, and decoding configuration after se-
+lection. Each model included on the leaderboard is evalu-
+ated using the same c1 harness without making any further
+interface choices, and the test results take no part in the se-
+lection process. Detailed versions of the prompt and tool
+schema are given in Appendices A.4 and A.4.1.
+4. Results and Discussion
+Leaderboard and shortcut resistance.
+The primary,
+shortcut-resistance, and graph-level results are summarized
+in Table 2. The nearest-centroid baseline achieves LNKsub
+of 0.493, showing that cell linking can already be solved
+relatively well by proximity alone.
+The only models to
+overcome this baseline are GPT-5.6 (sol), with 0.767 (∆NN
++0.274), followed by GPT-5.6 (terra), Claude Fable 5,
+6

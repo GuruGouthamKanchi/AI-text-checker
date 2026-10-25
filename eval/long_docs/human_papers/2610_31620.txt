@@ -1,0 +1,805 @@
+Bilingual Language Models Capture Cross-Linguistic Influence in
+Second-Language Reading
+Abderrahmane Issam1, Irene E. Winther2, Stefan L. Frank2
+1Maastricht University, 2Radboud University
+abderrahmane.issam@maastrichtuniversity.nl
+{irene.winther, stefan.frank}@ru.nl
+Abstract
+While monolingual language model (LM) sur-
+prisal is widely established as a predictor of
+reading times, it cannot capture the non-native
+(L2) reading dynamics that are shaped by the
+reader’s first language (L1). In this work, we
+investigate whether the cross-lingual transfer
+within bilingual models aligns with human L1-
+driven biases during L2 reading. We evaluate
+bilingual models on eye-tracking data of read-
+ers from 12 diverse L1 backgrounds reading
+English texts. To isolate L1-specific transfer,
+we compare bilingual models trained on an L1
+that matches the readers’ L1 background to
+both a monolingual English baseline and bilin-
+gual models trained on other L1s. We demon-
+strate that matching the readers’ L1 improves
+the prediction of L2 reading times. This pre-
+dictive advantage is concentrated in late-stage
+eye-tracking measures, modulated by L1-L2
+script overlap, and peaks among intermediate-
+proficiency readers. These findings provide
+evidence that bilingual LMs capture aspects of
+cross-linguistic influence, and that such influ-
+ence is present in L2 reading behavior.
+1
+Introduction
+Language Models (LMs) are increasingly being in-
+vestigated for their alignment with human cognitive
+processing (Armeni et al., 2017; Karamolegkou
+et al., 2023; Niu et al., 2026; Futrell and Mahowald,
+2026). Within this domain, a prominent line of
+work evaluates LMs on eye-tracking data (Dem-
+berg and Keller, 2008; Frank, 2009; Goodkind and
+Bicknell, 2018; Oh and Schuler, 2023; Shain et al.,
+2024; Wilcox et al., 2023), resting on the well-
+established assumption that fixation durations re-
+flect cognitive effort during sentence processing
+(Rayner, 1998; Schotter and Dillon, 2025). Un-
+der surprisal theory (Hale, 2001; Levy, 2008), the
+cognitive effort of processing a word is tied its
+predictability in context (surprisal). While sub-
+stantial work shows that LM surprisal successfully
+predicts native-language (L1) reading times (Smith
+and Levy, 2013; Goodkind and Bicknell, 2018;
+Wilcox et al., 2020; Shain et al., 2024), much less
+is known regarding the ability of bilingual LMs to
+predict reading behavior in a non-native language
+(L2).
+One candidate source of difference between
+native and non-native reading is cross-linguistic
+influence from the reader’s L1 (Kim, 2025;
+Alemán Bañón and Martin, 2021; Odlin, 1989;
+Tokowicz and MacWhinney, 2005; Tokowicz et al.,
+2024; Foucart, 2021). If such influence actively
+shapes L2 reading, a monolingual LM trained
+solely on the target language cannot, by definition,
+capture it.
+In parallel, research in NLP demonstrates that
+multilingual models learn shared cross-lingual rep-
+resentations (Pires et al., 2019; Libovický et al.,
+2020; de Varda and Marelli, 2023), enabling zero-
+shot performance transfer across languages (Wu
+and Dredze, 2019; Conneau et al., 2020b,a). How-
+ever, it remains an open question whether these
+representations translate into predictive biases that
+align with human L2 reading behavior.
+In this work, we investigate whether bilingual
+LMs’ cross-lingual transfer aligns with human
+cross-linguistic influence during L2 reading. We
+evaluate bilingual GPT-2 models on the Multilin-
+gual Eye Movement Corpus (MECO L2) (Kuper-
+man et al., 2025), using eye-tracking recordings
+from participants across 12 diverse L1 backgrounds
+reading English texts. To examine whether the du-
+ration of L1 training affects L2 prediction in the
+models, we train bilingual models across multiple
+Step of Exposure (SoE) stages, varying the mo-
+ment during L1 learning at which L2 English is
+introduced. Hence, we manipulate the duration of
+initial L1 training and the amount of L2 exposure.
+We evaluate model surprisal across four reading-
+time metrics (first fixation duration, gaze duration,
+go-past time, and total fixation duration) to distin-
+arXiv:2610.31620v1  [cs.CL]  22 Oct 2026
+
+
+guish early lexical access from late-stage structural
+reanalysis and text integration (Rayner, 1998; Liv-
+ersedge and Findlay, 2000; Inhoff, 1984).
+Our investigation addresses two primary ques-
+tions. First, we establish whether bilingual mod-
+els’ surprisal explains variance in L2 reading
+times that a monolingual baseline cannot. Second,
+we compare L1-matched bilingual models (where
+the model’s initial training language matches the
+reader’s L1) to L1-mismatched controls (where
+the model is trained on a different L1) to deter-
+mine whether this predictive advantage is driven
+by language-specific transfer rather than a generic
+multilingual effect.
+We find a bilingual predictive advantage concen-
+trated in late-stage reading measures, with little
+to no advantage in early ones. Furthermore, L1-
+matched models outperform mismatched models,
+indicating that the explained variance in L2 reading
+times is L1-specific. Finally, we observe that this
+advantage is modulated by L1-L2 script overlap
+and peaks for L2 readers with intermediate pro-
+ficiency. In summary, these findings provide evi-
+dence that bilingual LMs are capable of modeling
+cross-linguistic influence, and that such influence
+is present in human L2 reading behavior.
+2
+Related Works
+2.1
+Bilingual Models for L2 Acquisition
+The success of multilingual language models has
+prompted research into whether their internal cross-
+lingual transfer mechanisms align with human
+cross-linguistic influence (Mueller et al., 2020; Pa-
+padimitriou and Jurafsky, 2020; Oba et al., 2023;
+Aoyama and Schneider, 2024; Yadavalli et al.,
+2023; Issam et al., 2026; Salhan et al., 2026). To
+simulate the dynamics of L2 acquisition, previ-
+ous studies have modeled bilingual exposure by
+training on unbalanced L1 and L2 data (Dhar and
+Bisazza, 2021; Winther et al., 2021), introducing
+the L2 sequentially (Winther et al., 2021; Constan-
+tinescu et al., 2025; Arnett et al., 2025; Issam et al.,
+2026), freezing L1 representations during L2 expo-
+sure (Papadimitriou and Jurafsky, 2020; Yadavalli
+et al., 2023; Aoyama and Schneider, 2024), or
+using specialized training objectives (Oba et al.,
+2023). Previous research on bilingual LMs has
+investigated various effects of bilingual exposure,
+including syntactic transfer (Oba et al., 2023; Ya-
+davalli et al., 2023; Issam et al., 2026), cross-
+linguistic priming (Frank, 2021; Michaelov et al.,
+2023; Arnett et al., 2025), and L1 influence on L2
+reading times (Aoyama and Schneider, 2024; Sal-
+han et al., 2026). Building on this, we adopt the
+sequential training strategy of Issam et al. (2026) to
+train bilingual models for several L1s, and evaluate
+their ability to predict human L2 reading times.
+2.2
+Evaluating LMs on L2 Reading Times
+While most work evaluating language models on
+eye-tracking data focuses on L1 reading (Dem-
+berg and Keller, 2008; Frank, 2009; Goodkind
+and Bicknell, 2018; Oh and Schuler, 2023; Shain
+et al., 2024; Wilcox et al., 2023), the release of
+bilingual speaker corpora such as CELER (Berzak
+et al., 2022) and MECO L2 (Kuperman et al., 2025)
+has enabled the study of non-native processing
+(de Varda and Marelli, 2022; Berzak and Levy,
+2023; Aoyama and Schneider, 2024; Salhan et al.,
+2026). Most of this work, however, still relies on
+surprisal from monolingual models for the predic-
+tion of L2 reading times.
+A smaller body of work has explored bilingual
+models for this purpose, but critical gaps remain.
+Salhan et al. (2026) lacked monolingual baselines
+and L1-mismatched controls, making it impossible
+to isolate L1-specific transfer. While Aoyama and
+Schneider (2024) included a monolingual baseline,
+they relied on frozen L1 representations and com-
+pared independent model fits rather than testing for
+additional variance explained. Furthermore, both
+studies omitted L1 control groups and restricted
+their evaluations primarily to early reading metrics
+like gaze duration. Our approach systematically
+addresses these limitations. First, we train fully un-
+frozen models, allowing bilingual representations
+to dynamically interact. Second, we measure each
+bilingual model’s variance explained over a mono-
+lingual baseline and test whether L1-matched sur-
+prisal explains variance beyond L1-mismatched
+surprisal within the same regression analysis. Em-
+pirically, we broaden the scope by evaluating L1
+and L2 readers across four eye-tracking measures
+and 12 L1s, further examining how this predictive
+advantage is modulated by reader proficiency and
+script overlap.
+3
+Methods
+3.1
+Bilingual LM Training
+We follow the training approach of Issam et al.
+(2026) to train bilingual GPT-2 LMs for each L1-
+L2 language pair. We acquire multilingual data
+
+
+from FineWeb (Penedo et al., 2024), using the 10-
+billion token sample (sample-10BT) for English
+and the language-specific splits from FineWeb-v2
+(Penedo et al., 2025) for the L1s. We follow the
+approach of Issam et al. (2026) to minimize code-
+switching by filtering out sentences using sentence-
+and word-level language detection. While com-
+pletely mitigating code-switching remains an open
+challenge in NLP (Burchell et al., 2024), this fil-
+tering step is crucial. Because code-switching is
+known to enhance cross-lingual transfer (Qin et al.,
+2020; Wang et al., 2025), leaving it unfiltered could
+inflate the observed L1 influence and contaminate
+the monolingual baseline.
+We vary the Step of Exposure (SoE) as the step
+at which we introduce the L2 to study how ex-
+tended L1 training and delayed L2 exposure affect
+the prediction of L2 reading data. Increasing the
+SoE results in longer initial L1 training and less
+L2 training. Since we train all models for the same
+total amount of training steps, this mimics a com-
+parison between bilingual speakers of the same age
+but with different ages of first exposure to the L2.
+Once the L2 is introduced, we continue training on
+the L1 data by interleaving L1 and L2 sequences.
+This prevents catastrophic forgetting and maintains
+the L1 influence on the L2 (Constantinescu et al.,
+2025; Arnett et al., 2025). Furthermore, it mirrors a
+realistic scenario where non-native speakers main-
+tain strong knowledge of their L1, either due to
+critical period effects (Lenneberg, 1967; Bylund,
+2019) or persistent L1 use during L2 learning.
+We train a SentencePiece tokenizer (Kudo and
+Richardson, 2018) for each L1-L2 pair using a bal-
+anced subset of 10 million lines (5 million lines per
+language). Once trained, this tokenizer is used to
+process the full corpus of each language indepen-
+dently, packing the text into shuffled sequences of
+256 tokens. Finally, from these fully tokenized cor-
+pora, we sample one billion tokens per language for
+LM training and one million tokens for evaluation.
+We train all models for a total of 64k train-
+ing steps. During monolingual training, batches
+consists of monolingual sequences, while bilin-
+gual training consists of interleaved L1 and L2
+sequences in each batch. We train 4 SoE models
+for each L1-L2 pair by initiating bilingual training
+at training step 0, 16k, 32k and 48k. We use a fixed
+learning rate with 5K warmup similarly to Issam
+et al. (2026) to avoid confounding our variables,
+because a linear learning rate would lead to later
+SoE models being trained on L2 with a lower learn-
+ing rate. Finally, besides the bilingual models, we
+train a monolingual baseline using an identical tok-
+enizer to each bilingual pair exclusively on English
+data. In total, 55 GPT-2 models were trained in this
+study (1 monolingual and 4 bilingual SoE models
+for each of the 11 L1-L2 pairs). Detailed training
+hyperparameters are provided in Appendix B.
+3.2
+Evaluation Framework
+We use MECO L2 (Kuperman et al., 2025), which
+provides reading data of English as a second lan-
+guage. The dataset includes eye-tracking data of
+participants from 13 L1 language backgrounds col-
+lected across 16 institutions. Rather than aggregat-
+ing participants by L1, we keep each institution as
+a distinct subset. We include all L1 groups except
+the Basque subset, which we exclude because of
+insufficient data representation in FineWeb-v2. We
+also include the native English (En-UK) subset to
+serve as a native control group. Participants across
+all subsets read the same 12 English texts sourced
+from standardized reading assessments. See Ap-
+pendix A for further details on the subsets.
+We evaluate model predictions against four eye-
+tracking measures:
+1. First Fixation Duration: The duration of the
+first fixation on a word.
+2. Gaze Duration: The sum of all fixation dura-
+tions landing on a word before the eye leaves
+it for the first time.
+3. Go-Past Time: The total time elapsed from
+the initial fixation on a word until the reader’s
+gaze moves to the right of that word. This
+includes all time spent regressing to earlier
+parts of the text.
+4. Total Fixation Duration: The sum of all fix-
+ation durations on a word, including subse-
+quent fixations if the eye returns to it.
+These measures are thought to reflect progressively
+later stages of cognitive processing (Rayner, 1998;
+Liversedge and Findlay, 2000). Early measures,
+such as first fixation duration and gaze duration,
+are assumed to capture initial lexical access, includ-
+ing word form recognition and meaning retrieval.
+Late measures, such as go-past time and total fix-
+ation duration, are thought to reflect post-lexical
+processing, such as structural reanalysis and syntac-
+tic or semantic integration. Separating these met-
+rics allows us to distinguish context-invariant word
+
+
+recognition from higher-level, context-dependent
+processing (Inhoff, 1984; Berzak and Levy, 2023).
+We derive surprisal estimates from every LM
+trained for this study: 1 monolingual and 4 SoE
+bilingual LMs for each of the 11 L1-L2 language
+pairs (excluding native English and Basque sub-
+sets). We calculate the surprisal of each word as
+its negative log-probability. For words segmented
+into multiple subwords by the tokenizer, we sum
+the surprisals of the constituent tokens.
+To evaluate the predictions, we fit linear mixed-
+effects models (LMMs) with crossed random in-
+tercepts for participants and words. The baseline
+fixed effects include log-frequency, word length,
+and word position in the sentence. We also include
+the log-frequency and length of the preceding word
+(wi−1) to account for spillover effects. Word fre-
+quencies are extracted using the wordfreq library
+(Speer, 2022).
+3.2.1
+Model Comparisons
+We test whether bilingual models capture cross-
+linguistic cognitive processing through two main
+comparisons.
+Bilingual vs. Monolingual
+First, we compare
+each bilingual model against the monolingual En-
+glish baseline. Our hypothesis is that if bilingual
+models capture cross-linguistic influence, their sur-
+prisal estimates will yield better predictions of non-
+native reading times than a strictly monolingual
+model’s. To account for inherent differences in
+baseline predictability across the different language
+subsets, we use a pseudo-R2 metric:
+R2
+pseudo = 1 −LLmodel
+LLbaseline
+(1)
+where LLbaseline is the log-likelihood of an LMM
+containing only the surface baseline features. We
+then calculate ∆R2 = R2
+bilingual −R2
+monolingual to
+measure the proportion of explainable variance
+gained by the bilingual model. We evaluate the
+LMs on the respective MECO L1 subsets and the
+native En-UK. The native subset serves as a control
+group to verify that any observed advantage of a
+bilingual model is specific to L2 reading rather than
+a general improved fit to reading times.
+Matched vs.
+Mismatched Bilingual Models
+Second, we compare matched bilingual LMs to mis-
+matched bilingual LMs. A bilingual LM is consid-
+ered matched if its L1 matches the native language
+of the evaluated MECO subset; all other bilingual
+LMs are considered mismatched. If bilingual LMs
+develop L1-specific transfer effects similar to those
+of human readers, matched LMs should predict
+reading times more accurately than mismatched
+LMs. To quantify this difference, we calculate
+the difference in log-likelihood (∆LL) between
+two non-nested LMMs: one using surprisal from a
+matched bilingual LM and the other using surprisal
+from a mismatched LM.
+To compute formal p-values, we also conduct
+nested regression model comparisons. We fit an
+encompassing model (mboth) containing both the
+matched and mismatched surprisal predictors. We
+then compare this encompassing model against re-
+stricted models containing either the matched or
+the mismatched predictor alone. All three mod-
+els use identical baseline covariates and random
+effects structures, differing solely in their surprisal
+terms. The unique explanatory variance added by
+matched surprisal is calculated as LL(mboth) −
+LL(mmismatch). Because mmismatch is nested within
+mboth, we evaluate statistical significance of this
+added variance using a likelihood ratio test.
+3.3
+Proficiency Modulation Analysis
+To evaluate how reader proficiency modulates the
+predictive advantage of bilingual surprisal over
+monolingual baselines, we employ a two-stage
+regression inspired by Berzak and Levy (2023).
+In the first stage, we isolate reader-specific sur-
+prisal sensitivity across eye-tracking measures by
+fitting individual participant regressions that con-
+trol for baseline features. For each reader, we com-
+pute the bilingual explanatory advantage (∆R2 =
+R2
+bilingual −R2
+monolingual). In the second stage, we
+model ∆R2 as a function of reader L2 English
+proficiency, measured via LexTALE (Lemhöfer
+and Broersma, 2011). To ensure orthogonal lin-
+ear and quadratic predictors, proficiency scores
+are mean-centered. We estimate parameters us-
+ing Weighted Least Squares (WLS), where each
+reader is weighted by their total observation count.
+To test whether proficiency moderation is linear
+or non-linear, we compare a linear model (∆R2 ∼
+prof) with a quadratic model (∆R2 ∼prof+prof2).
+We select between them using ∆AIC and test the
+quadratic coefficient using HC3 heteroskedasticity-
+consistent standard errors (MacKinnon and White,
+1985). To rule out confounding by differences
+across L1 subsets, we then refit the quadratic model
+with L1-subset fixed effects and standard errors
+clustered by L1 subset, and check whether the
+
+
+0
+16k
+32k
+48k
+SoE
+1.5
+0.0
+1.5
+R2
+pseudo (×10
+4)
+FIRST FIXATION
+0
+16k
+32k
+48k
+SoE
+4
+0
+4
+GAZE DURATION
+0
+16k
+32k
+48k
+SoE
+5
+0
+5
+10
+GO-PAST
+0
+16k
+32k
+48k
+SoE
+5
+0
+5
+TOTAL FIXATION
+L1 Readers (EN-UK) Mean (± 95% CI)
+L2 Readers (Main) Mean (± 95% CI)
+Individual Traces
+Figure 1: Difference in explained variance ∆R2
+pseudo (scaled by 104) in four reading measures as a function of SoE.
+The blue line represents the mean across all L2 reader subsets, while the red line denotes the native English (En-UK)
+control group. Faint lines indicate individual model evaluations. Positive values indicate a predictive advantage for
+the bilingual surprisal. With the exception of first fixation duration, bilingual surprisal consistently provides greater
+predictive power for L2 than L1 readers.
+quadratic term remains significant.
+4
+Results and Analysis
+4.1
+Are L2 Models Better at Predicting L2
+Data than Monolingual Models?
+Figure 1 shows the difference in explained vari-
+ance (∆R2
+pseudo) between the matched bilingual
+models and the monolingual baselines across four
+SoE stages. The results show a difference between
+early and late reading measures.
+For first fixation duration, the bilingual surprisal
+provides no predictive advantage for L2 readers.
+The mean ∆R2
+pseudo for L2 readers starts near zero
+and drops slightly below zero at the SoE=48k. In
+contrast, for the later reading measures, the bilin-
+gual model yields a clear advantage. In both gaze
+duration and go-past time, the L2 mean is strictly
+positive and increases consistently with SoE. In
+total fixation time, the L2 mean remains positive
+and stable across all SoEs.
+Crucially, across gaze duration, go-past time,
+and total fixation duration, the native English con-
+trol group stays close to zero and consistently be-
+low the L2 mean. This gap confirms that the bilin-
+gual models capture variance specific to non-native
+reading behavior, rather than offering a generic
+predictive improvement for all readers.
+4.2
+Are Matched Models Better Than
+Mismatched Models?
+Figure 2 illustrates the non-nested per-word ∆LL
+between LMMs using matched and mismatched
+bilingual surprisals. To control for evaluation bi-
+ases or tokenization artifacts, we include a monolin-
+gual baseline derived by treating each L1 monolin-
+gual LM as matched and comparing it against the
+other monolingual LMs. If the matched advantage
+is genuinely driven by bilingual cross-linguistic
+transfer, it should exceed this strictly monolingual
+baseline. Except for first fixation duration, the
+matched bilingual models consistently outperform
+their mismatched counterparts, and this advantage
+strengthens in later processing measures. Notably,
+go-past time is the only metric exhibiting a clear up-
+ward trend in matched model advantage as SoE in-
+creases. Although there is variance among individ-
+ual subset traces (representing the mean per-word
+∆LL between matched and mismatched models
+for each L1 subset), the matched bilingual models
+generally exceed the monolingual control.
+The nested model results in Table 1 show
+whether this matched advantage provides unique
+explanatory variance. By evaluating both predic-
+tors simultaneously, we can assess which model
+contributes a greater share of unique information
+based on their mean ∆LL and significance ratios.
+These nested comparisons perfectly align with our
+non-nested findings. During early lexical access
+(first fixation duration), matched models offer no
+L1-specific predictive advantage, contributing less
+unique variance than mismatched models. In con-
+trast, across all later reading measures (gaze du-
+ration, go-past time, and total fixation duration),
+the matched models contribute substantially more
+unique log-likelihood and achieve statistical signif-
+icance at much higher rates than their mismatched
+counterparts.
+Ultimately, even though the surprisal estimates
+from different bilingual models are highly corre-
+lated (see Appendix C for surprisal correlations),
+the matched models consistently explain signifi-
+
+
+0
+16k
+32k
+48k
+SoE
+0.8
+0.0
+0.8
+Per-Word LL (×10
+4)
+FIRST FIXATION
+0
+16k
+32k
+48k
+SoE
+1.5
+0.0
+1.5
+GAZE DURATION
+0
+16k
+32k
+48k
+SoE
+2.5
+0.0
+2.5
+5.0
+GO-PAST
+0
+16k
+32k
+48k
+SoE
+2
+0
+2
+4
+TOTAL FIXATION
+L1 Mono Baseline (Mean ± 95% CI)
+L2 Bilingual Mean (± 95% CI)
+Individual Traces
+Figure 2: Per-word ∆LL (scaled by 104) between matched and mismatched models in four reading measures as
+a function of SoE. Solid lines and shaded bands represent subset means with 95% confidence intervals for the
+bilingual models (blue) and monolingual baseline (red), with faint blue lines indicating individual subset evaluations.
+Higher values indicate a stronger predictive advantage for the matched model relative the mismatched one. With the
+exception of first fixation duration, bilingual models match or outperform the monolingual baseline.
+Metric
+Mean ∆LL
+Sig. Ratio (p < 0.05)
+Match
+Mism.
+Match
+Mism.
+First Fixation
+1.07
+1.33
+17.0%
+23.2%
+Gaze Duration
+3.23
+1.78
+55.0%
+30.4%
+Go-Past
+3.32
+1.69
+53.7%
+30.8%
+Total Fixation
+6.53
+4.00
+77.3%
+64.3%
+Table 1: Nested model comparisons (mboth) evaluating
+the unique contribution of matched versus mismatched
+bilingual surprisal averaged across all SoE models and
+language subsets. With the exception of First Fixation,
+matched models’ mean ∆LL and significance ratio are
+higher than the mismatched models.
+cantly more unique variance during late-stage read-
+ing. These results indicate that bilingual LMs suc-
+cessfully capture aspects of L1-specific structural
+processing.
+4.3
+The Role of Script Overlap
+A primary structural dimension separating the eval-
+uated subsets is writing system overlap with En-
+glish. We examine this effect by partitioning the
+results from Figure 2 by script. The Latin script
+group consists of 8 MECO subsets across 7 L1s,
+while the Non-Latin group consists of 6 subsets
+across 4 L1s (with the exception of go-past time,
+where the ch_s subset is missing). See Appendix
+A for details on the L1 subsets and their scripts.
+This analysis is motivated by prior NLP research
+showing that shared scripts facilitate cross-lingual
+transfer in LMs (Dhamecha et al., 2021; Moosa
+et al., 2023), as well as psycholinguistic studies ex-
+amining the processing dynamics of reading across
+different writing systems (Miwa et al., 2013; Taylor
+and Mukai, 2023; Arab, 2026).
+Figure 3 illustrates the resulting per-word ∆LL.
+In first fixation duration, neither script group dis-
+plays a bilingual advantage. Latin bilingual models
+hover near zero close to the monolingual baseline,
+while Non-Latin bilingual models decline sharply
+below zero as SoE increases, dropping well be-
+low their within-group baseline. In gaze duration,
+the groups diverge. Latin bilingual models remain
+consistently positive and comfortably above the
+monolingual baseline, whereas Non-Latin models
+hover near zero and below the baseline across all
+SoEs. For later measures (go-past time and total fix-
+ation duration), however, bilingual models in both
+groups perform comparably to or better than the
+monolingual baseline. Non-Latin subsets also dis-
+play a pronounced, steady upward trend in go-past
+time as SoE increases.
+4.4
+Effect of Reader Proficiency
+Previous work demonstrates that L2 proficiency
+non-monotonically modulates the predictive power
+of monolingual surprisal (Berzak and Levy, 2023).
+Inspired by this finding, we ask a novel question:
+how does the added predictive power of bilingual
+surprisal change with reader proficiency? We hy-
+pothesize an inverted-U relationship for this bilin-
+gual predictive advantage over the monolingual
+baseline. This advantage should be minimal at
+both extremes of the proficiency spectrum: begin-
+ners rely primarily on shallow, context-independent
+features such as word frequency (Diependaele
+et al., 2013; Berzak and Levy, 2023), while ad-
+vanced readers no longer depend on L1 transfer
+as their reading behavior approaches that of a na-
+tive speaker (Chen et al., 2026). Consequently, the
+bilingual advantage should peak for intermediate
+readers, who possess enough fluency to engage in
+contextual prediction but still rely heavily on L1
+
+
+0.8
+0.0
+0.8
+FIRST FIXATION
+1.5
+0.0
+1.5
+GAZE DURATION
+2.5
+0.0
+2.5
+5.0
+GO-PAST
+2
+0
+2
+4
+TOTAL FIXATION
+Latin
+0
+16k
+32k
+48k
+SoE
+0.8
+0.0
+0.8
+0
+16k
+32k
+48k
+SoE
+1.5
+0.0
+1.5
+0
+16k
+32k
+48k
+SoE
+2.5
+0.0
+2.5
+5.0
+0
+16k
+32k
+48k
+SoE
+2
+0
+2
+4
+Non-Latin
+Per-Word LL (×10
+4)
+L1 Mono Baseline (Mean ± 95% CI)
+L2 Bilingual Mean (± 95% CI)
+Individual Traces
+Figure 3: Per-word ∆LL (scaled by 104) between matched and mismatched models in four reading measures
+as a function of SoE, grouped by Latin (top) and Non-Latin (bottom) L1 scripts. Solid lines and shaded bands
+denote subset means with 95% confidence intervals for the bilingual models (blue) and monolingual baseline (red).
+Faint blue lines indicate individual subset traces. Early measures (First Fixation and Gaze Duration) reveal a clear
+divergence in predictive behavior between the two script groups.
+syntactic biases during processing.
+As illustrated in Figure 4, while early lexical
+access measures maintain a linear relationship (all
+pquad > 0.05), late processing measures (go-past
+time and total fixation duration) display a pro-
+nounced inverted-U trajectory that strongly favors
+the quadratic polynomial (∆AIC > 2.0 for SoE
+≥16k; Appendix D.2).
+Crucially, this curva-
+ture remains robust: go-past time shows signifi-
+cant quadratic modulation across all SoE (0.001 <
+pquad < 0.05), and total fixation duration reaches
+significance for SoE ≥16k (pquad < 0.05). The
+bilingual advantage peaks for intermediate readers
+(65–80% LexTALE) and descends toward zero for
+the most advanced readers (> 90% LexTALE).
+Our hypothesis of an inverted-U trajectory is
+thus confirmed, though it applies exclusively to
+late measures where contextual integration and syn-
+tactic reanalysis are prominent. Importantly, this
+pattern is not an artifact of LexTALE: evaluating a
+composite proficiency index extracted via Principal
+Component Analysis (PCA) across all five profi-
+ciency tests in MECO (see Appendix D.3) repli-
+cates this trajectory, confirming robust significance
+of non-monotonic moderation in go-past time (all
+SoEs) and total fixation duration (SoE=16k).
+To contextualize this result, Appendix D.1 vi-
+sualizes the absolute explanatory power (R2) of
+each model independently. As expected, both mod-
+els exhibit an inverted-U trend across all metrics,
+corroborating Berzak and Levy (2023) by show-
+ing that general contextual prediction peaks for
+intermediate learners. Crucially, however, Figure 4
+demonstrates that the differential advantage of the
+bilingual model (∆R2) follows this non-linear tra-
+jectory strictly during late measures. This indi-
+cates that while intermediate readers generally rely
+on broad contextual expectations, their late-stage
+processing is more strongly influenced by native-
+language biases.
+5
+Discussion and Conclusion
+In this work, we investigated whether bilingual
+LMs align with human cross-linguistic influence
+during L2 reading. Our findings demonstrate that
+bilingual LMs successfully capture aspects of L1-
+specific effects on L2 processing. Crucially, our
+two distinct evaluation frameworks—comparing
+bilingual LMs against a monolingual baseline
+(§4.1), and contrasting L1-matched against L1-
+mismatched bilingual LMs (§4.2)—yield consis-
+tent results.
+Across both comparisons, we observed a pro-
+gressive shift in predictive performance from early
+to late reading measures. The predictive advan-
+tage of bilingual surprisals is absent in first fixation
+duration, begins to emerge in gaze duration, and
+becomes most pronounced in late-stage measures

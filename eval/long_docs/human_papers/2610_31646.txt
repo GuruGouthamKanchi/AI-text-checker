@@ -1,0 +1,605 @@
+Low-Bit N-Gram Embeddings for Language Models
+Stephen Chung
+Wenyu Du
+DualverseAI
+Many recent open-weight language models use n-gram embedding tables to improve performance.
+These tables store learned representations of short token sequences, such as pairs or triples of con-
+secutive tokens, which the model retrieves during processing. However, they can require substantial
+memory: DeepSeek-V4.1-Flash, for example, allocates 196 billion parameters to its Engram n-gram
+memory. We therefore investigate whether this memory cost can be reduced while preserving the
+performance improvement that the tables provide. We propose storing n-gram embeddings at low
+precision and systematically investigate different quantization methods and bit allocations across ta-
+bles. Across nanochat-, Llama-, and GPT-2-family models trained from scratch, four-bit tables save
+approximately 75% of table memory while preserving more than 99% of the validation-loss improve-
+ment from adding the tables. Using fewer bits leads to a larger drop in performance, although we
+find that a short fine-tuning phase recovers a significant part of this loss. In addition, reinvesting
+the saved memory in larger tables can improve performance beyond that of the original full-precision
+tables while still using less memory. These table memory savings also extend to large existing models:
+on DeepSeek-V4.1-Flash and Qwen3.8-Flash-Next, low-bit tables save 47–55% of table memory, with
+perplexity increases of less than 1.2% and largely preserved downstream task performance. These
+findings establish low-bit precision as a practical way to reduce the memory requirements of n-gram
+embeddings and use the saved capacity to improve model performance.
+Date: 22-Oct-2026
+Correspondence: info@dualverse.ai
+1
+Introduction
+Recent studies have shown that n-gram embedding tables can improve language model performance with little
+additional computation [1, 2]. These tables store learned representations of short token sequences, such as
+pairs or triples of consecutive tokens. At each position, the model retrieves the corresponding representations
+to supplement its processing of the text. Because each lookup accesses only a few embeddings, the tables
+can add substantial model capacity while keeping the computation per token small. This approach has been
+adopted in DeepSeek’s Engram memory, which contains 196 billion parameters in DeepSeek-V4.1-Flash [3].
+However, storing these large tables requires substantial memory, motivating methods that preserve their
+performance benefits with a smaller memory footprint.
+The memory cost arises from the enormous number of possible token combinations. To accommodate them,
+existing methods map n-grams into a fixed number of table embeddings, allowing multiple n-grams to share
+the same embedding [1, 2]. Smaller tables force more unrelated sequences to share representations, which can
+reduce their benefit to the model. Increasing the number of embeddings alleviates this problem but requires
+more memory. We therefore investigate a different way to reduce table memory: keeping the embeddings
+while using fewer bits for each embedding value. This also raises an opportunity: if lower precision preserves
+most of the tables’ benefit, the saved memory could support more embeddings and ultimately improve
+performance.
+We propose compressing n-gram embedding tables by storing each value at low precision.
+At such low
+precision, the choice of representable values can affect how well the embeddings are preserved. We therefore
+systematically compare evenly spaced values, values chosen from normal quantiles, and values fitted to the
+This work extends a human-verified finding made by an rStation agent (https://rstation.ai/) as part of our Autonomous
+Research Program (https://dualverse.ai/auto_research). See Section 6 for a discussion of AI use.
+arXiv:2610.31646v1  [cs.CL]  22 Oct 2026
+
+
+Low-Bit N-Gram Embeddings for Language Models
+(a) Four n-gram lookups
+the
+xt−2
+cat
+xt−1
+sat
+xt
+bigram
+trigram
+T1 bigram
+T2 bigram
+T3 trigram
+T4 trigram
+hash
+hash
+width d/4 each
+concatenate
+width d
+token embedding E[xt]
+ut
+language
+model
+next-token
+prediction
+(b) Low-bit embeddings
+2-bit indices
+16-bit scale
+00
+11
+01
+10
+sr
+Shared codebook (4 values)
+c0
+c1
+c2
+c3
+lookup × scale
+sr · c0
+sr · c3
+sr · c1
+sr · c2
+Reconstructed embedding
+Figure 1: Four n-gram lookups, stored at low precision. (a) The bigram and trigram ending at the current
+token each retrieve two embeddings. The four embeddings are concatenated and added to the token embed-
+ding to form ut. (b) Each two-bit index selects one of four codebook values. Multiplying each selected value
+by the embedding’s 16-bit scale reconstructs the embedding. Codebook values use 16 bits and are shared
+across all embeddings of a table.
+learned embedding distribution using Lloyd–Max quantization [4, 5]. We also examine whether bigram and
+trigram tables benefit from different precision levels, allowing us to allocate bits according to their sensitivity
+to compression. Together, these experiments offer practical guidance on choosing quantization methods and
+bit allocations to balance table memory and model performance.
+We evaluate this approach on nanochat-, Llama-, and GPT-2-family models trained from scratch [6–9]. We
+train each model with and without n-gram tables to establish how much the tables improve performance.
+We then compress the trained tables to different precisions and measure the table memory saved and the
+improvement retained. Beyond compression alone, we investigate whether a short fine-tuning phase can
+recover lost performance and whether reinvesting the saved memory in additional embeddings can outperform
+the original full-precision tables. To test whether these savings extend to large existing models, we also
+compress the tables in DeepSeek-V4.1-Flash and Qwen3.8-Flash-Next, saving 47–55% of table memory while
+largely preserving performance on downstream tasks.
+Our main contributions are:
+• Substantial table memory savings with little loss of performance.
+Across three model architec-
+tures, three-bit n-gram tables save 80% of table memory while retaining approximately 97% of the
+validation-loss improvement from adding the tables. We also demonstrate substantial table memory
+savings in DeepSeek-V4.1-Flash and Qwen3.8-Flash-Next.
+• Practical guidance on quantization and precision allocation. We systematically compare codebook
+construction, scale fitting, and precision allocation across bigram and trigram tables.
+• Performance recovery through fine-tuning.
+A short fine-tuning phase substantially reduces the
+performance loss from low-bit compression, making aggressive compression more effective.
+• Better performance by reinvesting saved memory. Tables with four times as many embeddings,
+stored at two bits, achieve 122–126% of the original tables’ improvement while still using 46–48%
+less table memory. This shows that reducing precision can enable larger, more effective n-gram
+memories.
+2
+Method
+N-gram embedding tables.
+Following the Over-Tokenized Transformer [1], we use four embedding tables:
+two for bigrams and two for trigrams, as illustrated in Figure 1. The embeddings in these tables are learned
+2
+
+
+Low-Bit N-Gram Embeddings for Language Models
+jointly with the language model, with one embedding stored in each row. At each token position, the bigram
+and trigram ending at the current token each retrieve one embedding from each of their two corresponding
+tables. These four embeddings are then concatenated and added to the token embedding. Previous work
+has shown that this method improves language modeling performance, with further gains as the number of
+embeddings increases [1].
+Formally, let xt denote the current token, E the token embedding matrix with embedding dimension d, and
+T1, . . . , T4 the four tables. We construct the model input as
+ut = E[xt] + Concat4
+j=1 Tj
+
+hj(xt−nj+1, . . . , xt)
+
+,
+(1)
+where n1 = n2 = 2 for the bigram tables and n3 = n4 = 3 for the trigram tables. Here, the hash function hj
+determines which embedding is retrieved by mapping the token sequence to an address in table Tj. These
+retrieved embeddings each have dimension d/4, so concatenating all four gives the same dimension as E[xt].
+Low-bit embeddings.
+We propose reducing the memory cost of these trained tables by storing their embed-
+dings at low precision. To do this, we give each table a set of up to 2b representative values, commonly called
+a codebook, and represent each embedding component by a b-bit index into these shared codebook values.
+To account for differences in magnitude between embeddings, we also store one 16-bit scale per embedding.
+During reconstruction, the index selects a codebook value, which is then multiplied by the embedding’s scale.
+Thus, the original component wri at position i of embedding r is reconstructed as
+ˆwri = srcqri,
+qri ∈{0, . . . , 2b −1},
+(2)
+where sr is the scale, ck is codebook value k, and qri is the stored index (Figure 1b).
+This low-bit representation substantially reduces table memory.
+For an embedding with p components,
+memory use falls from 16p bits to pb + 16 bits. For instance, with p = 128, two-bit precision reduces the
+memory required per embedding by approximately 87%, from 2,048 to 272 bits.
+However, bigram and trigram embeddings represent different context patterns, so they may need different
+precision to preserve their contribution to model performance. We therefore propose using a mixture of bit
+widths across the two n-gram orders, allocating more bits to the tables that are more sensitive to quantization
+within a fixed table memory budget.
+Choosing the codebook values.
+We consider three codebook families. First, uniform codebooks use equally
+spaced values. For instance, at two bits, the codebook values are {−1, −1/3, 1/3, 1}. We also test a variant
+that includes zero, using {−1, 0, 1}, so that zero can be represented exactly. Second, normal-quantile code-
+books take values from quantiles of a standard normal distribution, placing more of them near zero. Third,
+we learn the codebook values from each table’s trained embeddings using Lloyd–Max quantization [4, 5].
+To learn the Lloyd–Max codebook, we first normalize each embedding by its root mean square, allowing
+embeddings of different magnitudes to share a codebook. We initialize the codebook values at quantiles of
+the normalized components, then repeatedly assign components to their nearest codebook value and replace
+each value with the mean of its assigned components. This fitting runs once during compression, using only
+the trained embeddings. Appendix A.2 gives the implementation details.
+Choosing the embedding scales.
+Once the codebook values are fixed, we consider three ways to choose each
+embedding’s scale sr. First, maximum-based scaling matches the largest absolute codebook value to the
+embedding’s largest absolute component. Second, root-mean-square (RMS) scaling uses the embedding’s
+overall magnitude, calculated as sr =
+q
+1
+p
+P
+i w2
+ri. Third, error-fitted scaling chooses the scale to minimize
+the mean squared error between the original embedding and its reconstruction. We compare these choices
+to examine how scale selection affects compression quality.
+After determining the codebook values and embedding scales, we store them together with the low-bit indices
+in place of the original embedding tables. During inference, the model retrieves embeddings from this stored
+representation without repeating the fitting procedure.
+3
+
+
+Low-Bit N-Gram Embeddings for Language Models
+3
+Experiments
+3.1
+Experimental setup
+Models and data.
+We train five language models from scratch: nanochat with 26M and 50M parameters,
+a GPT-2-family model with 30M parameters, and Llama-family models with 31M and 322M parameters.
+By default, each model uses four n-gram tables, comprising two bigram and two trigram tables, with ap-
+proximately 262k embeddings per table. We train on ClimbMix [10] and repeat each experiment with three
+random seeds. Appendix B.1 gives the model configurations and training settings.
+Evaluation.
+For each model, we first train two versions using the same experimental setup, one with full-
+precision (16-bit) n-gram tables and one without tables. We evaluate both on a held-out validation dataset,
+and their difference in validation loss measures the improvement from adding the tables. We then reduce
+the precision of the trained tables and evaluate the model again to measure how much of this improvement
+remains. We report this as the percentage of the original improvement retained, where 100% matches the
+full-precision tables and 0% matches the model trained without tables. Alongside this performance measure,
+we report the percentage of table memory saved.
+Results are averaged over three seeds, with standard
+deviations where shown.
+3.2
+Table memory savings and model performance
+We first ask how much table memory can be removed before the model loses the benefit of n-gram embeddings.
+We compress the trained tables to one through four bits using Lloyd–Max codebooks with fitted scales. To
+test whether larger tables can tolerate the same compression, we also increase the number of embeddings
+per table from the default 262k to 1M in the 26M nanochat model and both Llama-family models.
+The results are shown in Figure 2. We find that low-bit compression retains most of the improvement at
+three or four bits. For example, four-bit tables save 74–75% of table memory while retaining more than 99%
+of the original improvement. However, reducing precision further hurts performance. Two-bit tables save
+86–87% of table memory but retain only 85.9–91.0% of the original improvement. Appendix C gives the full
+results, including one-bit compression.
+3.3
+Codebook choices and mixed precision
+Codebook values and embedding scales.
+To understand how best to choose codebook values and embedding
+scales, we compare the three codebook families and scale choices described in Section 2. We compare these
+choices using two-bit tables in the 31M Llama-family model.
+The results are shown in Figure 3a. We observe that choosing an appropriate embedding scale matters
+more than the choice of codebook. With error-fitted scales, the three codebooks retain a similar share of
+the tables’ improvement (86.36–86.52%), whereas uniform codebooks with maximum-based scaling retain
+only 58.04%. Lloyd–Max also performs well with simple RMS scaling, retaining 86.19%. Among the three
+fitted codebooks, Lloyd–Max provides a small additional gain, so we use it as the default in the remaining
+experiments.
+Mixed precision.
+Since bigram and trigram tables may require different precision, we also test all nine
+combinations of two-, three-, and four-bit precision.
+Combinations with the same total bit count have
+approximately equal memory cost, allowing us to compare how precision should be distributed between
+bigram and trigram tables. Giving more bits to bigrams consistently retains more of the improvement than
+the reverse allocation (Figure 3b). In particular, four-bit bigrams and three-bit trigrams retain 98.9–99.4%
+of the improvement while saving 77–78% of table memory across the five models. Appendix C gives the full
+results for all precision combinations.
+4
+
+
+Low-Bit N-Gram Embeddings for Language Models
+74
+80
+87
+Table memory saved (%)
+85
+90
+95
+100
+Improvement retained (%)
+4 bits
+3 bits
+2 bits
+(a) 262k embeddings per table
+74
+80
+87
+Table memory saved (%)
+4 bits
+3 bits
+2 bits
+(b) 1M embeddings per table
+nanochat 26M
+nanochat 50M
+GPT-2-family 30M
+Llama-family 31M
+Llama-family 322M
+Figure 2: Four-bit embeddings save about 75% of table memory while retaining more than 99% of the
+improvement. (a) The five models with the default 262k embeddings per table. (b) The 26M nanochat
+model and both Llama-family models with 1M embeddings per table. Points and error bars show means and
+sample standard deviations over three seeds. The dashed line matches the original 16-bit tables.
+0
+50
+100
+Improvement retained (%)
+58.04%
+86.36%
+69.59%
+86.47%
+86.19%
+86.52%
+2/3
+3/2
+2/4
+3/3
+4/2
+3/4
+4/3
+Bigram/trigram bits
+nanochat 26M
+nanochat 50M
+GPT-2-family 30M
+Llama-family 31M
+Llama-family 322M
+89.9 95.6 90.4 97.3 97.4 97.7 99.0
+89.4 95.2 89.9 97.1 97.1 97.5 98.9
+92.0 96.7 92.4 98.1 98.1 98.4 99.4
+88.8 95.7 89.3 97.4 97.6 97.7 99.1
+89.3 95.2 90.0 97.4 97.0 97.9 99.0
+5 bits
+6 bits
+7 bits
+85
+90
+95
+100
+Improvement retained (%)
+Uniform
+Maximum-
+based
+Uniform
+Error-fitted
+Uniform*
+Error-fitted
+Normal
+quantiles
+Error-fitted
+Lloyd–Max
+RMS
+Lloyd–Max
+Error-fitted
+Codebook Scale
+(a) Codebook and scale
+(b) Mixed precision
+Figure 3: Choosing an appropriate embedding scale is more important than choosing among uniform, normal-
+quantile, and Lloyd–Max codebooks. (a) Two-bit comparisons on the 31M Llama-family model with 262k
+embeddings per table. Uniform* is the three-value variant {−1, 0, 1} that includes zero. Error bars show
+sample standard deviations over three seeds. (b) Selected bigram/trigram precision pairs for all five models
+with the default 262k embeddings per table. Appendix C.3 gives all precision pairs.
+5
+
+
+Low-Bit N-Gram Embeddings for Language Models
+3.4
+Evaluation on large existing models
+We next test whether low-bit compression can reduce the memory used by n-gram embedding tables in
+large open-weight language models.
+We evaluate DeepSeek-V4.1-Flash [3] and Qwen3.8-Flash-Next [11],
+compressing their n-gram tables while keeping the rest of each model unchanged.
+Uniform precision.
+We first test whether using one low precision for all n-gram embedding tables can save
+substantial table memory without noticeably changing model performance. We compare two- to five-bit
+tables with the original tables using perplexity on WikiText-2 validation data [12]. The results are shown
+in Figure 4a. Four-bit tables save about half of the table memory, with a 1.26% perplexity increase for
+DeepSeek and almost unchanged perplexity for Qwen. Stronger compression affects the models differently:
+at three bits, Qwen’s perplexity increases by only 0.52%, compared with 5.06% for DeepSeek.
+40
+50
+60
+70
+Table memory saved (%)
+0
+5
+10
+15
+Perplexity change (%)
+2 bits
+3 bits
+4 bits
+5 bits
+2 bits
+3 bits
+4 bits
+5 bits
+DeepSeek
+Qwen
+0
+1
+2
+Perplexity change (%)
+3/4/4
+3/4/5
+5/4/4
+4/5/4
+4/4/5
+4/5/5
+3/2
+3/4
+4/3
+54.8
+50.8
+46.7
+46.7
+46.7
+42.7
+67.5
+55.0
+55.0
+Memory
+saved (%)
+bigram/trigram/
+four-gram
+bigram/trigram
+DeepSeek
+Qwen
++2.05
++1.56
++1.32
++0.89
++0.84
++0.49
++1.31
++0.15
+−0.03
+(a) Uniform precision
+(b) Mixed precision
+Figure 4: Uniform and mixed precision provide different memory–performance choices in DeepSeek-V4.1-
+Flash and Qwen3.8-Flash-Next. (a) Two through five bits for every table, with labels giving bits per value.
+(b) Representative mixed allocations, ordered by n-gram length. Both panels use WikiText-2 validation
+perplexity.
+Mixed precision.
+To see whether some n-gram tables need more precision than others, we test all combi-
+nations of two through five bits across the n-gram orders. Figure 4b shows that the precision assignment
+matters even at the same memory cost. For DeepSeek, giving an extra bit to trigrams or four-grams (4/5/4
+or 4/4/5) preserves perplexity better than giving it to bigrams (5/4/4). In Qwen, the extra bit is more useful
+for bigrams: 4/3 performs better than 3/4. The better assignment therefore differs between the two models.
+Besides WikiText-2, we further evaluate DeepSeek with 4/5/4-bit tables and Qwen with 4/3-bit tables on
+Penn Treebank and C4 [13, 14]. Across all three held-out datasets, these settings keep perplexity changes to
+less than 1.2% while saving 47–55% of table memory.
+Downstream performance.
+In addition to perplexity, which measures next-token prediction, we examine
+how low-bit tables affect downstream task performance. We evaluate DeepSeek with 4/5/4-bit tables and
+Qwen with 4/3-bit tables on HellaSwag, ARC-Challenge, and WinoGrande [15–17]. Average accuracy across
+these tasks decreases by only 0.93% for DeepSeek and 0.27% for Qwen (Figure 5). These results show that
+the table memory savings also come with little change in downstream performance.
+6
+
+
+Low-Bit N-Gram Embeddings for Language Models
+−4
+−2
+0
+2
+Accuracy change (%)
+HellaSwag
+ARC-Challenge
+WinoGrande
+DeepSeek 4/5/4
+Qwen 4/3
+Figure 5: Downstream evaluation of the selected mixed-precision settings. Change in accuracy (%) for
+DeepSeek 4/5/4 and Qwen 4/3, computed as low-bit accuracy minus original accuracy. Error bars show
+paired 95% bootstrap confidence intervals. The settings save 46.7% and 55.0% of table memory, respectively.
+3.5
+Recovering performance with low-bit training
+Compressing the n-gram tables changes the embeddings that the model learned to use, which can reduce
+performance. We therefore ask whether a short fine-tuning phase can recover this loss, or whether using
+low-bit embeddings throughout pre-training is more effective. To train with low-bit embeddings, we maintain
+a BF16 copy for gradient updates but quantize the retrieved embeddings during each forward pass. Both
+the embeddings and the rest of the model remain trainable, allowing the model to adapt to the chosen
+precision. We compare four sequences: (1) compress →pre-train, (2) pre-train →compress →fine-tune, (3)
+pre-train →fine-tune →compress, and (4) pre-train →compress. Comparing fine-tuning before and after
+compression tests whether recovery comes from adapting to low-bit embeddings rather than simply receiving
+more training.
+The results are summarized in Figure 6. We observe that a brief fine-tuning phase after compression recov-
+ers much of the performance lost at very low precision. After fine-tuning, one- and two-bit tables retain
+65.3% and 92.0% of the improvement provided by full-precision tables, respectively. Surprisingly, one-bit
+embeddings perform even better when used throughout pre-training, retaining 77.0% of the full-precision
+tables’ improvement. This shows that even one bit per embedding component can preserve a large share of
+the benefit from n-gram tables when the model learns to use them from the start. Appendix C.5 gives the
+full results, while Appendix C.6 examines how alternative hashing methods affect performance with low-bit
+embeddings.
+3.6
+Reinvesting memory in larger tables
+Finally, we ask whether the memory saved by compression can support larger tables and improve performance.
+We use tables with 262k embeddings stored at 16-bit precision as the baseline. We then increase each table
+to 1M embeddings and test lower precisions to see whether the larger tables can improve performance while
+using less memory than the baseline. We measure performance relative to the improvement that the baseline
+tables provide over the model without n-gram embeddings.
+The results are shown in Figure 7. We observe that reinvesting the memory saved by compression in more
+embeddings can improve performance while still reducing total table memory. For example, increasing each
+table from 262k to 1M embeddings at two-bit precision uses only 52–54% of the original table memory while
+providing 22–26% more improvement than the original 16-bit tables. Three-bit tables improve performance
+further while using 77–79% of the original table memory.
+We also test a brief fine-tuning phase on the compressed larger tables, following Section 3.5, to assess whether
+adaptation brings further improvement. Fine-tuning improves performance across all three models, with the
+7
+
+
+Low-Bit N-Gram Embeddings for Language Models
+1
+2
+3
+4
+N-gram table precision (bits)
+0
+25
+50
+75
+100
+Improvement retained (%)
+1. Compress → pre-train
+3. Pre-train → fine-tune → compress
+2. Pre-train → compress → fine-tune
+4. Pre-train → compress
+Figure 6: Fine-tuning after compression recovers much of the n-gram improvement. Improvement retained
+on the 31M Llama-family model, relative to full-precision and no-table models with the same training budget.
+Error bars show sample standard deviations over three seeds.
+0
+25
+50
+75
+100
+0
+50
+100
+150
+Improvement relative to original (%)
+16-bit
+baseline
+(a) nanochat 26M
+0
+25
+50
+75
+100
+16-bit
+baseline
+(b) Llama-family 31M
+0
+25
+50
+75
+100
+16-bit
+baseline
+(c) Llama-family 322M
+Table memory used (%)
+262k embeddings
+1M embeddings
+1M embeddings + fine-tuning
+1 bit
+2 bits
+3 bits
+4 bits
+Figure 7: Larger low-bit tables can improve performance while using less memory. Both axes use the original
+262k-embedding, 16-bit tables as the reference, marked at (100%, 100%). The shaded region indicates greater
+improvement while using less memory. Fine-tuning follows compression. Error bars show sample standard
+deviations over three seeds.
+largest recovery at one bit: with the same fine-tuning budget, compressing before fine-tuning achieves 97–
+111% of the original tables’ improvement, compared with 44–63% when compressing after fine-tuning. At
+two bits, fine-tuning raises the improvement from 122–126% to 129–145% at the same memory cost. These
+8
+
+
+Low-Bit N-Gram Embeddings for Language Models
+results suggest a practical approach to memory-efficient deployment: pre-train with more embeddings, then
+compress the tables and briefly fine-tune the model to recover performance.
+4
+Related work
+N-gram and lookup memory in language models.
+Learned local-context representations go back to neural
+n-gram models [18], and hashing shares parameters among many keys [19, 20]. N-Grammer adds n-gram
+embeddings over discrete latent codes [21], and BLT uses hashed n-gram embeddings over bytes [22]. The
+Over-Tokenized Transformer [1] hashes multi-gram inputs into large input embedding tables, the operation
+we study. Deep Sparse Embedding (DSE) [2] places hashed n-gram memory inside the network with context-
+aware gating and short convolutions, balances it against mixture-of-experts capacity, and serves it from
+host memory. Other designs factorize n-gram embeddings [23, 24] or use frequency-aware hashing and alias
+mixing [25]. SCONE precomputes contextualized n-gram embeddings and stores them off-accelerator [26].
+Memory layers retrieve from a product-key memory [27, 28], and external datastores add capacity at inference
+time [29, 30].
+Compressing embedding tables.
+Large embedding tables in recommendation systems are compressed by per-
+embedding four-bit quantization with codebooks [31], compositional embeddings [32], and mixed embedding
+dimensions [33]; word embeddings can be replaced by learned compositional codes [34]. Because hashed
+embeddings are already shared, we compare fewer embeddings with fewer bits per embedding directly.
+5
+Conclusion
+We propose low-bit precision for n-gram embedding tables and systematically study its effects on memory use
+and model performance. Across models trained from scratch, four-bit tables save approximately 75% of table
+memory while preserving more than 99% of the improvement provided by full-precision tables. Choosing
+appropriate embedding scales matters more than the choice of codebook, and mixed precision allows different
+n-gram tables to use the precision they need. At lower precision, a brief fine-tuning phase can recover much
+of the lost performance. These findings also extend to DeepSeek-V4.1-Flash and Qwen3.8-Flash-Next, where
+compression saves 47–55% of table memory with little change in perplexity and downstream performance.
+Beyond reducing memory use, reinvesting the savings in more embeddings can improve performance over
+the original full-precision tables. Together, our results offer practical guidance for making n-gram memory
+more efficient and using the saved capacity to build better language models.
+6
+AI Use
+This work builds on a finding made by an autonomous agent run by the authors on rStation, a multi-agent
+research platform. Given the open-ended task of improving language-model pre-training, the agent found
+that n-gram embedding tables could be stored at low precision with minimal performance loss. The agent
+published its findings at https://rstation.ai/problems/general_pretraining/papers/6/v4.
+The authors considered this finding potentially useful to the broader research community and therefore
+reproduced and extended the experiments outside rStation, using additional models and datasets.
+The
+authors also revised the manuscript to make the findings accessible to researchers.
+9

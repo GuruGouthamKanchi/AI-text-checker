@@ -32,3 +32,6 @@ models/
 # Office temporary lock files
 ~$*
 
+# Scratch scripts
+scratch/
+

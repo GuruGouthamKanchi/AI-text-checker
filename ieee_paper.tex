@@ -36,11 +36,11 @@ coauthor@example.com}
 \maketitle
 
 \begin{abstract}
-Detecting AI-generated text in scientific literature requires capturing macro document context and micro sentence syntax while resisting humanizer evasion attacks. To overcome context truncation, we propose a Multi-Scale Hybrid Ensemble architecture pairing an 8k-token long-context transformer (ModernBERT) for macro-document evaluation with a 512-token dense classifier (RoBERTa-v2) for micro-sentence syntax inspection. Sentence predictions across paragraph windows are aggregated using adaptive soft-voting with gated max-pooling. Furthermore, a closed-loop retraining workbench continuously synthesizes humanized attacks for iterative adversarial fine-tuning. Empirical evaluations demonstrate that our hybrid ensemble achieves a 98.6\% macro-F1 score, outperforming single-model detectors by 11.8\% under distribution shifts and paraphrasing attacks.
+Detecting AI-generated text in scholarly literature requires capturing discourse context and fine-grained sentence syntax while addressing adversarial evasion attacks. We propose a Multi-Scale Hybrid Ensemble framework pairing a transformer context engine (ModernBERT, evaluated over a 3-sentence sliding window up to 512 tokens) with a sentence-level classifier (RoBERTa, 512 tokens). Sentence-level probabilities are aggregated via non-linear pooling with post-hoc probability calibration. Furthermore, a closed-loop adversarial retraining loop evaluates representation invariance against neural paraphrasers and prompt-based rewrites. Empirical evaluations on a strictly topic-held-out test split of 12,004 sentences demonstrate that our hybrid ensemble achieves a 98.08\% macro-F1 score (Top-K pool smoothed) and 98.59\% (Mean-pool smoothed), providing statistically significant accuracy gains (+0.94\% over RoBERTa, +4.58\% over ModernBERT, $p < 0.001$).
 \end{abstract}
 
 \begin{IEEEkeywords}
-AI-Generated Text Detection, ModernBERT, RoBERTa, Multi-Scale Ensembles, Soft-Voting Gated Max-Pooling, Closed-Loop Adversarial Training.
+AI-Generated Text Detection, ModernBERT, RoBERTa, Multi-Scale Ensembles, Gated Pooling, Adversarial Training.
 \end{IEEEkeywords}
 
 \section{INTRODUCTION}
@@ -50,7 +50,7 @@ Developing effective, scalable AI-generated text detectors for academic manuscri
 
 Existing AI text detection tools exhibit an extreme trade-off: macro-context models evaluate global document flow but fail to detect isolated AI-generated sentence insertions, whereas micro-sentence classifiers identify localized synthetic sentences but trigger excessive false alarms on technical jargon. Furthermore, fixed static detectors quickly become obsolete as new commercial humanizers emerge. This paper is motivated by the critical need for a unified multi-scale architecture that pairs long-context macro evaluation with fine-grained sentence-level inspection, reinforced by an active closed-loop retraining loop.
 
-To address these challenges, this paper presents a novel Multi-Scale Hybrid Ensemble framework. Our primary technical contributions are summarized as follows. We propose a novel Multi-Scale Hybrid Ensemble Architecture pairing ModernBERT's native 8192-token rotary positional context engine (macro document evaluation) with RoBERTa's 512-token micro-sentence dense classifier. We formulate a non-linear Soft-Voting Gated Max-Pooling Aggregation Layer that dynamically weights macro-document representations against sentence-level probability spikes without diluting global discourse context. We integrate interpretable Stylometric Entropy Gauges featuring 100-word window Mean Segmental Type-Token Ratio (MSTTR) and sentence length burstiness Coefficient of Variation ($CV_L$) to eliminate false positive spikes on specialized human scholarly writing. We implement an interactive Closed-Loop Adversarial Retraining Workbench utilizing Min-Max Robust Optimization Loss ($\mathcal{L}_{\text{MM}}$) and contrastive embedding alignment ($\mathcal{L}_{\text{contrastive}}$) to guarantee continuous defense against evolving humanizer tools. Finally, we conduct extensive empirical evaluations across a multi-domain corpus of 12,000 academic manuscripts across six disciplines, proving that our framework achieves a state-of-the-art 98.6\% macro-F1 score and sustains 97.8\% precision post-paraphrasing attacks.
+To address these challenges, this paper presents a Multi-Scale Hybrid Ensemble framework. Our primary technical contributions are summarized as follows. We design a Dual-Branch Hybrid Ensemble Architecture pairing ModernBERT (evaluating surrounding 3-sentence sliding window context up to 512 tokens) with RoBERTa's 512-token micro-sentence classifier. We formulate a non-linear Gated Max-Pooling Aggregation Layer that dynamically weights macro-context representations against sentence-level probability spikes. We integrate interpretable Stylometric Entropy Gauges featuring 100-word window Mean Segmental Type-Token Ratio (MSTTR) and sentence length burstiness Coefficient of Variation ($CV_L$) as diagnostic explainability aids. We implement an interactive Closed-Loop Adversarial Retraining Workbench utilizing contrastive embedding alignment ($\mathcal{L}_{\text{contrastive}}$) to evaluate defense against evolving paraphraser tools, while measuring human specificity trade-offs. Finally, we conduct extensive empirical evaluations across 12,004 topic-held-out test sentences, demonstrating that our framework achieves 98.08\% macro-F1 (Top-K pool) and 98.59\% (Mean-pool) with post-hoc calibration reducing Expected Calibration Error by over 90\%.
 
 \section{LITERATURE SURVEY}
 AI-generated text detection has transitioned through three major technological paradigms: token probability feature fusion, long-context sequence modeling, and adversarial defense frameworks. Early machine-generated text detection relied on token-level probability analysis, perplexity divergence, and log-rank entropy metrics computed from open-source language models. Gupta and Gupta \cite{gupta2024navigating} surveyed detection paradigms and academic integrity in IEEE Computer, outlining the systemic challenges of identifying machine-generated text in scientific research. Sharimbayev et al. \cite{sharimbayev2026aigenerated} reviewed contemporary zero-shot and neural detection paradigms across modern LLMs in IEEE ICECCO. Kalra et al. \cite{kalra2024detection} presented an extensive empirical evaluation in IEEE AIC demonstrating feature degradation across single-scale classifiers on scholarly corpora.
@@ -69,32 +69,33 @@ Despite significant advances in neural sequence classification, existing literat
     \item Operational detectors deploy static pretrained weights that quickly lose efficacy when exposed to novel zero-shot commercial humanizer tools without an automated closed-loop fine-tuning pipeline.
 \end{itemize}
 
-Table~\ref{tab_taxonomy_comparison} provides a comprehensive taxonomy and comparative feature analysis of existing literature papers versus our proposed architecture.
+Table~\ref{tab_taxonomy_comparison} provides a qualitative taxonomy and comparative architectural feature analysis of literature methods versus our proposed framework.
 
 \begin{table*}[htbp]
-\caption{Taxonomy and Comparative Feature Analysis of Literature vs. Proposed Architecture}
+\caption{Taxonomy and Architectural Feature Comparison with Literature}
 \label{tab_taxonomy_comparison}
 \centering
-\begin{tabular}{lcccccc}
+\begin{tabular}{lccccc}
 \toprule
-\textbf{Reference Paper} & \textbf{Venue \& Year} & \textbf{Context Window} & \textbf{Stylometric Gauges} & \textbf{Adversarial Retraining} & \textbf{Macro $F_1$ (\%)} & \textbf{Humanizer Resilience} \\
+\textbf{Reference Paper} & \textbf{Venue \& Year} & \textbf{Context Window} & \textbf{Stylometric Features} & \textbf{Adversarial Evaluation} & \textbf{Artifacts Released} \\
 \midrule
-Gupta and Gupta \cite{gupta2024navigating} & IEEE Computer 2024 & Survey / Review & Integrity Landscape & None (Static) & 90.1\% & Low (52.4\%) \\
-Blake et al. \cite{blake2025detection} & IEEE Access 2025 & Attention-BiLSTM & Sequential Context & Static Fine-tuning & 92.1\% & Moderate (64.5\%) \\
-Kanwal et al. \cite{kanwal2026hybrid} & IEEE SATC 2026 & Hybrid Window & Stylometric Features & None & 91.2\% & Moderate (63.0\%) \\
-Zheng et al. \cite{zheng2025alertme} & IEEE TDSC 2025 & 512 Tokens & Explainability & Min-Max Defense & 94.2\% & High (92.4\%) \\
-Warner et al. \cite{warner2025modernbert} & ACL 2025 & 8192 Tokens & RoPE + FlashAttn & None & 93.5\% & Moderate (68.1\%) \\
-Poimanov et al. \cite{poimanov2024ngram} & IEEE ISPRAS 2024 & N-Gram & Perplexity Distribution & None & 84.2\% & Poor (34.2\%) \\
-He et al. \cite{he2024mgtbench} & ACM CCS 2024 & Multi-Model & Security Benchmark & Adversarial Evasion & 95.1\% & High (94.8\%) \\
-\textbf{PROPOSED WORK} & \textbf{Flagship IEEE 2026} & \textbf{8192 + 512 Dual} & \textbf{MSTTR + $CV_L$ Gauges} & \textbf{Min-Max Closed-Loop} & \textbf{98.6\%} & \textbf{State-of-the-Art (97.8\%)} \\
+Gupta and Gupta \cite{gupta2024navigating} & IEEE Computer 2024 & Survey / Review & Conceptual Analysis & None (Survey) & Review Only \\
+Blake et al. \cite{blake2025detection} & IEEE Access 2025 & Bi-LSTM Attention & Sequential Word Features & Static Fine-Tuning & Code Available \\
+Kanwal et al. \cite{kanwal2026hybrid} & IEEE SATC 2026 & Sentence Window & Statistical Stylometry & None & Code Available \\
+Zheng et al. \cite{zheng2025alertme} & IEEE TDSC 2025 & 512 Tokens & Feature Attribution & Robust Optimization & Code / Benchmark \\
+Warner et al. \cite{warner2025modernbert} & ACL 2025 & 8192 Tokens & Base Architecture & None (General Pretrained) & Model Weights \\
+Poimanov et al. \cite{poimanov2024ngram} & IEEE ISPRAS 2024 & Fixed N-Gram & N-Gram Perplexity & None & Methodology Only \\
+He et al. \cite{he2024mgtbench} & ACM CCS 2024 & Multi-Model & Representation Shift & Paraphrase Evasion & Benchmark Suite \\
+\textbf{Proposed Framework} & \textbf{Under Review 2026} & \textbf{Dual (3-Sent + 512)} & \textbf{MSTTR + $CV_L$ Gauges} & \textbf{Paraphrase Retraining} & \textbf{Code \& Benchmark} \\
 \bottomrule
 \end{tabular}
 \end{table*}
 
+
 \section{PROPOSED METHODOLOGY}
 
 \subsection{3.1 System Overview}
-The proposed Multi-Scale Hybrid Ensemble framework processes full-length academic documents through a multi-stage dual-branch pipeline. Fig.~1 illustrates the end-to-end architecture, which integrates ModernBERT (macro context branch), RoBERTa (micro sentence branch), Soft-Voting Gated Max-Pooling, Stylometric Entropy Gauges, and the Closed-Loop Retraining Workbench.
+The proposed Multi-Scale Hybrid Ensemble framework processes academic text through a dual-branch sentence and contextual evaluation pipeline. Fig.~1 illustrates the architecture, which integrates ModernBERT (sliding 3-sentence context window, truncated to 512 tokens), RoBERTa (individual sentence syntax branch, 512 tokens), adaptive max-pooling and heuristic gating, stylometric gauges, and the closed-loop retraining workbench.
 
 \begin{figure}[htbp]
 \centerline{\fbox{\parbox{0.45\textwidth}{\centering \vspace{0.8cm} \textbf{[FIGURE 1: System Overview Architecture Blueprint]}\\\small (Refer to \texttt{diagrams\_and\_visualizations\_guide.md} for TikZ code \& vector spec) \vspace{0.8cm}}}}
@@ -103,45 +104,38 @@ The proposed Multi-Scale Hybrid Ensemble framework processes full-length academi
 \end{figure}
 
 \subsection{3.2 Proposed System Architecture}
-Let an input document $D$ be represented as a sequence of $N$ sentence units $\{s_1, s_2, \dots, s_N\}$ spanning $T$ total tokens.
+Let an input document $D$ be parsed into $N$ ordered sentence units $\{s_1, s_2, \dots, s_N\}$.
 
-ModernBERT processes the un-truncated document sequence $D$ (up to $T=8192$ tokens) using native Rotary Position Embeddings (RoPE) to capture long-range cross-paragraph discourse dependencies:
+For each sentence $s_i$, ModernBERT evaluates a surrounding 3-sentence sliding window $w_i = (s_{i-1}, s_i, s_{i+1})$ (truncated to 512 tokens) to capture immediate inter-sentence transitions:
 \begin{equation}
-    \mathbf{h}_{\text{MB}} = \text{ModernBERT}(D) \in \mathbb{R}^{768}
+    \mathbf{h}_{\text{MB}}(w_i) = \text{ModernBERT}(w_i) \in \mathbb{R}^{768}
 \end{equation}
 \begin{equation}
-    P_{\text{MB}}(D) = \sigma\left( \mathbf{W}_m \mathbf{h}_{\text{MB}} + b_m \right)
+    P_{\text{MB}}(w_i) = \text{softmax}\left( \mathbf{W}_m \mathbf{h}_{\text{MB}}(w_i) + b_m \right)_1
 \end{equation}
-where $\mathbf{W}_m \in \mathbb{R}^{1 \times 768}$ and $b_m \in \mathbb{R}$ represent the macro classification layer weights, and $P_{\text{MB}}(D) \in [0, 1]$ represents the document-level machine generation probability.
+where $\mathbf{W}_m \in \mathbb{R}^{2 \times 768}$ and $b_m \in \mathbb{R}^2$ represent the classification head parameters, and $P_{\text{MB}}(w_i) \in [0, 1]$ represents the context-window machine generation probability.
 
-Concurrently, the micro branch partitions the document into individual sentence units $s_i \in D$, evaluating each sentence within a 512-token context window:
+Concurrently, the micro-sentence branch processes the isolated sentence $s_i$ (truncated to 512 tokens) using fine-tuned RoBERTa:
 \begin{equation}
     \mathbf{h}_{\text{RoBERTa}}(s_i) = \text{RoBERTa}(s_i) \in \mathbb{R}^{768}
 \end{equation}
 \begin{equation}
-    P_{\text{RoBERTa}}(s_i) = \sigma\left( \mathbf{W}_r \mathbf{h}_{\text{RoBERTa}}(s_i) + b_r \right)
+    P_{\text{RoBERTa}}(s_i) = \text{softmax}\left( \mathbf{W}_r \mathbf{h}_{\text{RoBERTa}}(s_i) + b_r \right)_1
 \end{equation}
-where $P_{\text{RoBERTa}}(s_i) \in [0, 1]$ isolates localized synthetic sentence insertion.
+where $P_{\text{RoBERTa}}(s_i) \in [0, 1]$ isolates localized sentence-level synthetic artifacts.
 
 \subsection{3.3 Working Principle}
-To aggregate micro-sentence predictions without diluting macro document context, we apply non-linear max-pooling over the sentence score set $\{P_{\text{RoBERTa}}(s_i)\}_{i=1}^N$:
+At the sentence level, the base confidence score is computed via competitive max-pooling between the context model and the sentence model:
 \begin{equation}
-    P_{\text{max}} = \max_{1 \le i \le N} P_{\text{RoBERTa}}(s_i)
+    P_{\text{base}}(s_i) = \max\left( P_{\text{RoBERTa}}(s_i),\, P_{\text{MB}}(w_i) \right)
 \end{equation}
+A calibrated heuristic gating logic adjusts $P(s_i)$ based on stylometric indicators: if humanizer transition artifacts are matched, $P(s_i) = \min(0.99, \max(P_{\text{base}}, 0.65) + 0.15)$; if document sentence length burstiness is low ($\sigma_L < 4.0$ with $N \ge 5$) and $P_{\text{base}} \ge 0.35$, $P(s_i) = \min(0.99, P_{\text{base}} + 0.10)$; if either model exceeds the activation threshold 0.38, $P(s_i) = P_{\text{base}}$; otherwise, soft averaging $0.50 P_{\text{MB}} + 0.50 P_{\text{RoBERTa}}$ is applied.
 
-The predictions are dynamically aggregated via a non-linear soft-voting gating network $g \in [0, 1]$:
+For document-level evaluation, the system pools individual sentence scores across the document. We evaluate both Top-$K$ max pooling ($K=3$) and mean pooling:
 \begin{equation}
-    \mathbf{x}_{\text{gate}} = \left[ P_{\text{MB}}(D) \,;\, P_{\text{max}} \right]^T \in \mathbb{R}^2
+    P_{\text{doc}} = \frac{1}{K} \sum_{k=1}^K P_{(k)}
 \end{equation}
-\begin{equation}
-    g = \sigma\left( \mathbf{v}^T \mathbf{x}_{\text{gate}} + b_g \right)
-\end{equation}
-
-The final ensemble classification score $P_{\text{ensemble}}(D)$ is calculated as:
-\begin{equation}
-    P_{\text{ensemble}}(D) = w_1 \cdot P_{\text{MB}}(D) + w_2 \cdot P_{\text{max}} + (1 - w_1 - w_2) \cdot g
-\end{equation}
-where calibrated weights $w_1 = 0.55$ and $w_2 = 0.45$ balance global context with localized sentence anomaly spikes. Fig.~2 illustrates the gated max-pooling fusion mechanism. Algorithm~1 details the inference pipeline.
+where $P_{(k)}$ represents the $k$-th highest sentence score in the document. Classification decisions are calibrated against thresholds optimized strictly on validation data. Fig.~2 illustrates the max-pooling fusion mechanism. Algorithm~1 details the inference pipeline.
 
 \begin{figure}[htbp]
 \centerline{\fbox{\parbox{0.45\textwidth}{\centering \vspace{0.8cm} \textbf{[FIGURE 2: Soft-Voting Gated Max-Pooling Mechanism]}\\\small (Refer to \texttt{diagrams\_and\_visualizations\_guide.md} for TikZ vector schematic) \vspace{0.8cm}}}}
@@ -185,49 +179,57 @@ Fig.~3 details the interactive closed-loop retraining cycle. Algorithm~2 outline
 \end{figure}
 
 \section{RESULTS AND DISCUSSION}
-We evaluated our framework on a comprehensive multi-domain corpus of 12,000 academic papers comprising 6,000 human-authored manuscripts (harvested from ArXiv, PubMed, and IEEE Xplore) and 6,000 LLM-generated papers (synthesized using GPT-4o, Claude 3.5 Sonnet, LLaMA-3-70B, and Mixtral-8x7B) across six academic disciplines: Computer Science, Biomedicine, Chemistry, Physics, Mathematics, and Economics. Performance was evaluated using standard classification metrics: Accuracy (Acc), Precision (Prec), Recall (Rec), Macro-F1 Score, Receiver Operating Characteristic Area Under Curve (ROC-AUC), False Positive Rate (FPR), and Inference Latency per 1,000 words.
+We evaluated our framework strictly on the held-out test split (\texttt{data/processed/test.parquet}), comprising 12,004 topic-split sentences (5,898 human sentences from scholarly abstracts and academic papers, and 6,106 AI sentences synthesized across multiple LLMs including Claude, Gemini, GPT-4, Mistral, and Llama). All model hyperparameters, pooling weights, and decision thresholds were tuned exclusively on the held-out validation split (\texttt{data/processed/val.parquet}, $n=11,997$ sentences) to guarantee leak-free evaluation. Performance was measured using standard classification metrics: Accuracy (Acc), Precision (Prec), Recall (Rec), Macro-$F_1$ Score, Receiver Operating Characteristic Area Under Curve (ROC-AUC), and False Positive Rate (FPR).
 
-Table~\ref{tab_model_performance} compares standalone baseline models against our proposed Multi-Scale Hybrid Ensemble architecture. As shown in Table~\ref{tab_model_performance}, our Multi-Scale Hybrid Ensemble achieves a state-of-the-art 98.6\% macro-F1 score, outperforming standalone ModernBERT by 7.2\% and standalone RoBERTa by 11.4\%. Crucially, the false positive rate on complex human scholarly writing is reduced from 4.8\% down to 0.4\%, virtually eliminating false accusations.
+Table~\ref{tab_model_performance} compares standalone baseline models against our proposed ensemble configurations. While individual raw models achieve 88.70\% (RoBERTa) and 91.74\% (ModernBERT), context-smoothed pooling elevates performance significantly. Research Top-$K$ pooling ($K=3$) achieves 98.08\% accuracy and 99.85\% ROC-AUC with a 2.97\% FPR, while mean-pool smoothing attains 98.59\% accuracy and 99.87\% ROC-AUC with a 1.56\% FPR. Paired bootstrap significance testing confirms these improvements over standalone models are statistically significant ($p < 0.001$).
 
 \begin{table}[htbp]
-\caption{Empirical Performance Comparison Across Model Architectures}
+\caption{Empirical Performance Comparison Across Model Architectures on Held-Out Test Set ($n=12,004$ sentences)}
 \label{tab_model_performance}
 \centering
 \begin{tabular}{lcccccc}
 \toprule
-\textbf{Model Architecture} & \textbf{Acc (\%)} & \textbf{Prec (\%)} & \textbf{Rec (\%)} & \textbf{Macro $F_1$ (\%)} & \textbf{ROC-AUC (\%)} & \textbf{FPR (\%)} \\
+\textbf{Model Configuration} & \textbf{Acc (\%)} & \textbf{Prec (\%)} & \textbf{Rec (\%)} & \textbf{Macro $F_1$ (\%)} & \textbf{ROC-AUC (\%)} & \textbf{FPR (\%)} \\
 \midrule
-Standalone RoBERTa (512) & 87.5 & 89.5 & 85.0 & 87.2 & 92.1 & 4.8\% \\
-Standalone ModernBERT (8k) & 91.8 & 93.1 & 89.7 & 91.4 & 95.8 & 2.1\% \\
-\textbf{Proposed Ensemble (Pre-Attack)} & \textbf{98.7} & \textbf{98.8} & \textbf{98.4} & \textbf{98.6} & \textbf{99.4} & \textbf{0.4\%} \\
-\textbf{Proposed Ensemble (Retrained)} & \textbf{98.5} & \textbf{98.5} & \textbf{98.3} & \textbf{98.4} & \textbf{99.2} & \textbf{0.5\%} \\
+RoBERTa Raw (512) & 88.70 & 88.76 & 89.14 & 88.69 & 95.85 & 11.83 \\
+RoBERTa Smoothed (512) & 97.13 & 97.18 & 97.20 & 97.12 & 99.59 & 2.69 \\
+ModernBERT Raw (3-sent) & 91.74 & 94.75 & 88.75 & 91.68 & 97.55 & 4.85 \\
+ModernBERT Smoothed (3-sent) & 93.48 & 96.53 & 90.52 & 93.43 & 98.71 & 3.33 \\
+Production Ensemble Raw & 94.34 & 94.02 & 94.94 & 94.33 & 98.48 & 5.63 \\
+Production Ensemble Smoothed & 98.03 & 97.35 & 98.80 & 98.03 & 99.82 & 2.64 \\
+Research Top-K Pool ($K=3$) & 98.08 & 97.05 & 99.23 & 98.07 & 99.85 & 2.97 \\
+Research Mean-Pool Smoothed & \textbf{98.59} & \textbf{98.43} & \textbf{98.80} & \textbf{98.59} & \textbf{99.87} & \textbf{1.56} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-To test adversarial robustness, we stress-tested all models against four commercial paraphrase humanizer tools (QuillBot, Undetectable.ai, BypassGPT, and StealthGPT). Table~\ref{tab_humanizer_resilience} details the detection accuracy before attack, under attack (zero-shot), and post closed-loop adversarial retraining. While baseline detectors suffer severe accuracy drops under Undetectable.AI attacks (falling to 48.5\%), our closed-loop adversarially retrained ensemble recovers to 97.2\% detection precision, proving the effectiveness of min-max robust optimization.
+To evaluate adversarial resilience, we stress-tested the framework across four reproducible attack families: open-source neural paraphrasing (T5), prompt-based rewriting (light and heavy conversational instructions), rule-based typo noise, and commercial humanizers (QuillBot and Undetectable.ai). Table~\ref{tab_humanizer_resilience} reports empirical detection recall before and after closed-loop adversarial retraining. Under heavy prompt rewriting, baseline detection recall falls to 65.00\%. Adversarial retraining successfully recovers recall to 75.83\% (+10.83\%). However, we report the accompanying trade-off: clean-human false positive rate increases simultaneously from 12.00\% to 32.67\% (+20.67 percentage points). Furthermore, evaluation on commercial tools yielded 0.0\% zero-shot recall; while QuillBot recovered to 50.0\% post-retraining, Undetectable.ai remained unrecovered (0.0\%), and both commercial evaluations are strictly anecdotal ($n=2$ per tool).
 
 \begin{table}[htbp]
-\caption{Adversarial Humanizer Attack Resilience and Fine-Tuning Recovery}
+\caption{Adversarial Attack Evasion and Retraining Recovery Across Attack Families}
 \label{tab_humanizer_resilience}
 \centering
 \begin{tabular}{lcccc}
 \toprule
-\textbf{Evaluation Setting} & \textbf{RoBERTa (512)} & \textbf{ModernBERT (8k)} & \textbf{Ensemble (Zero-Shot)} & \textbf{Ensemble (Retrained)} \\
+\textbf{Attack Family} & \textbf{Sample Size ($n$)} & \textbf{Pre-Retrain Rec (\%)} & \textbf{Post-Retrain Rec (\%)} & \textbf{$\Delta$ Recall} \\
 \midrule
-Pristine AI Generation & 95.2\% & 96.8\% & 99.1\% & \textbf{99.0\%} \\
-QuillBot Heavy Paraphrase & 52.1\% & 61.3\% & 74.2\% & \textbf{97.8\%} \\
-Undetectable.AI Attack & 48.5\% & 58.0\% & 71.0\% & \textbf{97.2\%} \\
-BypassGPT Perturbation & 50.4\% & 60.1\% & 72.8\% & \textbf{97.5\%} \\
-StealthGPT Syntactic Shift & 49.1\% & 59.2\% & 71.5\% & \textbf{97.4\%} \\
+Clean AI Baseline & $n=120$ & 90.83\% & 90.83\% & 0.00\% \\
+T5 Neural Paraphrase & $n=120$ & 74.17\% & 74.17\% & 0.00\% \\
+LLM Prompt Rewrite (Light) & $n=120$ & 83.33\% & 85.00\% & +1.67\% \\
+LLM Prompt Rewrite (Heavy) & $n=120$ & 65.00\% & 75.83\% & +10.83\% \\
+Rule-Based Typo Perturbations & $n=120$ & 86.67\% & 87.50\% & +0.83\% \\
+QuillBot Paraphrase (Anecdotal) & $n=2$ & 0.00\% & 50.00\% & +50.00\% \\
+Undetectable.ai (Anecdotal) & $n=2$ & 0.00\% & 0.00\% & 0.00\% \\
+\midrule
+Clean Human FPR Trade-off & $n=150$ & 12.00\% FPR & 32.67\% FPR & +20.67\% \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-We conducted extensive ablation studies to isolate the contribution of each architectural component. First, removing ModernBERT and relying solely on RoBERTa 512 sliding window chunking degrades macro-F1 score by 11.4\% due to lost discourse dependencies. Second, disabling MSTTR and burstiness $CV_L$ meters increases false positive classifications on complex human mathematics and physics papers by 4.4\%. Third, setting $\lambda=0.2$ in min-max robust loss optimizes latent feature alignment, yielding a +23.2\% recovery boost post-paraphrasing compared to standard cross-entropy retraining. Evaluated across held-out academic disciplines (such as Law and Philosophy), the multi-scale hybrid ensemble maintained a 97.4\% F1 score, demonstrating robust zero-shot domain adaptation. The dual-branch ensemble processes 1,000 words in 280 ms on a single NVIDIA RTX 4090 GPU, making the system highly suitable for real-time deployment in university editorial systems.
+Domain generalization analysis across held-out categories in \texttt{results/ood\_domain.csv} demonstrates strong precision on academic abstracts (1.31\% FPR, 98.92\% AI recall, $n=7,808$), zero false positives on QA/conversational text (0.00\% FPR, 100.00\% AI recall, $n=1,196$), but elevated false positives on student essays (12.03\% FPR, 98.00\% AI recall, $n=3,000$). Stylometric burstiness ($CV_L$) and lexical diversity (MSTTR) provide heuristic diagnostic context. Contrastive loss regularized fine-tuning yields a measured +0.83\% recall advantage on held-out heavy rewrites over standard cross-entropy retraining. Latency benchmarking measured on an Intel i5-12450H CPU within a Windows 10 environment demonstrates 347.8 ms per 512-token context window and 36.6 ms per individual sentence, enabling responsive batch processing without requiring specialized server GPUs.
 
 \section{CONCLUSION}
-This paper presented a Multi-Scale Hybrid Ensemble (ModernBERT 8k + RoBERTa 512) framework for robust AI-generated academic text detection. By combining long-context macro evaluation with sentence-level micro inspection via soft-voting gated max-pooling, our approach resolves context truncation while suppressing false alarms. Integrated stylometric gauges (MSTTR and sentence length burstiness $CV_L$) deliver interpretable verification, while our interactive closed-loop retraining workbench provides 97.8\% resilience against commercial humanizer attacks. Future work will extend this framework to multimodal scientific paper verification and zero-shot adaptation for next-generation open-weight LLMs.
+This paper presented a Multi-Scale Hybrid Ensemble framework combining sliding 3-sentence context (ModernBERT 512) and micro-sentence syntax (RoBERTa 512) with adaptive max-pooling and stylometric heuristic gauges. On a held-out test split of 12,004 sentences, smoothed ensemble pooling achieves 98.08\%--98.59\% accuracy. Adversarial retraining recovers +10.83\% recall against heavy prompt attacks, though with an observed clean-human FPR inflation (+20.67\%). These findings underscore the necessity of human-in-the-loop forensic workflows rather than autonomous disciplinary actions.
 
 \begin{thebibliography}{15}
 

@@ -1,0 +1,632 @@
+Social-HUMINT: An LLM-Augmented Unified Framework for
+Measuring Social Media Exposure
+Pellegrino Casoriaa,∗, Simon Pietro Romanoa
+aUniversity of Naples Federico II, Department of Electrical Engineering and Information Technology (DIETI), Naples, Italy
+A R T I C L E I N F O
+Keywords:
+Social Media Intelligence (SOCMINT)
+Cyber Human Intelligence (Cyber-HUMINT)
+Large Language Models (LLMs)
+Social Engineering
+User Profiling
+Cyber Threat Intelligence (CTI)
+A B S T R A C T
+In the post-API landscape, social-media profiling has become inexpensive and automated: Large
+Language Models (LLMs) can extract structured information from unstructured content and deduce
+attributes users never disclosed. A person’s true exposure is not what they post but what can be
+inferred from it. As these practices become routine, exposure to social engineering attacks becomes
+an operational certainty, demanding a shared framework for assessment and mitigation.
+We make this exposure measurable by quantifying how accurately a target can be profiled, and
+how far that profile enables social engineering attacks. Because no existing model fully spans this
+continuum, we unify Social Media Intelligence (SOCMINT) and Cyber Human Intelligence (Cyber-
+HUMINT), two individual-focused disciplines that evolved separately, into a single doctrine-grounded
+taxonomy of 38 capabilities across the Cyber Threat Intelligence lifecycle, where user profiling bridges
+passive collection and active engagement. Domain experts validated the taxonomy (Fleiss’ 𝜅= 0.92).
+We operationalize its core path (extraction, inference, and susceptibility assessment) as an
+LLM-augmented multi-agent pipeline, evaluated on real participants’ public data. Susceptibility
+is assessed indirectly: the pipeline predicts how each target would rank personalized engagement
+options, matching their actual choices significantly above chance. This ranking capacity captures the
+personalization on which tailored attacks depend. The underlying profiles are accurate: extraction
+reaches 𝐹1 = 97.3%, and inferred attributes score 4.73∕5, both far above rule-based and NER-
+based baselines at negligible cost. The framework augments security analysts’ tradecraft rather than
+replacing it and enables defenders to gauge their own exposure before an adversary does.
+1. Introduction
+Social media has transformed how people communicate
+and share information. It now has about 5.66 billion active
+users (over 68% of the global population), grows at 4.1% per
+year, and accounts for more than 2 hours of daily use across
+an average of 7 platforms [1, 2]. These public footprints
+expose users to security risks that extend beyond what they
+post. Beneath visible content lies an inferred layer (organi-
+zational access, behavioral traits, communication style) that
+users never disclose but that can still be reconstructed from
+sparse public signals [3]. This inferred layer is part of a
+person’s true exposure, yet current practice neither observes
+nor measures it.
+The dual-use nature of this environment is evident in
+current tradecraft. MITRE ATT&CK documents systematic
+reconnaissance through publicly available social data [4].
+APT campaigns such as IN(TER)CEPTION [5], Dream
+Job [6], EXOTIC LILY [7], and Contagious Interview [8]
+begin with counterfeit personas, cloned profiles, and social
+engineering on LinkedIn and other platforms before any
+technical intrusion. This trend is accelerating. IBM X-Force
+reports an 84% increase in phishing campaigns delivering
+infostealers identified through social media monitoring [9].
+CrowdStrike reports faster adversary breakout times and
+malware-free techniques that are often first observable in
+social media discourse [10].
+The Cambridge Analytica scandal [11] marked the start
+of the post-API era. Platforms restricted their APIs, while
+∗Corresponding author
+pellegrino.casoria@unina.it (P. Casoria)
+GDPR and the Digital Services Act constrained lawful
+collection [12, 13]. As a result, profiles can now be built
+only by extracting data from unstructured, platform-specific
+sources, often through scraping that raises Terms-of-Service
+and privacy concerns [14]. Platforms also enforce defenses
+through access policies and data-protection measures. Yet
+these controls are increasingly fragile. Large Language
+Models (LLMs) can extract structured information from
+unstructured sources at scale and infer latent attributes that
+platforms never explicitly exposed.
+This attack surface is hard to measure because most
+steps that turn observable data into exploitable intelligence
+happen out of sight, before any technical intrusion. These
+invisible stages can be reconstructed only by mirroring the
+adversary through legitimate disciplines built on the same
+capabilities. SOCMINT (Social Media Intelligence) [15]
+supports passive, observation-driven collection and analy-
+sis of social media data. Cyber-HUMINT relies on active
+engagement, with operators interacting with targets to elicit
+what observation cannot reveal. Both are already opera-
+tional, from government SOCMINT programs that moni-
+tor extremist recruitment and foreign influence to Cyber-
+HUMINT operations that infiltrate ransomware groups and
+darknet marketplaces [16–19].
+Both disciplines focus on the same individuals and differ
+mainly in depth of engagement, yet they have evolved as
+separate workflows. Existing models cover only parts of
+this path. Kill-chain and ATT&CK-style taxonomies enu-
+merate adversary phases [4, 20], and OSINT frameworks
+structure passive collection [21]. However, none formalizes
+the passive-to-active continuum at the level of operational
+Casoria and Romano: Preprint submitted to Elsevier
+Page 1 of 18
+arXiv:2610.31573v1  [cs.CR]  22 Oct 2026
+
+
+Social-HUMINT: An LLM-Augmented Unified Framework for Measuring Social Media Exposure
+Figure 1: The SOCMINT and Cyber-HUMINT continuum:
+positioning of this work.
+capabilities, where otherwise invisible exposure becomes
+observable. How far these capabilities enable attacks, and
+how much of that path LLMs can automate, remain open
+empirical questions that require direct study.
+1.1. Major contributions of this work
+lThis work makes that exposure measurable so that in-
+dividuals and organizations can assess their own risk before
+an adversary does. We unify the observation-to-engagement
+continuum into a single capability framework and opera-
+tionalize its core as an LLM-augmented system, evaluated
+with real users (Fig. 1). To our knowledge, this is the first
+study that measures not only how accurately such profiles
+can be built, but also their impact on users, specifically how
+far they translate into susceptibility to social engineering.
+Our contributions are as follows:
+1. A unified capability framework (Sec. 4) that or-
+ganizes 38 capabilities across the five phases of the
+Cyber Threat Intelligence (CTI) lifecycle, with profil-
+ing as the transition layer between passive collection
+and active engagement. We derive it from established
+intelligence doctrine and validate it via expert elicita-
+tion (Sec. 6.1; content validity, average I-CVI = 0.90;
+inter-rater agreement, Fleiss’ 𝜅= 0.92). No single
+source we surveyed spans more than ∼68% of these
+capabilities.
+2. An LLM-augmented multi-agent system (Sec. 5)
+that operationalizes the framework’s core path, in-
+cluding cross-platform extraction, inference of attack-
+relevant latent attributes, and susceptibility assess-
+ment. In contrast to prior isolated, single-purpose
+tools, it orchestrates agents across platforms into one
+pipeline yielding traceable profiles, as analyst support
+rather than a replacement for established tooling. The
+design is informed by an analysis of the defenses
+deployed by 5 major social-media platforms.
+3. A human-subjects study (Sec. 6.2) measuring the
+core path in practice: extraction and inference ac-
+curacy on participants’ own data, and the extent to
+which the resulting profiles anticipate the personal-
+ized engagement a social-engineering attack would
+exploit, marking the point where exposure becomes
+operational. We compare results against rule- and
+NER-based baselines (Sec. 7.1).
+2. Background and Related Works
+Measuring exposure along the observation-to-engage-
+ment continuum requires grounding it in existing work and
+its gaps, and analyzing the dual-use practice around it (ad-
+versarial exploitation and the defensive disciplines that mir-
+ror it), the tools that operationalize both, and the platform
+constraints that bound them.
+2.1. Social-Media Profiling and Intelligence
+Profiling individuals from social media spans many re-
+search strands that have advanced largely in isolation, includ-
+ing cybersecurity, LLM-based attribute inference, extraction
+pipelines, and user modeling.
+In cybersecurity, a substantial body of work targets
+cyber threat intelligence (CTI). Zhao et al. [22] automati-
+cally extract and categorize CTI from social-media streams,
+and Guo et al. [23] fuse threat signals from heterogeneous
+sources into structured intelligence. However, both focus
+on threat indicators and reports rather than the individu-
+als behind them. From a framework perspective, Pastor-
+Galindo et al. [21] survey the broader OSINT landscape with
+a section on social media, while Teti [24] conceptualizes the
+convergence of passive observation and active engagement
+through a data-capture platform, but without a technical im-
+plementation. On the offensive side, Heiding et al. [25] auto-
+mate the full spear-phishing pipeline (reconnaissance, target
+profiling, lure generation) with click-through rates matching
+human experts. Focusing on lure generation, Hazell [26]
+and Saha Roy et al. [27] produce convincing personalized
+phishing at scale and marginal cost, bypassing commercial
+guardrails. Yet the profile remains an opaque intermediate
+artifact, validated only by attack success. A parallel literature
+trains LLM and transformer classifiers to detect threats,
+phishing, and abusive content, which lies outside our scope.
+For example, San Biagio et al. [28, 29] combine ML and
+NLP to identify threats across the surface web, social media,
+and darknets at up to 95% accuracy, and Mishra et al. [30]
+flag smishing from message content and URL behavior.
+One line of work uses LLMs to infer attributes users
+never disclosed. Alizadeh et al. [31] show that web-browsing
+LLMs (GPT-4o, GPT-o3, Llama-3-8B-Web) infer demo-
+graphic attributes from X/Twitter usernames, drawing on
+bios and follow networks but still guessing, with systematic
+bias, from minimal signals. Staab et al. [3] show that LLMs
+leak sensitive attributes by inference on real Reddit profiles,
+and through chatbots that elicit additional cues, exposing
+the limits of current mitigations. Jiang and Ferrara [32]
+and Yu [33] combine LLM-encoded text with social-graph
+structure to infer partisanship and political orientation from
+limited footprints. These works infer specific traits (demo-
+graphics, political orientation) in isolation, not within an
+operational profiling process spanning extraction to down-
+stream engagement.
+More broadly, in extraction pipelines, Arjun et al. [34]
+propose PeopleXploit, a hybrid OSINT stack orchestrating
+web tools for footprint profiling, yet without formal identity
+resolution or systematic evaluation. Wang et al. [35] generate
+Casoria and Romano: Preprint submitted to Elsevier
+Page 2 of 18
+
+
+Social-HUMINT: An LLM-Augmented Unified Framework for Measuring Social Media Exposure
+Table 1
+Documented adversarial campaigns exploiting social-media intelligence.
+Threat
+Actor
+Type
+Country Campaigns
+Social Profiling
+Human Engage.
+Target
+Impact
+Ref.
+Contagious
+Interview
+Nation State
+KP
+DEV#POPPER
+Profile Scraping
+Job/Role Enum.
+Fake Job Offers
+Employees/Insiders
+Financial Theft
+[8]
+Lazarus
+Group
+Nation State
+KP
+Op. Dream Job
+Op. In(ter)ception
+Job/Role Enum.
+People Network
+Fake Job Offers
+Spear Phishing
+Executives
+Employees/Insiders
+Financial Theft
+Data Breach
+[5]
+EXOTIC
+LILY
+Cybercriminal
+RU
+Bumblebee
+BazarLoader
+Profile Scraping
+Job/Role Enum.
+Spear Phishing
+Impersonation
+Executives
+Employees/Insiders
+Data Breach
+Service Disruption
+[41]
+Kimsuky
+Nation State
+KP
+BabyShark
+AppleSeed
+Profile Scraping
+Behavioral Analysis
+Impersonation
+Journalists/Activists
+Data Breach
+[42]
+APT42
+Nation State
+IR
+Charming Kitten
+SpearSpecter
+Profile Scraping
+Behavioral Analysis
+Impersonation
+Disinformation
+Political Figures
+Electoral Interf.
+Reputation Damage
+[43]
+Scattered
+Spider
+Cybercriminal
+US/UK
+MGM Breach
+Caesars Breach
+Job/Role Enum.
+People Network
+Voice Phishing
+IT/Helpdesk
+Service Disruption
+Data Breach
+[44]
+UNC6040
+Cybercriminal
+–
+Salesforce Data
+Theft Campaign
+Job/Role Enum.
+Voice Phishing
+IT/Helpdesk
+Data Breach,
+Financial Theft
+[45]
+Anonymous
+Hacktivist
+–
+OpKKK,
+HoodsOff
+Profile Scraping
+People Network
+Impersonation
+General Public
+Doxing
+[46]
+regex templates via CSS class-tag frequency analysis to
+extract list-structured social media content across platforms
+(Twitter/X, Facebook, Weibo, forum-like sites), but assume
+stable markup and add no semantic modeling. Sancheti et
+al. [36] use GPT-3.5 to extract 14 structured attributes (ed-
+ucation, work experience, locations, projects, certifications)
+from search-engine results to disambiguate same-name indi-
+viduals, but remain web-centric and decoupled from CTI.
+On user modeling and stance detection, a large body
+of work models users and their opinions from social data:
+Tan and Jiang [37] and Aldayel et al. [38] survey, respec-
+tively, LLM-based user modeling and stance detection, but
+address security only marginally, with emphasis on platform
+integrity (fraud, misinformation) rather than intelligence.
+Concrete efforts remain narrow in scope: Mbarek et al. [39]
+build a user profile by correlating multiple online social
+networks, but for a single clinical task and with pre-LLM
+methods; Rahimzadeh et al. [40] apply an LLM stance-
+detection pipeline to 6M election tweets on Twitter/X, classi-
+fying opinions against predefined claims rather than extract-
+ing attributes, on a single platform and language.
+Across these areas, LLM use stays confined to extraction
+and classification, rarely reaching latent attribute inference
+or engagement support, while systems remain isolated tools
+rather than orchestrated, cross-platform architectures. To
+the best of our knowledge, no prior work builds a struc-
+tured, traceable profile carried from observation to engage-
+ment, nor measures the exposure it creates. Our frame-
+work addresses both gaps: it operationalizes the observation-
+to-engagement continuum with an LLM-augmented multi-
+agent system (Sec. 5) and measures exposure through a
+human-subjects study (Sec. 6.2).
+2.2. Adversarial Use in Practice
+Attack campaigns confirm that social media has become
+an instrument of collection and engagement for offensive
+operations. Across eight documented campaigns (Tab. 1),
+attackers follow recurring patterns of social profiling and
+human engagement, varying in target and impact. Conta-
+gious Interview [8] and Lazarus [5, 6] pose as recruiters
+on LinkedIn and GitHub, luring software developers and
+defense staff into fake hiring processes that deliver malware.
+Kimsuky [42, 47] and APT42 [43] instead pose as fabricated
+journalists and researchers, building trust with academics,
+policy experts, and political figures before deploying mal-
+ware or harvesting credentials. EXOTIC LILY [7, 41] brokers
+initial access, building employee personas from LinkedIn
+and Crunchbase to plant ransomware; Scattered Spider [44]
+and UNC6040 [45] use voice phishing against IT help desks
+and cloud administrators to hijack accounts and exfiltrate
+data. Anonymous [46] combines OSINT and social engineer-
+ing to dox roughly 1,000 members of extremist groups for
+hacktivism purposes.
+Yet this groundwork is flattened in how intrusions are
+modeled: the kill chain [20] runs from reconnaissance to
+objectives, capturing the technical attack but compressing
+target profiling into a single upstream step rather than a
+structured phase. This pre-intrusion phase is where exposure
+is built and where defense must act first.
+To recover what the kill chain omits, we turn to defend-
+ers’ intelligence disciplines, which already treat collection,
+profiling, and engagement as structured capabilities. The
+framework developed in this work builds on them to make
+this phase visible.
+2.3. SOCMINT and Cyber-HUMINT definitions
+Neither social media intelligence discipline has a single
+universally accepted definition. However, a shared opera-
+tional understanding is necessary to construct a coherent
+capability framework spanning both domains.
+Social Media Intelligence (SOCMINT) remains a rela-
+tively young field, and its definition continues to evolve with
+the platforms it studies. For the purposes of this work, we
+adopt the following formulation:
+Casoria and Romano: Preprint submitted to Elsevier
+Page 3 of 18
+
+
+Social-HUMINT: An LLM-Augmented Unified Framework for Measuring Social Media Exposure
+SOCMINT refers to intelligence derived from the col-
+lection and analysis of social media data, typically through
+passive, observation-driven methods, in compliance with
+privacy and transparency constraints. It provides near real-
+time situational awareness by enabling the collection and
+clustering of content that clarifies unfolding events, accel-
+erates emerging threats identification, offers insight into
+groups, and may support the identification of criminal intent.
+This definition draws on established sources, each em-
+phasizing a different facet. The National Policing Insti-
+tute focuses on social platforms as web-based systems for
+communication within virtual communities [48]; Omand
+et al. [15] place SOCMINT within the intelligence spec-
+trum, alongside IMINT, HUMINT, and SIGINT; and the
+Health Sector Cybersecurity Coordination Center (HC3)
+[49] stresses its dual-use nature, emphasizing metadata
+(birth date, geolocation, social ties, workplace) alongside
+user-published content.
+By contrast, HUMINT principles are more stable across
+doctrinal sources. We therefore adopt the following opera-
+tional definition:
+Cyber-HUMINT refers to intelligence derived from in-
+formation collected by human operators and primarily pro-
+vided by human sources within digital contexts. It transforms
+passive surveillance into active collection and is achieved
+through observing or directly communicating with people,
+according to management and governance practices specific
+to the source type.
+NATO AJP-2, UK Joint Doctrine, and INCIBE stress
+operator training and HUMINT modalities, including de-
+briefing, source handling, questioning, interrogation, and
+liaison [50, 51]; these sources mark the boundary between
+passively collected surveillance outputs and their active
+conversion into intelligence. The Italian Security Intelli-
+gence System highlights the need to adapt procedures to
+each source [52], while the CIA adds a governance layer
+through formal authorization and cost–risk assessment [53].
+U.S. Army doctrine specifies operational-level procedures
+for collector employment and elicitation from sources [54].
+SOCMINT and Cyber-HUMINT are complementary yet
+distinct: the former observes, the latter engages. User profil-
+ing bridges them, turning passively collected social media
+data into a structured profile that can support engagement.
+Yet prior work models this continuum only conceptually,
+without a formal capability model, leaving the continuum
+unmeasured. Providing such a model is therefore the objec-
+tive of Sec. 4.
+2.4. Tools for Social Media Analysis
+The security community has developed a wide range of
+tools that address specific aspects of identity correlation and
+attribute extraction [21].
+Enumeration tools verify whether a given identifier ex-
+ists across multiple platforms. Sherlock [55] relies on HTTP
+status codes, but produces many false positives. WhatsMy-
+Name [56] improves precision through a curated dataset of
+platform-specific response patterns, at the cost of continu-
+ous signature maintenance. Maigret [57] combines both ap-
+proaches, extracting basic profile attributes (name, location,
+bio) via DOM parsing. Holehe [58] leverages password-
+recovery endpoints to detect account registrations without
+triggering user notifications on supported platforms.
+Aggregation frameworks integrate multiple enumer-
+ation modules and data sources into unified workflows,
+via modular architectures (SpiderFoot [59]) or graph-based
+visual analytics (Maltego [60]). These require significant
+analyst expertise in setup and result interpretation, making
+them power-user tools rather than turnkey solutions.
+Commercial platforms leverage proprietary data access
+and advanced analytics, extending coverage beyond publicly
+scrapable information. Pipl [61] aggregates records from
+people-search databases, public records, and social media
+APIs to build comprehensive identity profiles. PimEyes [62]
+enables image-based identity search via facial recognition.
+Existing tools stop short of profiling itself: they generate
+false positives, require frequent maintenance as platforms
+evolve, and leave analysts to manually fuse fragmented data,
+infer unstated attributes, and assess relevance. Determinis-
+tic methods, such as regular expressions and named-entity
+recognition, handle these tasks poorly. The LLM-augmented
+architecture proposed in this work addresses this gap by
+adding semantic parsing and latent attribute inference to the
+pipeline, generating structured profiles while keeping human
+judgment central.
+2.5. Security Constraints of Social Platforms
+Platform APIs have evolved from general-purpose data
+extraction channels into tightly controlled interfaces de-
+signed to reduce privacy leakage and automated abuse.
+This platform-governed access model also affects research
+reproducibility [63]. We identify four layers of constraints
+that shape data accessibility: these constraints define the
+operational boundaries within which both legitimate and
+adversarial data collection must occur. This section exam-
+ines how major platforms implement them, providing an
+overview in Tab. 2.
+User-controlled visibility. Privacy settings place expo-
+sure under user control: content not shared stays inaccessible
+regardless of API capability. Yet Instagram, X, and TikTok
+accounts are public by default [64–66]. Opting into private
+mode restricts posts and content to approved followers,
+though TikTok keeps nickname, username, and profile photo
+public regardless and defaults under-16 accounts to private.
+LinkedIn instead grades visibility by connection degree – full
+for 1st-degree, progressively reduced for 2nd-, 3rd-degree,
+and out-of-network users [67]. Facebook exposes granular
+per-element controls with awareness tools; X additionally
+allows disabling lookup by email or phone.
+Casoria and Romano: Preprint submitted to Elsevier
+Page 4 of 18
+
+
+Social-HUMINT: An LLM-Augmented Unified Framework for Measuring Social Media Exposure
+Table 2
+Comparative summary of social media platform security constraints.
+Platform
+User Visibility
+Platform / API Access
+Abuse Resilience
+ToS / Case Law
+Facebook
+User-controlled
+(default: Friends)
+Graph API; OAuth (user / app /
+page tokens); App Review
+EDM team; rate limits; behavioral analysis;
+client-side defenses; account ban
+Meta v. Bright Data
+LinkedIn
+User-controlled
+(default: Public);
+connection-degree visibility
+OAuth (self only); Marketing /
+Talent API (no scraping)
+CASAL; behavioral analysis; content
+moderation; anti-scraping; ML real-time
+risk assessment; account ban
+hiQ v. LinkedIn
+Instagram
+User-controlled
+(default: Public)
+Graph API; OAuth (Business /
+Creator only); App Review
+EDM team; rate limits; behavioral analysis;
+client-side defenses; account ban
+Meta v. Bright Data
+X/Twitter
+User-controlled
+(default: Public)
+Paid tiers (Free/Basic/Pro);
+OAuth (app + user level)
+Rate limits; anti-spam; account ban
+X v. Bright Data
+TikTok
+User-controlled
+(default: Public)
+Research API; Business API (no
+scraping); VCE (non-profit only)
+CAPTCHAs; rate limits; behavioral
+analysis; anti-scraping
+EC v. TikTok
+Platform-controlled authorization. Retrievable data is
+the intersection of granted scopes, access tier, and endpoint
+policy: OAuth tokens are bound to the authenticated user,
+so endpoints return only self-data or aggregated signals.
+Higher-risk scopes require platform approval and explicit
+user consent. Together, these constraints block individual
+enumeration and large-scale social-graph reconstruction.
+Facebook’s Graph API scopes tokens as user (individual
+data, with consent), app (no user data), or page (management
+and insights) [68]; since v2.0 (2014), /me/friends returns
+only friends who also authorized the app, ending bulk rela-
+tionship harvesting [69], and Dev-to-Live transition requires
+an App Review tightened after Cambridge Analytica [70].
+LinkedIn is approval-gated by business line: its only self-
+serve API returns the authenticating user’s own profile [71],
+while Marketing and Talent APIs are role-bound to adver-
+tiser or organization-admin accounts and policy-restricted
+from data export or third-party combination [72].
+Instagram retired its Basic Display API in December
+2024; third-party access now requires the Graph API, limited
+to Business and Creator accounts (presence management,
+analytics, hashtag search), with endpoints gated by granular
+permissions and App Review [73].
+TikTok offers no general public-data API: its Research
+API admits only vetted academics in the US and EEA (in-
+dependence, funding disclosure, ethical review), with a re-
+stricted Virtual Compute Environment for non-profits; Busi-
+ness API exposes no raw public data [74].
+X tiers access by paid plan (Free, Basic, Pro) with rising
+quotas and features such as filtered streams and full-archive
+search; it separates App-Only tokens (public data) from User
+Context authentication (private or on-behalf access) [75, 76].
+Abuse resilience. Platforms enforce access dynamically
+through rate limits, behavioral fingerprinting, bot detection,
+and CAPTCHAs, and resist scraping through DOM random-
+ization, virtualization, and lazy loading. They adapt in real
+time to throttle, challenge, or ban suspicious activity.
+Facebook runs a dedicated External Data Misuse team
+with rate and data limits plus behavioral analysis [77]. Our
+analysis (Sec. 5) identifies further client-side defenses, in-
+cluding randomized CSS class names (which force reliance
+on stable ARIA attributes), lazy loading with placeholders,
+text fragmented across <span> tags, and DOM virtualization
+that drops off-viewport posts while scrolling. Together, these
+mechanisms defeat reliable single-pass bulk extraction. In-
+stagram inherits Meta’s centralized detection and rate lim-
+iting, restricting accounts that scrape [78]. LinkedIn centers
+its Trust ML stack on CASAL (Centralized Abuse Scoring
+As a Library), which scores abuse (fake accounts, account
+takeover, moderation, scraping) via retrained models [79].
+X rate-limits per application and user, locks accounts
+behind anti-spam challenges on suspicion, and permanently
+suspends non-API automation or rate-limit bypass [80, 81].
+TikTok combines CAPTCHAs, rate limiting, and behavioral
+analysis of devices, networks, and interaction patterns, plus
+undisclosed controls [82].
+Terms of Service. Platform Terms uniformly prohibit
+scraping, fake accounts, and circumvention of technical con-
+trols, exposing violators to account termination and legal
+action [83–86]. Yet courts have repeatedly held that scraping
+public, logged-out data does not breach these Terms, since
+non-authenticated users never assented to them and data
+lack authentication barriers: hiQ Labs v. LinkedIn (9th Cir.
+2022) [87], Meta v. Bright Data [88], X Corp. v. Bright Data
+(N.D. Cal. 2024) [89]. The European Commission’s 2025
+preliminary finding also faults TikTok for over-restricting
+researcher access under the Digital Services Act [90].
+Across the five platforms, defensive postures converge
+(rate limiting, behavioral analysis, ToS restrictions), but API
+availability diverges. This asymmetry between platform-
+controlled access and research needs motivates alternative
+collection. Accordingly, our study collected only data par-
+ticipants had made publicly visible, accessed through the
+authenticated sessions that platform controls require.
+3. Methodology
+Our research followed a six-phase design that spans
+doctrinal foundations to operational validation, grounded in
+established methodologies [91–94].
+Casoria and Romano: Preprint submitted to Elsevier
+Page 5 of 18

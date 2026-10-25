@@ -1,0 +1,786 @@
+What Makes a Good Unmasking Policy? A Controlled Study of Learned
+Unmasking in Diffusion Language Models
+Jinya Sakurai1 2
+Xun Xu2 3
+Jaehong Yoon1†
+1NTU Singapore
+2Institute for Advanced Intelligence and Computing (IAIC), A*STAR
+3Centre for Frontier AI Research (CFAR), A*STAR
+Abstract
+Masked diffusion language models generate to-
+kens in parallel, but their efficiency depends on
+which predictions are committed. Learned un-
+masking policies improve the speed–accuracy
+trade-off, yet differ in supervision, inputs, and
+capacity, obscuring which choices matter. We
+view supervised policies as distilling a decod-
+ing procedure through a teacher and examine
+independently what the teacher labels as com-
+mittable, on which states the policy imitates it,
+what the policy observes, and how much the
+number of function evaluations (NFE) must de-
+crease to offset policy overhead. We find that
+labeling predictions matching the final output
+is overly permissive at low NFE, and hidden
+states are weak alone but can complement confi-
+dence. About a 10% NFE reduction suffices to
+offset policy overhead for policies up to 7.5M
+parameters across tested settings. We therefore
+train a policy on trajectory-contraction targets,
+which accept only commitments staying on a
+reference trajectory, using confidence and hid-
+den states. On LLaDA-8B-Instruct, the result-
+ing 856K-parameter policy achieves the best
+accuracy–NFE frontier and highest throughput
+on GSM8K, is competitive at moderate targets
+on MATH-500 and HumanEval, and largely
+transfers to Dream-7B-Instruct.
+§ Code
+1
+Introduction
+Building on discrete diffusion models (Hoogeboom
+et al., 2021; Austin et al., 2021a; Campbell et al.,
+2022; Lou et al., 2024), masked diffusion language
+models (dLLMs) (Sahoo et al., 2024; Shi et al.,
+2024; Nie et al., 2025; Ye et al., 2025; Sakurai
+et al., 2026) provide an alternative to the left-to-
+right generation of autoregressive models (Brown
+et al., 2020; Grattafiori et al., 2024; Qwen et al.,
+†Corresponding author.
+2025) by iteratively refining partially masked se-
+quences and committing multiple tokens in paral-
+lel. Their efficiency, however, depends strongly on
+the unmasking policy, which decides which posi-
+tions to commit at each step. Conservative policies
+require many denoising evaluations, whereas un-
+masking many tokens at once can produce mutually
+inconsistent tokens, as they are predicted indepen-
+dently given the same state. Such errors persist,
+since committed tokens are not revised later (Wu
+et al., 2026; Jazbec et al., 2026; Bao et al., 2026;
+Xu et al., 2026). Recent work therefore adapts the
+number of committed tokens to the decoding state.
+Training-free methods do so using confidence (Wu
+et al., 2026) or entropy-based dependence control
+(Ben-Hamu et al., 2025), while learned policies are
+trained from data (Jazbec et al., 2026; Bao et al.,
+2026; Xu et al., 2026; Sun et al., 2026).
+Despite this progress, learned unmasking poli-
+cies differ in several design choices at once: which
+positions are labeled as safe to commit, which de-
+coding states are used for training, and what in-
+formation the policy observes, often together with
+policy capacity. For example, whether backbone
+hidden states help cannot be judged, since the poli-
+cies that use them also differ in size or supervision.
+Prior work reports the number of function evalua-
+tions (NFE) and throughput, but the NFE reduction
+needed to offset policy overhead across policy sizes,
+caching, and prompt lengths remains unclear.
+We therefore revisit learned unmasking policies
+from a distillation perspective. Existing supervised
+policies (Bao et al., 2026; Sun et al., 2026) can
+be viewed as distilling a fixed decoding procedure:
+the procedure is run on training prompts to obtain
+reference trajectories, a teacher derived from them
+labels which positions may be committed, and the
+policy imitates this teacher. This view separates
+what the teacher labels, on which states the policy
+imitates it, and what the policy observes; we vary
+one at a time, comparing choices from prior work
+1
+arXiv:2610.31576v1  [cs.AI]  22 Oct 2026
+
+
+with new candidates. First, existing teachers label
+a prediction as committable whenever it matches
+the final output. A correct token, however, is not
+necessarily safe to commit early, since its commit-
+ment changes the input to subsequent steps. We
+therefore introduce trajectory contraction, which
+labels a commitment as valid only when it directly
+reaches a later state of the reference trajectory, and
+compare it jointly with the choice of training states:
+reference trajectories or those induced by the la-
+bels. Second, as policy inputs, we compare confi-
+dence, probability margins, hidden representations,
+and confidence combined with hidden representa-
+tions. Third, we measure both NFE and end-to-end
+throughput in tokens per second (TPS), and profile
+the policy overhead.
+Our study shows that matching the final output is
+an overly permissive label in the low-NFE regime,
+with 28.7% of such positives leaving the reference
+trajectory when committed early, and that hidden
+representations are weak alone but can complement
+confidence. It also shows that, across the tested set-
+tings, a policy of up to 7.5M parameters pays off
+in throughput once it reduces NFE by more than
+about 10%. Based on these findings, we train a pol-
+icy with trajectory-contraction targets on reference
+trajectories, taking confidence and hidden represen-
+tations as input; it has only 856K parameters, about
+0.01% of the backbone.
+On LLaDA-8B-Instruct (Nie et al., 2025), our
+policy achieves the best accuracy–NFE frontier
+on GSM8K (Cobbe et al., 2021), where it also
+attains the highest TPS at every accuracy target.
+On MATH-500 (Hendrycks et al., 2021; Lightman
+et al., 2024) and HumanEval (Chen et al., 2021), it
+reaches moderate accuracy targets with the fewest
+NFE and the highest TPS, whereas training-free
+methods are more efficient at the highest targets,
+and on MBPP (Austin et al., 2021b) it performs
+comparably to the strongest baselines. Its advan-
+tage largely carries over to Dream-7B-Instruct (Ye
+et al., 2025) and, on mathematical reasoning, to
+unseen generation lengths.
+Our contributions are:
+• We show that matching the final output is an
+overly permissive commitment label in the low-
+NFE regime, and introduce trajectory contrac-
+tion, which improves the accuracy–NFE fron-
+tier, with a further out-of-domain gain from
+supervision on reference trajectories.
+• We show that backbone hidden states alone
+are a weak input, but can improve the frontier
+at high accuracy targets when combined with
+token confidence, and build on this an 856K-
+parameter policy.
+• By profiling per-step latency, we show that
+policies of up to 7.5M parameters pay off in
+throughput once they reduce NFE by more than
+about 10% in the tested settings, and evaluate
+our policy across tasks, backbones, and genera-
+tion lengths.
+2
+Related Work
+Efficient unmasking. The efficiency and quality
+of dLLMs depend strongly on the order and de-
+gree of parallelism used for unmasking (Kim et al.,
+2025; Chen et al., 2026). Training-free approaches
+exploit predictive uncertainty, decoding dynamics,
+or dependencies among candidate positions to de-
+termine which tokens can be committed in parallel
+(Ben-Hamu et al., 2025; Wei et al., 2026; Luxem-
+bourg et al., 2026; Lee et al., 2026; Kim et al.,
+2026). Fast-dLLM is particularly relevant to our
+setting: it uses confidence-thresholded parallel de-
+coding to reduce denoising steps while keeping the
+underlying dLLM frozen (Wu et al., 2026). De-
+spite substantial progress, these methods prescribe
+the commitment rule at inference time rather than
+learning it from decoding experience.
+Learning unmasking policies. Recent work in-
+stead learns where or when to commit tokens, using
+reinforcement learning, supervised oracle signals,
+ranking objectives, or learned dependency models
+(Hong et al., 2026; Xu et al., 2026; Asano et al.,
+2026; Ringel et al., 2026). LUP learns a lightweight
+Transformer policy from confidence-based features
+using reinforcement learning (Jazbec et al., 2026).
+More directly related to our supervision setting,
+Learn2PD trains a lightweight filter from oracle
+token-correctness signals, whereas TraceLock de-
+rives commitment labels retrospectively from com-
+pleted decoding traces and exploits richer hidden-
+state representations (Bao et al., 2026; Sun et al.,
+2026). We study how to construct supervised com-
+mitment targets directly from Fast-dLLM trajec-
+tories and how to incorporate richer token-level
+information without sacrificing the efficiency of
+lightweight confidence-based policies.
+2
+
+
+Method
+#Params
+Policy input
+Commitment target
+Training states
+Learn2PD (Bao et al., 2026)
+2.1K
+confidence
+terminal agreement
+teacher-induced
+TraceLock (Sun et al., 2026)
+7.5M†
+hidden states
+terminal agreement
+reference
+LUP-conf (Jazbec et al., 2026)
+300K
+confidence
+reinforcement
+learning
+on-policy rollouts
+LUP-hidden (Jazbec et al., 2026)
+300M
+hidden states
+reinforcement
+learning
+on-policy rollouts
+Candidates studied
+331K–856K
+c, h, [c, m], [c, h]∗
+terminal agreement,
+contraction∗
+reference, teacher-induced
+Table 1: Design choices of existing learned unmasking policies and the candidates compared in our study. Existing
+methods differ simultaneously in their policy inputs, policy capacity, commitment targets, and training states.
+∗Candidates introduced in this work. †Estimated from the released configuration; not reported in the original paper.
+3
+Revisiting Unmasking Policy Learning
+3.1
+Problem Formulation
+A masked dLLM generates a sequence x
+=
+(x1, . . . , xL) through partially masked states τ =
+(s0, . . . , sT ). At each step t, the model produces to-
+ken distributions pθ(· | st) for the masked positions
+M(st), and an unmasking policy selects the posi-
+tions to commit, At = πϕ(zt) ⊆M(st), where zt
+is the information available to the policy. The de-
+coder then transitions to st+1 = C(st, At), where
+C fills the selected positions with their greedy pre-
+dictions, so the trajectory is deterministic given the
+policy decisions. Committing more positions per
+step reduces NFE, but premature commitments may
+degrade generation quality; a good policy achieves
+a favorable trade-off between the two.
+3.2
+Design Space and Protocol
+We study supervised policies trained offline on a
+frozen backbone, such as Learn2PD (Bao et al.,
+2026) and TraceLock (Sun et al., 2026). These
+policies distill a fixed decoding procedure: the pro-
+cedure is run on training prompts to obtain refer-
+ence trajectories, from which each masked position
+at each state is labeled with a binary commitment
+target indicating whether it may be committed, and
+the policy is trained to predict these targets. Build-
+ing such a policy requires deciding what counts
+as a correct commitment (the target), on which
+states the policy learns it (the training states; Sec-
+tion 3.3), and what the policy observes (the input;
+Section 3.4). Moreover, the policy is evaluated at
+every step, so its cost may offset the reduction in
+NFE (Section 3.5).
+Existing methods vary simultaneously across
+multiple design axes, making it difficult to iso-
+late the effect of individual design choices from
+their reported results. For example, LUP-hidden
+underperforms LUP-conf despite roughly 1000×
+more parameters (Jazbec et al., 2026) (Table 1). We
+therefore compare existing and newly introduced
+candidates for each design axis while holding the
+others fixed. We evaluate the commitment target
+and training states jointly in a 2 × 2 design to ac-
+count for their interaction during teacher rollouts.
+Setup. We use LLaDA-8B-Instruct (Nie et al.,
+2025) as the frozen backbone. Following Jazbec
+et al. (2026), all policies are trained on a mixture
+of the GSM8K (Cobbe et al., 2021) and MATH
+(Hendrycks et al., 2021) training sets, with ref-
+erence trajectories generated by Fast-dLLM (Wu
+et al., 2026) at confidence threshold 0.9. Unless
+otherwise specified, we use generation length L =
+256 and block length 32, and evaluate zero-shot.
+We take the accuracy of one-by-one confidence-
+based decoding (Nie et al., 2025) as the reference
+and define target accuracy levels at 98%, 95%, and
+90% of it. For each method, we sweep its com-
+mitment threshold over a fixed grid (Section C.4)
+and compare the resulting accuracy–NFE trade-off
+against these targets. In this section, we evaluate on
+GSM8K (in-domain) and MBPP (out-of-domain)
+(Austin et al., 2021b), and all candidates share the
+same architecture, optimizer, and training schedule
+(Sections B.1 and C.3).
+3.3
+How Should Supervision Be Constructed?
+Commitment targets. We consider two oracle
+criteria for defining supervision targets (Figure 1,
+panel (a)). Each oracle specifies which masked
+positions should be committed at a given state. The
+first, terminal agreement, is used by both Learn2PD
+(Bao et al., 2026) and TraceLock (Sun et al., 2026).
+It commits a position when its current prediction
+ˆxt,i matches the terminal token x⋆
+i of the refer-
+ence trajectory: ytok
+t,i = 1[ˆxt,i = x⋆
+i ] (Section B.2).
+However, matching the terminal output does not
+3
+
+
+(a) Commitment criterion: terminal agreement vs. trajectory contraction
+s1
+So
+[M]
+[M]
+[M]
+[M]
+[M]
+prediction
+at s1
+–
+x
+is
+5
+.
+EOS
+final
+output
+So
+x
+=
+5
+.
+EOS
+≠
+=
+=
+=
+=
+terminal
+agreement
+trajectory
+contraction
+1
+1
+0
+0
+1
+0
+1
+0
+1
+1
+–
+–
+labels disagree
+1 = prediction matches the final output
+1 = committed in the furthest jump that stays on the trajectory
+So
+x
+[M]
+[M]
+[M]
+[M]
+s2
+So
+x
+[M]
+[M]
+[M] EOS
+s3
+So
+x
+=
+[M]
+[M] EOS
+s4
+···
+s1 can jump here ✓
+s1 can jump here ✓
+s1 cannot jump here ✗
+model predicts “is”, not “=”
+furthest reachable state
+(b) Training states: reference vs. teacher-induced trajectory
+s0
+s1
+s2
+s3
+s4
+s5
+s6
+teacher jump
+reference
+teacher-induced
+train on
+reference
+train on
+teacher-induced
+terminal
+s2,s4,s5: skipped by the teacher, never visited when its decisions are followed
+Figure 1: Design choices in supervising unmasking policies. (a) Terminal agreement labels every prediction
+matching the final output, whereas trajectory contraction labels only positions in the furthest jump that stays on the
+reference trajectory; they disagree when a correct token is committed before a mispredicted one. (b) Following the
+teacher skips s2, s4, and s5, which reference-trajectory supervision includes but teacher-induced supervision omits.
+guarantee that early commitment is safe: commit-
+ting a token changes the input to subsequent eval-
+uations and may alter predictions at other masked
+positions. We therefore introduce trajectory con-
+traction (TC), which permits a commitment only
+if it directly reaches a state visited later in the ref-
+erence trajectory. Let At→u = M(st) \ M(su)
+denote the positions committed between st and a
+future state su of the reference trajectory. We con-
+sider the commitment of this set valid if
+C(st, At→u) = su.
+(1)
+This condition allows the intermediate states to be
+skipped while preserving the future reference state.
+We define u⋆
+t as the largest u > t satisfying Equa-
+tion (1), and set the target ytc
+t,i = 1[i ∈At→u⋆
+t ].
+Training states. In addition to the commitment
+criterion, we consider two ways of constructing
+the states used for supervision (Figure 1, panel
+(b)). With reference trajectories, we collect train-
+ing states from the fixed decoding procedure and
+apply the oracle at each state, including those the
+oracle would otherwise skip. With teacher-induced
+trajectories, we instead generate training states by
+repeatedly applying the oracle’s commitment de-
+cisions, so that supervision is provided only at the
+states it visits. TraceLock uses reference trajecto-
+32
+64
+128
+256
+Mean NFE
+70
+72
+74
+76
+78
+80
+Accuracy (%)
+90%
+95%
+98%
+Ref
+GSM8K
+32
+64
+128
+256
+Mean NFE
+40
+44
+48
+52
+90%
+95%
+98%
+Ref
+MBPP
+Teacher + terminal
+Teacher + contraction
+Reference + terminal
+Reference + contraction
+Figure 2: Accuracy–NFE frontiers for the 2 × 2 su-
+pervision designs. Faded markers denote dominated
+operating points.
+ries, whereas Learn2PD uses teacher-induced tra-
+jectories, referring to its oracle as the teacher.
+Comparison. We compare the four combinations
+of two commitment targets (terminal agreement
+and trajectory contraction) and two training-state
+constructions (reference and teacher-induced tra-
+jectories), with the policy input fixed (Section B.1).
+As shown in Figure 2, replacing terminal agreement
+with trajectory contraction improves the frontier un-
+der both training-state constructions. On GSM8K,
+this change accounts for most of the gain, and both
+constructions perform comparably under contrac-
+tion. On the out-of-domain MBPP, reference tra-
+jectories yield a further improvement, reaching the
+98% target with 48.6 NFE versus 64.8 for teacher-
+4
+
+
+32
+64
+128
+256
+Mean NFE
+70
+72
+74
+76
+78
+80
+Accuracy (%)
+90%
+95%
+98%
+Ref
+GSM8K
+32
+64
+128
+256
+Mean NFE
+40
+44
+48
+52
+90%
+95%
+98%
+Ref
+MBPP
+Confidence
+Hidden
+Confidence + Margin
+Confidence + Hidden
+Figure 3: Accuracy–NFE frontiers for different inputs.
+induced trajectories. The gain from contraction is
+concentrated at low NFE; at the highest targets,
+terminal agreement can be more accurate (Sec-
+tion B.6).
+Two observations help interpret these results.
+First, terminal agreement is more permissive:
+28.7% of its positive labels fall outside the con-
+traction set (Section B.2). These are correct pre-
+dictions that follow a misprediction in the refer-
+ence commitment order, so committing them early
+leads to a state the reference trajectory never vis-
+its. Second, teacher-induced trajectories retain only
+34% (contraction) and 25% (terminal agreement)
+of the reference states (Section B.3). This reduced
+coverage may explain why reference trajectories
+transfer better to MBPP, although it has little effect
+on GSM8K.
+Finding 1. Trajectory contraction yields a bet-
+ter accuracy–NFE frontier than terminal agree-
+ment, mainly in the low-NFE regime; training
+on reference trajectories gives a further gain
+out of domain.
+3.4
+What Information Should the Policy Use?
+Input Candidates. Existing policies use token con-
+fidence (Learn2PD, LUP-conf) or backbone hid-
+den representations (TraceLock, LUP-hidden). Be-
+yond confidence, uncertainty statistics such as the
+top-two probability margin (Kim et al., 2025) and
+entropy (Xu et al., 2026) are also used to decide
+which tokens to unmask. For each masked posi-
+tion i at step t, we consider the token confidence
+ct,i = maxv pθ(xi = v | st), the top-two probabil-
+ity margin ∆t,i defined as the difference between
+the largest and second-largest token probabilities,
+and the backbone hidden representation ht,i. We
+compare four input configurations:
+zt,i ∈{ct,i, ht,i, [ct,i, ∆t,i], [ct,i, ht,i]} .
+(2)
+Each input is projected to a fixed hidden dimension
+and processed by the policy network fϕ, which pre-
+dicts a commitment score for each masked position.
+To isolate the effect of the input from policy capac-
+ity (Section 3.2), we keep the policy architecture
+fixed across configurations, varying only the input
+projection.
+Comparison. As shown in Figure 3, confidence
+provides a strong low-dimensional signal, whereas
+hidden states alone require substantially more
+NFEs to reach the same accuracy on both tasks.
+Adding the margin yields no consistent gain. Com-
+bining confidence with hidden states reaches the
+98% and 95% targets with the fewest NFE on both
+tasks, e.g., 42.1 versus 52.9 NFE for confidence
+alone at the 98% target on GSM8K. At the 90%
+target, however, confidence alone is comparable
+on GSM8K and slightly more efficient on MBPP.
+On MATH-500 and HumanEval, the benefit is less
+consistent, and adding the margin is competitive or
+better at the highest targets (Section B.6). These
+results suggest that hidden states can complement
+confidence; we hypothesize that their high dimen-
+sionality makes it difficult for a lightweight policy
+to exploit them alone. This gain comes at a cost:
+projecting the 4096-dimensional hidden state in-
+creases the policy from 331K to 856K parameters.
+Finding 2. Hidden representations underper-
+form confidence when used alone but can com-
+plement it, mainly reducing the NFE needed
+to reach high accuracy targets; the gain varies
+across tasks.
+3.5
+Do NFE Gains Translate to Speedups?
+The comparisons above measure decoding effi-
+ciency by NFE. While NFE captures the number of
+backbone evaluations, it does not account for the
+computational overhead of the policy itself. This
+trade-off depends on policy size (Table 1), includ-
+ing the 331K-to-856K increase from [c, h], and on
+backbone latency, which varies with prompt length
+and caching (Wu et al., 2026). We therefore profile
+per-step latency across these settings to determine
+how much NFE reduction is needed to improve
+throughput (Table 2; details in Section B.5). Be-
+sides our 331K and 856K policies, we include ran-
+domly initialized policies of 7.5M and 300M pa-
+rameters, approximately matching TraceLock and
+LUP-hidden.
+The key result is that the break-even NFE reduc-
+tion remains small for lightweight policies. Up to
+7.5M parameters, the policy adds a nearly constant
+cost of about 1.5 ms per step, at most 10% across
+5
+
+
+No policy
+Policy overhead
+Prompt
+Cache
+(ms/step)
+331K
+856K
+7.5M
+300M
+128
+None
+16.9
++10%
++8%
++9%
++38%
+Prefix
+16.0
++8%
++8%
++9%
++39%
+512
+None
+28.0
++5%
++6%
++6%
++23%
+Prefix
+16.5
++7%
++10%
++8%
++37%
+1024
+None
+45.6
++3%
++3%
++4%
++15%
+Prefix
+18.6
++8%
++7%
++8%
++34%
+2048
+None
+85.1
++2%
++2%
++2%
++8%
+Prefix
+23.4
++6%
++6%
++6%
++27%
+Table 2: Per-step latency on LLaDA-8B-Instruct without
+a policy, and the relative overhead of policies of different
+sizes. Absolute latencies are reported in Table 8.
+all settings. Thus, reducing NFE by about 10% is
+sufficient to offset the policy overhead, regardless
+of prompt length or caching. Even a 300M pol-
+icy, with up to 39% overhead, requires only about
+28% fewer NFEs to break even. Although prefix
+caching reduces backbone latency by 73% at 2048
+prompt tokens but only 5% at 128 tokens, the break-
+even threshold for policies up to 7.5M parameters
+remains around 10%. We evaluate the resulting
+throughput gains end to end in Sections 5.2 and 5.3.
+Finding 3. Policies with up to 7.5M parame-
+ters can improve throughput with a 10% NFE
+reduction across prompt lengths and caching.
+4
+Putting the Findings Together
+We combine the findings into a single policy, which
+we call OnTrack: Finding 1 determines its supervi-
+sion (Section 4.2), Finding 2 its input (Section 4.1),
+and Finding 3 keeps its overhead small.
+4.1
+Policy Architecture
+Following Jazbec et al. (2026), we use a DiT-style
+policy network for unmasking decisions. For each
+masked position i in the decoding step t, the con-
+fidence ct,i and hidden representation ht,i are pro-
+jected onto a shared d-dimensional space and addi-
+tively combined:
+zt,i = Wcct,i + Whht,i.
+(3)
+Let zt = (zt,1, . . . , zt,L) denote the resulting se-
+quence. Conditioned on the mask state mt and
+decoding step t, the policy produces a sequence of
+commitment logits
+ℓt = fϕ(zt; mt, t),
+qt,i = σ(ℓt,i).
+(4)
+Both projections and fϕ are trained jointly. With
+d = 128, the policy has 856K parameters, about
+0.01% of the backbone (Architecture details are in
+Section A.1). At each step, the policy commits
+At = {i ∈Et : qt,i > γ} ,
+(5)
+where Et is the set of masked positions in the cur-
+rent block and γ is an inference-time commitment
+threshold (Section A.3).
+4.2
+Policy Training
+We generate reference trajectories as described in
+Section 3.2 and retain those whose final answer
+is correct. For each reference state st, the target
+is the trajectory-contraction label yt,i = ytc
+t,i (Sec-
+tion 3.3), which marks the positions in the furthest
+valid contraction At→u⋆
+t . We optimize binary cross-
+entropy over eligible positions,
+L = −
+X
+t, i∈Et
+[yt,i log qt,i + (1 −yt,i) log(1 −qt,i)] .
+The complete target-construction procedure is pro-
+vided in Section A.2.
+5
+Experiments
+5.1
+Experimental Setup
+Benchmarks and backbones.
+We follow the
+setup of Section 3.2 and extend the evaluation
+to MATH-500 (Hendrycks et al., 2021; Lightman
+et al., 2024) and HumanEval (Chen et al., 2021), so
+that GSM8K and MATH-500 evaluate in-domain
+generalization and HumanEval and MBPP evaluate
+out-of-domain generalization to code. We addition-
+ally evaluate on Dream-7B-Instruct (Ye et al., 2025)
+(Section 5.4); implementation details are provided
+in Section C.
+Baselines. We compare against two training-free
+methods, Fast-dLLM (Wu et al., 2026), which com-
+mits positions whose confidence exceeds a thresh-
+old, and EB-Sampler (Ben-Hamu et al., 2025),
+which commits positions within an entropy budget,
+and against Learn2PD (Bao et al., 2026), a learned
+policy for which we use the official checkpoint. We
+do not include LUP (Jazbec et al., 2026) or Trace-
+Lock (Sun et al., 2026), as no trained checkpoints
+are publicly available for either method.
+Evaluation protocol.
+We report accuracy on
+GSM8K and MATH-500 and Pass@1 on Hu-
+manEval and MBPP, together with NFE and TPS,
+with all throughput measured on the same hardware
+and configuration (Section C.5).
+6

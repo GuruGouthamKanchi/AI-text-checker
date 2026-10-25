@@ -1,0 +1,603 @@
+FAIRFRESH: A NEURO-SYMBOLIC FRAMEWORK FOR FAIR AND
+EXPLAINABLE HOUSEHOLD FOOD RECOMMENDATION*
+Kodur Sai Vinay Sathvik, Kakoli Bora, and Tejaswini R. M.
+Department of Artificial Intelligence and Machine Learning
+BNM Institute of Technology
+sathvik2004@gmail.com, kakolibora@bnmit.in, tejaswinirm@bnmit.in
+ABSTRACT
+Recommender systems typically serve one user at a time. However in households, members share a
+finite pantry and follow different dietary rules, making independent recommendations prone to re-
+source conflicts and dietary violations. We formulate household food recommendation as constrained
+fair division and present FairFRESH, a neuro-symbolic framework that learns per-member utilities,
+allocates foods under explicit welfare objectives, enforces dietary rules through a deterministic filter,
+and explains recommendations using Shapley and Banzhaf attributions. Theoretically, we show
+that no finite penalty guarantees compliance near a dietary-rule threshold, establish approximation
+guarantees for greedy allocation under utilitarian and smoothed Nash objectives in the stock-free
+model before filtering, and characterize the scale invariance of Nash welfare. We also use the minimax
+theorem to analyze rotating shared meals. On NHANES-derived data, the learned utility model
+achieves Recall@20 of 0.293, outperforming five learned recommenders (at most 0.244) but not
+a previous-day repetition heuristic (0.321). On held-out four-person households, Nash allocation
+reduces Gini disparity by 42% relative to conflict resolution while improving Recall@20 from 0.180
+to 0.197. It comes within 2% of an upper bound on the smoothed Nash optimum, and rescaling one
+member’s utilities changes at most 1.5% of assignments. All recommendations satisfy the encoded
+dietary rules, while attribution scores correlate with utility loss upon component removal (r = 0.76).
+In simulation, shared meals reduce pantry use by about one-third, and weekly rotation increases the
+worst-off member’s utility by 38% over the best fixed meal.
+Keywords food recommendation · fair division · multi-agent recommendation · pantry-aware recommendation ·
+neuro-symbolic reasoning · Nash social welfare · envy-freeness
+1
+Introduction
+Recommender systems usually model one user at a time. That assumption suits film or music, but not food: meals are
+planned around a shared pantry and shaped by the dietary needs of everyone at the table. When two members of a
+household are recommended the same scarce item, at most one of them can use it, however highly a per-user model
+scores it for both. When members follow different dietary rules, the same pantry supports different safe choices for
+each of them (Fig. 1). Household food recommendation is therefore not a ranking problem repeated for every member
+but an allocation problem over a shared, finite resource.
+Existing systems address parts of this problem. Health-aware recommenders optimize nutrition jointly with preference,
+as in MOPI-HFRS [38], or reason over food knowledge graphs, as in SwissFKG [1], but they score each user against
+that user’s own history. Caldeira et al. [9] bring pantry state into the model, but only as a per-user ranking feature,
+∗Accepted and presented at the 8th International Conference on Communication and Intelligent Systems (ICCIS 2026), BITS
+Pilani, K K Birla Goa Campus, India; the conference version will appear in Springer’s Lecture Notes in Networks and Systems. This
+arXiv version adds the analysis of the constraint penalty and of greedy allocation, the bargaining characterization of the allocation
+rules (Section 3.3, Appendix A), the extension to shared household meals and their rotation (Section 6), and the corresponding
+experiments.
+arXiv:2610.31506v1  [cs.AI]  22 Oct 2026
+
+
+FairFRESH
+which treats a shared, finite resource as if it were unlimited. Group recommenders aggregate preferences into one
+package that every member shares [28, 34], so they never divide a resource that one member’s choice depletes for
+another. Dietary safety is typically encoded as a learned penalty or a soft objective, which a strong taste or popularity
+signal can outweigh, and explanations, where present, address one user’s ranking rather than a household’s allocation.
+Fair division studies how to divide a finite set of goods among agents with different preferences so that the outcome
+is efficient and equitable [29], which is the situation of a household sharing one pantry. We introduce FairFRESH,
+a neuro-symbolic framework that treats household food recommendation as fair division of indivisible goods under
+per-member dietary rules.
+A three-stage pipeline produces each household recommendation. In the first stage, a learned utility model combines
+taste, pantry, and retrieval-augmented dietary encoders to score every member–food pair. In the second stage, an explicit
+welfare rule (utilitarian, max-min, or Nash) allocates foods from the resulting utility matrix, so that no item is promised
+to two members. In the third stage, a deterministic symbolic filter removes any food that breaks a member’s dietary
+rule. A post-hoc module then explains the verified recommendations with Shapley and Banzhaf attributions over the
+pipeline’s components. This division of labor allows the learned components to rank, while the filter alone decides
+safety and the explanation module never feeds back into a decision. Every final recommendation therefore satisfies the
+encoded dietary rules, whatever the learned scores.
+We evaluate FairFRESH on NHANES-derived households of two to six members, comparing it with five recommender
+baselines and five allocation strategies. The evaluation addresses four research questions. RQ-A: does a food’s
+availability, measured by the member’s previous-day consumption, carry predictive signal beyond taste? RQ-B: how
+does the allocation rule change equity when members compete for one pantry, and at what cost in accuracy? RQ-C:
+does retrieval-augmented encoding of dietary constraints cover members’ requirements without weakening the safety
+guarantee? RQ-D: can cooperative-game attributions explain household recommendations faithfully, without changing
+the decisions they explain?
+Contributions
+This paper makes the following contributions.
+1. We introduce FairFRESH, which formulates household food recommendation as fair division of a shared, finite
+pantry: servings are private goods allocated under per-member safe sets and a cap of K items (Section 3.1).
+We prove that no finite penalty weight can certify safety near a rule threshold (Proposition 1), so FairFRESH
+enforces the rules with a deterministic filter, and we show that, at the optimum, allocating within safe sets
+dominates filtering afterwards (Proposition 4).
+2. The key component of FairFRESH is an explicit allocation layer. One greedy procedure implements the
+utilitarian, max-min, and Nash rules; we bound it for the utilitarian and smoothed Nash objectives before
+filtering (Proposition 2), find it within 1–5% of exact optima in practice, and show through bargaining theory
+that only the exact Nash rule is invariant to how members’ utilities are scaled (Proposition 3). Shapley and
+Banzhaf attributions then explain the household allocation, not one user’s ranking (Section 3.5).
+3. We extend FairFRESH to dishes cooked once and shared by the household. Using the minimax theorem, we
+show that rotating shared dishes over days can only help the worst-off member, and that a linear program
+computes the best rotation (Proposition 5).
+4. We provide a detailed empirical evaluation on households of two to six members, with all allocation results on
+users disjoint from training. The utility model ranks above five learned recommenders, and a repeat heuristic
+shows that previous-day consumption carries most of the signal. Under exclusive household allocation, Nash
+allocation lowers Gini by 42% relative to conflict resolution with higher Recall@20 and changes at most 1.5%
+of its assignments when utilities are rescaled. Shared meals save about a third of the pantry (Sections 5 and 6).
+2
+Related Work
+Most food recommenders model one user at a time. Freyne and Berkovsky [16] personalize recipes from ratings, Ge et
+al. [17] add a health objective, and Trattner and Elsweiler [37] study the healthiness of online recipes. Food knowledge
+graphs [18, 27] and multimodal input [13] encode nutritional semantics, and MOPI-HFRS [38] optimizes nutrition
+jointly with preference. Where ingredient availability appears [9], it is a per-user ranking feature. None of these systems
+divides a pantry that one member’s choice depletes for another.
+Fairness in recommender systems usually concerns exposure across items or disparities across large user groups [8]. A
+household is instead a small, fully known group sharing one pool of resources. Group recommenders aggregate member
+preferences [28] or impose proportionality and envy-freeness on a shared package [34], but every member receives the
+2
+
+
+FairFRESH
+The Challenge: Same Pantry, Different Dietary Constraints, Different Safe
+Recommendations
+Shared Household Pantry
+(Day-1)
+🫓
+Tortilla
+🍚
+Brown Rice
+🫛
+Beans
+Paneer
+🥣
+Oatmeal
+🥚
+Eggs
+🥬
+Spinach
+🥛
+Milk
+🍌
+Banana
+User A
+(No dietary restrictions)
+Recommended
+✓ Kandi Vadalu (rice vadas)
+✓ Spinach Omelette
+✓ Beans & Rice
+✓ Oatmeal with Milk
+Avoid / Limit
+✗ High Sugar Foods
+✗ High-Sodium Foods
+✗ Deep-Fried Foods
+User B
+(Lower-Carbohydrate
+Requirement)
+Recommended
+✓ Tofu with Spinach
+✓ Vegetable Upma
+✓ Beans Salad
+Avoid / Limit
+✗ Banana
+✗ Brown Rice (large portion)
+✗ Sugary Cereals
+✗ Sweetened Drinks
+User C
+(Lower-Sodium Requirement)
+Recommended
+✓ Oatmeal with Milk
+✓ Paneer Bhurji
+✓ Fresh Fruits
+Avoid / Limit
+✗ High-Sodium Foods
+✗ Processed Meats
+✗ Pickles / Salted Snacks
+✗ Instant Noodles
+Our Solution: FairFRESH Framework
+Limitations of Existing Single-User Food Recommenders
+User Profile
+(Age, Gender, BMI, Conditions)
++
+Historical Consumption
+(Preferences)
++
+Health Requirements
+(Nutrient Guidelines, Clinical Rules)
+→
+Joint Optimization
+(Trade-off Between Preference and
+Health)
+❌ Health is treated as a soft objective → Trade-offs may compromise safety.
+FairFRESH: Pantry-aware, Safe, and Explainable
+Pantry Inventory
+(What user has)
+🧠
+Neural Preference
+Encoder
+(What user likes)
++
+Pantry Match
+(Explicit Signal)
+→
+Ranked
+Candidates
+→
+Post-Hoc
+Symbolic Safety
+Filter
+(Nutrient Constraints)
+→
+✅
+Safe Top-K
+Recommendations
+→
+👤
+Personalization
+(Improved relevance)
+🌱
+Sustainability
+(Use what you have)
+Clinical Safety
+(No violations)
+💡
+Explainability
+(Why recommended and why
+excluded)
+Figure 1: Motivation. One shared pantry yields different safe recommendations for members with different dietary
+rules, so household recommendation is an allocation problem rather than a ranking repeated for each member.
+same items, so each item acts as a public good. These systems do not model private servings drawn from a common
+stock.
+Fair division studies exactly this setting. For indivisible goods with additive valuations [29], envy-free allocations
+need not exist, but EF1 allocations do, and round robin finds one in polynomial time [10]. Without further constraints,
+every Nash-optimal allocation is Pareto-optimal and EF1 [10], but computing one is APX-hard [32, 25], and the
+max-min optimum is NP-hard to approximate within any factor below two [4]. Cardinality limits change which of these
+guarantees survive [36, 7].
+Reviewer assignment poses a closely related constrained problem, where Stelmakh et al. maximize the quality of the
+most disadvantaged paper under load constraints [35]; members play the role of papers and foods that of reviewers.
+When every agent consumes an item, allocation becomes a public decision judged by how well the common choice
+serves each agent [12, 14]. This literature assumes known valuations and has not been connected to learned utilities or
+dietary constraints.
+Neuro-symbolic methods such as logic tensor networks [11, 2] relax symbolic constraints into differentiable objectives,
+which a high taste or popularity score can outweigh. Post-hoc explanation methods such as the Shapley value [26] and
+the Banzhaf index [3], evaluated with the faithfulness correlation of Bhatt et al. [5], attribute a single prediction to its
+inputs. Neither line addresses a guarantee or an explanation at the level of a household allocation.
+FairFRESH takes learned per-member utilities from the recommendation literature and passes them to a fair-division
+allocation layer, so the pantry is divided rather than scored separately for each member. Its soft penalty comes from the
+same symbolic rules as a deterministic filter, which alone decides compliance (Sections 3.2 and 3.4). Its attributions are
+defined over the household allocation rather than one user’s ranking, and shared dishes enter as public goods (Section 6).
+3
+Methodology
+Figure 2 shows the architecture of FairFRESH. The pipeline has four stages: (1) the utility model, (2) the allocation
+layer, (3) the symbolic safety filter, and (4) the post-hoc explainability module.
+Household inputs feed the utility model, whose scores form the household utility matrix. The allocation layer assigns
+foods from that matrix under an explicit welfare rule, and the safety filter removes any food that breaks its member’s
+dietary rules. The explainability module then explains the verified recommendations without feeding back into any
+earlier stage. We first define the problem and then describe each stage.
+3.1
+Preliminaries and Problem Definition
+Model. A household is a set of members N = {1, . . . , n} sharing a fixed pantry P. Each member i contributes
+stated preferences, an interaction history, and a health profile (conditions, dietary tags, and allergies) that determines a
+set of dietary rules Ci. Over a food catalog F = {f1, . . . , fm}, FairFRESH learns a utility Ui(f) ∈(0, 1) for every
+member–food pair (Section 3.2) and recommends to each member a bundle Ai ⊆F. Bundles are disjoint, because an
+item allocated to one member is unavailable to another, and each holds at most K items; Section 6 relaxes disjointness
+for dishes cooked once and shared by the household. Since nK is far smaller than m, allocations are partial: most of
+the catalog stays unallocated. Utilities are additive, Ui(Ai) = P
+f∈Ai Ui(f).
+3
+
+
+FairFRESH
+Household Information & Inputs
+👤
+User History
+🏥
+Health Profile
+🛒
+Shared Pantry
+FairFRESH Utility Model
+Taste Encoder
+MLP + LN
+Nutrition Corpus
+RAG Retrieval
+RAG Constraint Encoder
+Transformer MHA
+Pantry Encoder
+Ingredient Match
+Multi-Head
+Attention
+Fusion
+Popularity
+Penalty
+Neural Utility
+Head
++
+α Neural Score
++ β Pantry
++ δ Popularity
+− λ Penalty
+U_i(f_j)
+t_ij
+c_i
+p_ij
+Fair Allocation Layer
+Utilities Matrix
+Users x Foods
+Allocation Optimizer
+(Utilitarian,
+Max-Min,
+Nash Welfare)
+Symbolic Safety
+Verification
+Verified Safe
+Recommendations:
+A1, A2, …, An
+Preferences
+Query
+Pantry List
+U_i(f_j)
+Post-hoc Explainability Module
+Shapley Values + Banzhaf
+Index
++ Retrieved Evidence JSON
+Natural Language
+Explanation
+Figure 2: FairFRESH. Taste, retrieval-augmented dietary, and pantry encoders, fused by multi-head attention, produce a
+utility for every member–food pair. An allocation rule (utilitarian, max-min, or Nash) assigns foods from the utility
+matrix, a symbolic filter removes unsafe foods, and a post-hoc module turns Shapley and Banzhaf attributions into
+natural-language explanations without affecting any decision.
+Dietary rules. Each rule c ∈Ci is expressed as a normalized slack gc(f), with gc(f) ≤0 meaning that f satisfies the
+rule. For a nutrient limit, gc(f) = xf,c/τc −1, where xf,c is the amount of the limited nutrient in a serving of f and
+τc is the per-serving limit; for an exclusion such as an allergen, gc(f) = 1 if f contains the excluded ingredient and
+−1 otherwise. Food f is safe for member i if gc(f) ≤0 for every c ∈Ci. We write Si for member i’s safe set and
+Vi = F \ Si for its complement.
+Fairness and efficiency. We use the standard notions of fair division [29], adapted to safe sets. A member is never
+served an unsafe food, so when comparing bundles we value them by their safe part, U S
+i (B) = Ui(B ∩Si). An
+allocation A is envy-free (EF) if U S
+i (Ai) ≥U S
+i (Aj) for all i, j, and envy-free up to one good (EF1) if, for all i, j with
+Aj̸ = ∅, some f ∈Aj satisfies U S
+i (Ai) ≥U S
+i (Aj \ {f}). It is Pareto-optimal (PO) if no feasible allocation makes
+some member better off and no member worse off. We compare three welfare objectives, the utilitarian, egalitarian
+(max-min), and Nash social welfare:
+WUT(A) =
+n
+X
+i=1
+Ui(Ai),
+WEG(A) = min
+i
+Ui(Ai),
+WNSW(A) =
+
+n
+Y
+i=1
+Ui(Ai)
+1/n
+.
+(1)
+Matroid structure. Encode an allocation as a set X ⊆Ω= N ×F of member–food pairs, with Ai = {f : (i, f) ∈X}.
+Feasibility requires that (i) each food appears in at most one pair and (ii) each member appears in at most K pairs. Each
+condition defines a partition matroid on Ω, so the feasible allocations are exactly the common independent sets of two
+matroids. Section 3.3 uses this structure to bound the quality of greedy allocation.
+3.2
+Utility Model
+The utility of food fj for member i combines three encoders.
+Taste encoder. The user embedding eui is a TF-IDF weighted mean of sentence embeddings of the member’s
+previous-day foods, so a user unseen in training is represented by the same function of their history. We concatenate it
+with the food embedding efj, the sentence embedding of the food’s description, and pass the result through a small
+feedforward network with GELU activations and layer normalization, giving a taste representation tij ∈R128 that
+captures preference independently of pantry or dietary state.
+4
+
+
+FairFRESH
+Retrieval-augmented constraint encoder. We represent dietary requirements by retrieving evidence for a health query
+qi from a nutrition corpus D, ranked by cosine similarity:
+Ri = TopK
+r∈D
+E(qi)⊤E(r)
+∥E(qi)∥∥E(r)∥.
+(2)
+The retrieved passages are projected into the latent space and passed through self-attention, so that, for example, a
+note on potassium restriction can interact with one on kidney function, and are then pooled by learned attention into a
+constraint vector ci ∈R128. Grounding this vector in retrieved evidence rather than in parameters alone allows the
+explanation module (Section 3.5) to cite the specific evidence behind a recommendation.
+Pantry (availability) encoder. NHANES records no household inventory, so we use what a member ate the day before
+as a proxy for what is at hand. With Hi the foods in member i’s previous-day record,
+pij = 1
+
+fj ∈Hi
+
+,
+(3)
+which we project into the same latent space as tij and ci, giving the model a per-pair availability signal to weigh against
+taste and dietary fit.
+Fusion and utility. We stack the three vectors and apply multi-head attention, so the model can learn how to weight
+each signal for a given pair. The result is flattened, combined with explicit recency and popularity features zij, and
+passed through an MLP that outputs a neural score sij. The utility combines this score with the raw pantry match and
+popularity and subtracts a soft constraint penalty:
+Ui(fj) = σ
+ αsij + βpij + δPop(fj)
+|
+{z
+}
+ℓi(fj)
+−λ SCP(ui, fj)
+
+,
+(4)
+where α, β, δ, λ weight the neural, pantry, popularity, and penalty terms and ℓi(fj) denotes the unpenalized logit.
+Soft constraint penalty. The penalty is built from the same rules Ci that the safety filter enforces:
+SCP(ui, f) =
+X
+c∈Ci
+wc ρκ
+ gc(f)
+
+,
+ρκ(z) = 1
+κ log
+ 1 + eκz
+,
+(5)
+with rule weights wc > 0 and a temperature κ > 0. Because max(0, z) ≤ρκ(z) ≤max(0, z) + κ−1 ln 2, the penalty
+is a smoothed form of the exact penalty P
+c wc max(0, gc(f)) and converges to it as κ →∞; the hard filter is the
+all-or-nothing form of the same rules. With unit rule weights, wc = 1, and logistic noise in the nutrient data, −κ SCP is
+the log-probability that the food is safe, so the penalized utility approximates the probability that a food is both chosen
+and safe when λ = κ (Appendix A.1); this reading is a special case and is not needed for Proposition 1. The penalty
+supplies gradients that a step-function rule cannot, but it cannot replace the filter.
+Proposition 1 (Limits of a soft penalty). Fix member i. Let |ℓi(f)| ≤L for all f, and let wmin = minc∈Ci wc.
+(a) Clear violations. Let γ > 0. If
+λ
+
+wmin ρκ(γ) −ln 2
+κ
+X
+c∈Ci
+wc
+
+> 2L,
+then every food that violates a rule of member i by at least γ ranks below every safe food.
+(b) Near-threshold violations. Let f + be safe with gc(f +) = 0, and let f −differ from f + only in rule c, with
+gc(f −) = η > 0. For every finite λ, the unsafe f −ranks above f + whenever ℓi(f −) −ℓi(f +) > λwcη.
+Part (a) shows that a learned penalty can push clear violations down the ranking, but only when the logit is bounded,
+and its condition fails as γ →0. Part (b) shows that, for any finite weight, foods just over a limit cannot be separated
+from foods just under it, since the required margin λwcη vanishes as η →0. Certifying near-threshold foods therefore
+requires the deterministic filter of Section 3.4. Proofs are given in Appendix A.
+3.3
+Allocation Rules and Greedy Allocation
+Independent top-K lists ignore that the pantry is shared, so FairFRESH selects a feasible allocation with one of the
+welfare rules of Eq. 1. The utilitarian rule maximizes total utility but may leave a member underserved; the egalitarian
+(max-min) rule protects the worst-off member at some cost in total utility; and the Nash rule balances the two, because
+the product falls sharply when any member’s utility approaches zero. Proposition 3 below characterizes this balance.
+5
+
+
+FairFRESH
+Algorithm 1 Greedy household allocation as an adaptive picking sequence
+Require: utilities Ui(f); cap K; rule ∈{UT, EG, NSW}; ϵ > 0
+1: Ai ←∅for every member i; Frem ←F
+2: while Frem̸ = ∅and some member has |Ai| < K do
+3:
+I ←{i : |Ai| < K}; f ⋆
+i ←arg maxf∈Frem Ui(f) for every i ∈I
+4:
+i⋆←
+
+
+
+arg maxi∈I Ui(f ⋆
+i )
+if UT
+arg mini∈I Ui(Ai)
+if EG
+arg maxi∈I Ui(f ⋆
+i )/(ϵ + Ui(Ai))
+if NSW
+▷ties: lowest index
+5:
+Ai⋆←Ai⋆∪{f ⋆
+i⋆}; Frem ←Frem \ {f ⋆
+i⋆}
+6: end while
+7: ˆAi ←Ai \ Vi for every i
+▷safety filter, Section 3.4
+8: return ˆA
+Greedy allocation. Exact optimization is intractable for the Nash and egalitarian rules (Section 2), so all three rules
+share one greedy procedure (Algorithm 1). Starting from empty bundles, each step gives one member its best remaining
+food, until every member holds K items or no food remains; the rules differ only in which member moves next. The
+utilitarian rule picks the member whose best remaining food has the highest utility, which adds the feasible pair of
+largest marginal gain in WUT. The Nash rule does the same for the smoothed objective
+Φϵ(A) =
+n
+X
+i=1
+log
+
+1 + Ui(Ai)
+ϵ
+
+,
+ϵ > 0,
+(6)
+which keeps gains finite while bundles are empty; because the set of allocations is finite, for sufficiently small ϵ its
+maximizers also maximize the Nash product. The gain of giving f to i is log
+ 1 + Ui(f)/(ϵ + Ui(Ai))
+
+, so the Nash
+rule picks the member with the largest ratio Ui(f ⋆
+i )/(ϵ + Ui(Ai)), where f ⋆
+i is that member’s best remaining food.
+The egalitarian rule gives the next food to the currently worst-off member, a max-min heuristic rather than a marginal-
+gain step. Greedy allocation is thus an adaptive picking sequence, of which round robin is the fixed-order counterpart.
+With each member’s candidates sorted once, Algorithm 1 runs in O(nm log m + n2K) time.
+Proposition 2 (Greedy allocation). Consider Algorithm 1 on the feasible allocations of Section 3.1, before filtering and
+without a stock limit.
+(a) Nash. Φϵ is monotone and submodular, and greedy Nash allocation attains at least 1/3 of its maximum [15].
+(b) Utilitarian. Greedy utilitarian allocation attains at least 1/2 of the optimum [24]. The optimum is a maximum-
+weight bipartite b-matching, computable in polynomial time.
+(c) Egalitarian. Approximating the egalitarian optimum within any factor below 2 is NP-hard [4]. We claim no
+guarantee for the greedy egalitarian rule.
+Part (a) bounds the smoothed objective, not the Nash product. Neither bound carries over to the filtered output in
+general, since removing unsafe foods can lower utilities unevenly; in our experiments, however, the filter removes
+nothing (Section 3.4). The experiments also enforce a pantry stock (Section 4), a knapsack constraint outside the
+matroid model, so Appendix B compares greedy allocation with exact optima instead.
+The EF1 guarantee of the exact Nash optimum [10] does not transfer either: it holds for complete allocations without
+constraints, whereas under our cap the Nash optimum is PO within the feasible set but not known to be EF1. Round
+robin over safe foods, stopped after K rounds, is EF1 under safe-part valuations and is the natural benchmark for an
+EF1 audit (Appendix B).
+A bargaining view of the three rules. Household allocation is an n-person bargaining problem (F, d) [30, Ch. 26]: F
+is the set of utility vectors
+ U1(A1), . . . , Un(An)
+
+of feasible allocations, and the disagreement point d = 0 is what
+every member receives if no allocation is agreed, an empty bundle. The utilitarian and egalitarian rules correspond to
+the utilitarian and egalitarian solutions of bargaining theory [30, Sec. 26.6], and the Nash rule to the Nash bargaining
+solution of (F, 0) [31], the only one of the three characterized by Nash’s axioms. The smoothed objective is the Nash
+product with disagreement point −ϵ1, since Φϵ(A) = P
+i log
+ Ui(Ai) + ϵ
+
+−n log ϵ. Nash’s axioms assume a convex
+feasible set. Convexity arises here when the household rotates allocations over repeated meals: a rotation that uses
+allocation A on a fraction of the meals yields expected utilities in the convex hull conv(F), which is the rationale for
+convexity in bargaining theory [30, Sec. 26.2].
+Proposition 3 (Bargaining properties). Let F be the set of utility vectors of feasible allocations.
+6
+
+
+FairFRESH
+(a) Scale covariance. For constants ai > 0, replacing each Ui by aiUi leaves the Nash-optimal allocations unchanged.
+The utilitarian and egalitarian rules lack this property, both exactly and greedily.
+(b) Synthesis. Suppose F contains a vector with positive entries, and let x⋆maximize Q
+i xi over conv(F). With
+λi = 1/x⋆
+i ,
+x⋆∈arg
+max
+x∈conv(F )
+X
+i
+λixi
+and
+λ1x⋆
+1 = · · · = λnx⋆
+n.
+Conversely, any positive x⋆∈conv(F) with both properties for some λ > 0 is the Nash solution.
+(c) Greedy step. Let λi = 1/(ϵ + Ui(Ai)). The Nash rule of Algorithm 1 selects the member maximizing λiUi(f ⋆
+i ).
+As ϵ →0, this choice is invariant to rescaling among members that already hold an item.
+Part (a) matters because utilities are model estimates whose scale may differ across members, for instance when a
+longer history yields more confident scores. The Nash optimum does not depend on how utilities compare across
+members [22], whereas there are instances in which the utilitarian rule favors a member whose utilities are scaled up
+and the egalitarian rule one whose utilities are scaled down (Appendix A).
+Part (b) extends Proposition 26.1 of [30] from two members to n: the Nash rule is a utilitarian rule that weights each
+member by the inverse of its utility, and an egalitarian rule in those weighted units, which is why it lands between
+the other two rules in Table 2. Part (c) shows that greedy Nash allocation applies this reweighting one pick at a time,
+with weights λi = 1/(xi + ϵ) for disagreement point −ϵ1; rescaling can affect only the order in which members with
+empty bundles make their first pick. It is scale-free once every member holds an item, and fixing the order of first picks
+removes the remaining dependence as ϵ →0. Section 5.3 tests (a) and (c).
+3.4
+Symbolic Safety Filter
+The penalty in Eq. 4 shapes the ranking but, by Proposition 1, cannot guarantee safety. After allocation, a deterministic
+verifier therefore removes from each bundle every food that breaks a rule of its member, regardless of score:
+ˆAi = Ai \ Vi = Ai ∩Si.
+(7)
+In the allocation experiments, the rules limit sodium to 500 mg per serving for members with hypertension and
+carbohydrates to 50 g per serving for members with diabetes; the coverage evaluation of Section 5.5 adds chronic kidney
+disease (CKD) and cardiovascular disease (CVD). The filter guarantees compliance with these encoded per-serving
+rules; it does not establish clinical safety, which would also depend on rule completeness, nutrient data, portion sizes,
+and whole-day intake.
+We measure compliance with the constraint satisfaction rate of an allocation B,
+CSR(B) = 1
+n
+n
+X
+i=1
+|Bi \ Vi|
+|Bi|
+.
+(8)
+Before filtering, CSR(A) measures what the learned components achieve alone; after filtering, CSR( ˆA) = 1 whenever
+the filter has the full rule set. In the ablation of Section 5.6, rules are removed from the filter, and CSR, still measured
+against the full rule set, can fall below one.
+Filter placement. The filter runs after allocation so that it stays independent of the allocation rule and can audit any
+upstream policy. The cost is that removed foods are not replaced, so a verified bundle can hold fewer than K items, and
+the loss falls mostly on members with the most restrictive rules. The alternative is to allocate within the safe sets Si,
+which never does worse at the optimum:
+Proposition 4 (Safe-set allocation at the optimum). For any welfare objective W, let Aall maximize W over all feasible
+allocations, and let Asafe maximize W over feasible allocations with Ai ⊆Si for every i. Then
+W(Asafe) ≥W( ˆAall),
+where ˆAall is Aall after filtering.
+In practice the filter has nothing to remove: across the 219,539 recommendations of the held-out allocation runs, the
+soft penalty already keeps every recommendation within the rules, so CSR(A) = CSR( ˆA) = 1. The shared-meal
+extension of Section 6 allocates within the safe sets.
+7

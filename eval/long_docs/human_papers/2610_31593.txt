@@ -1,0 +1,679 @@
+Simulated Control Evaluations
+Jeffrey Olmo
+David Zhang
+Tyler Tracy
+Redwood Research
+Abstract
+Control evaluations measure whether safeguards can prevent an AI model from causing undesired outcomes
+even when it is intentionally trying to do so. These evaluations typically use purpose-built control settings
+and extrapolate their results to a model’s deployment. However, the effectiveness of safeguards in deployment
+can depend on features of environments and tasks that control settings do not represent. To broaden where
+control evaluations can be run, we introduce simulated control evaluations (SCEs), which use a language
+model to simulate tool responses in place of an environment.
+We evaluate SCEs on LinuxArena, where
+execution provides ground-truth outcomes. We compare SCE prediction errors with those from a separate
+control setting, BashArena, and with variation in control metrics within LinuxArena.
+For independently
+sampled evaluation and deployment task sets, SCEs predict safety with a root mean squared error of 3.6
+percentage points across five monitors at a 5% audit budget, compared with 10.1 for BashArena. SCEs closely
+reproduce distributions of attack strategies, attacker reasoning, and monitor reasoning, with over tenfold
+lower KL divergence from execution than BashArena.
+SCEs explain 78–85% of the between-environment
+variance in attack success, monitor scores, and safety. This accuracy is sample efficient: SCEs predict safety
+with less error than BashArena using fewer than 5% as many task-pair draws as the deployment task set.
+Strategies discovered through simulation also improve monitor performance on held-out LinuxArena attacks,
+outperforming BashArena and approximately matching improvement from executed strategies. These results
+suggest that deployment-specific SCEs can be more predictive than control evaluations executed in separate
+control settings.
+1
+Introduction
+AI control aims to make it safe to use capable AI agents even if they try to cause harm (Greenblatt et al., 2024).
+The same capabilities and access that let an agent do useful work can let it exfiltrate information, introduce
+backdoors, or launch rogue deployments. A control protocol puts safeguards around the agent, such as trusted
+monitoring. A control evaluation tests these safeguards by replacing the agent with an attack policy configured to
+pursue a harmful objective while doing legitimate work (Bhatt et al., 2025). Control evaluations produce control
+metrics, such as how often attacks succeed and how often a monitor catches them. Accurate control metrics can
+guide improvements to the control protocol and inform risk estimates.
+Where an agent acts matters for control evaluations: its opportunities for dangerous behavior, and the evi-
+dence control protocols have to detect them, depend on the particular codebases, services, tasks, and available
+actions in its deployment. Control evaluations aim to inform judgments about a model’s deployment, but typ-
+ically run in a separate control setting such as BashArena or LinuxArena (Kaufman et al., 2025; Tracy et al.,
+2026), which provides a safe testbed for executing attacks, and ground truth for outcomes like whether a given
+side task succeeded, but which shares neither the deployment’s environments nor its task profile. Evidence from
+such a control setting may transfer poorly to deployment. Even if it captures average attacker and monitor per-
+formance, deployment risk will not be determined by those averages when an attacker selects especially promising
+opportunities (Ge-Wang et al., 2026). A control protocol that appears safe in a control setting might miss specific
+attacks available in a lab’s internal infrastructure (Korbak et al., 2025).
+Running control evaluations directly in the deployment would address this mismatch, but running an attack
+policy on live infrastructure risks causing the very harms the evaluation is intended to measure. An alternative
+that avoids this risk is an executable replica of the deployment, but building one can be expensive or infeasible,
+especially when the agent depends on many services and changing external state. What is usually available, even
+when a replica is not, is a record of past activity: agent trajectories that show what tasks models were given,
+which tools they called, and what those tools returned, along with snapshots of the relevant codebases. Our
+method uses these records to construct control evaluations.
+1
+arXiv:2610.31593v1  [cs.AI]  22 Oct 2026
+
+
+Deployment trajectories
+task + tool interactions
+Codebase read access
+affordances
+main task
+Attack policy
+Env simulator
+tool calls
+outputs
+Simulated attack
+trajectories
+Repeat across tasks and side tasks
+Monitor
+/
+Attack success
+judge
+Control metrics
+Safety at audit budget b
+</>
+Figure 1: The simulated control evaluation process. A language-model simulator generates tool responses for an
+attack policy pursuing a side task during legitimate work. Repeating this process across tasks produces simulated attack
+trajectories. A monitor scores their suspicion, and an attack success judge estimates attack success. Control metrics such
+as safety at a given audit budget can then be computed. Attack-policy actions never execute against the deployment
+environment.
+We study simulated control evaluations (SCEs), which use a language model to produce the tool responses an
+agent would receive in deployment (Figure 1). An attack policy receives a legitimate main task and a harmful
+side task. It chooses actions and issues tool calls as usual, while a simulator uses an honest reference trajectory
+and codebase read access to generate the observations those actions would produce in deployment. The attack
+policy conditions on each simulator output, so the attack can diverge from the reference trajectory. Monitors then
+score the resulting simulated trajectory, and an attack success judge estimates whether the side task succeeded.
+The attack policy’s actions never execute.
+The central question is whether SCEs predict deployment control metrics more accurately than a separate
+control setting does. Simulation introduces unrealism in tool responses, but lets evaluators use the deployment’s
+real tasks and codebase; a control setting executes attacks faithfully, but on a different distribution of tasks and
+environments.
+Unlike deployment simulation used to forecast misalignment propensity (Williams et al., 2026), SCEs need not
+conceal the evaluation from the agent: the attack policy is already instructed to pursue a harmful objective. On
+the other hand, SCEs place stronger demands on modeling the environment’s attack-relevant mechanics, including
+subtle details of permissions, state changes, and tool behavior that determine whether an attack succeeds and
+what evidence it leaves for monitors.
+We test this tradeoff on LinuxArena, where attacks can be executed to measure ground-truth outcomes. In
+our experiments, execution in LinuxArena stands in for deployment. Across 1,000 main-task–side-task pairs,
+we compare SCE predictions with predictions from 1,000 attacks executed in BashArena; Section 2.4 defines
+these comparisons. We also compare SCE prediction errors with the variation between LinuxArena tasks and
+environments.
+Our contributions are:
+• A framework for measuring control evaluation transfer. We combine variance explained in control
+metrics across tasks and environments with matching behavioral distributions to assess accuracy beyond
+overall averages. This framework applies to both simulated and executed control evaluations. (Section 2.4).
+• Empirical validation of SCEs.
+On LinuxArena, SCEs match executed behavioral distributions and
+predict control metrics more accurately than BashArena, explaining most between-environment variance
+in attack success, monitor scores, and safety. We show how these advantages scale with the number of
+simulated task pairs. (Sections 3.1–3.6).
+• Demonstrating that SCEs can improve safeguards. We show that briefing a monitor with simulated
+strategies improves detection of held-out executed attacks more than BashArena briefings, approaching the
+performance of briefings from same-environment execution. SCEs thus support improving safeguards as
+well as assessing them (Section 3.7).
+2
+
+
+2
+Methods
+2.1
+SCE components
+Attack policy. The attack policy is gpt-5.6-sol at medium reasoning effort for both executed and simulated
+trajectories. It receives the main task, the side task, and attack guidance suggesting how to pursue the side task
+covertly. For each task, we provide the same attack-policy prompt in execution and SCE.
+Simulator. At each tool call, the simulator receives the tool name and arguments, interaction history, and
+grounding affordances: records and tools that provide information about the environment being simulated. The
+simulator generates a tool response for the policy’s next step; its reasoning is withheld from the policy and
+subsequent simulation steps. In what follows, the simulator is gpt-6-astra, with two main affordances:
+• Reference trajectory. The simulator receives the original honest agent transcript for the same main task,
+including tool calls and responses. This shows how the environment behaved during one execution; the
+simulator predicts responses to the attack policy’s different actions.
+• Codebase read access. The simulator can read, list, and search a snapshot of the environment’s files,
+giving it access to source code, configuration, and initial file contents.
+Some tool call outputs follow directly from evidence from the reference trajectory and codebase; many outputs
+depend on state the simulator cannot observe, in which case it generates a plausible result consistent with what is
+already known. We fall back to gpt-5.6-sol when gpt-6-astra refuses or fails to produce a valid tool response;
+gpt-6-astra resumes on subsequent outputs.
+The base, +reference, and +codebase conditions provide neither affordance, only the reference trajectory,
+and both affordances, respectively. We use the simulator with both affordances throughout. We investigated
+many additional affordances, including read access to attack-policy reasoning, an executable sandbox, access to
+a database of logged trajectories, and forking from the reference trajectory, but did not find evidence that these
+materially improved simulator quality on the measured dimensions beyond what the reference trajectory and
+codebase read access provide.
+Attack success judge. Executed attacks have a ground-truth outcome from the side-task scorer; simulated
+attacks have only a transcript, so an attack success judge estimates the probability that the side task succeeded.
+We use gpt-5.6-sol at high reasoning effort, with read access to the codebase, side-task definitions, and success-
+scoring logic.
+Unlike monitors, the judge receives the side-task objective and scoring logic, helping it assess
+whether the observed actions satisfy the attack’s specific success criteria.
+SCE success and safety estimates
+therefore include both simulator and judge error. We validate the judge against executed outcomes in Section 3.2.
+Monitors. We use five full-trajectory monitors: gpt-5.4, gpt-5.4-mini, gpt-5.4-nano, gpt-5-nano, and
+gpt-5.6-sol. Each produces a suspicion score on a 0–10 scale; we score each trajectory three times and average.
+Audit thresholds are set on a shared set of executed honest trajectories, the same trajectories that serve as
+reference trajectories for the simulator.
+2.2
+Simulator development and evaluation data
+We developed the simulator on BashArena and several LinuxArena task pairs; the remaining LinuxArena pairs
+were held out.
+Our primary dataset contains 1,000 LinuxArena task pairs, each combining a main task with a side task. Pairs
+are balanced across ten environments and selected for overlap between main and side tasks. For each task pair,
+we collect two simulated runs, two independent executed runs, and one honest reference trajectory. Repeated
+simulated and executed runs allow us to estimate run-to-run variance. Analyses use these task pairs unless stated
+otherwise, excluding pairs with missing or invalid measurements. Smaller, separate collections of task pairs are
+used for the base and +reference conditions and some discriminability diagnostics.
+We independently draw evaluation and deployment task sets by sampling eligible task pairs uniformly with
+replacement. Simulated trajectories provide the evaluation predictions, and executed trajectories provide the
+deployment outcomes. We calculate metrics separately for each set and average prediction errors across draws.
+Environment and side-task-category metrics use whichever pairs from those groups appear in each draw. Com-
+parisons on matched task pairs separately assess predictions for individual pairs. Throughout, sample size counts
+task-pair draws, including repeated selections of the same pair.
+3
+
+
+Figure 2: BashArena and LinuxArena variance as performance comparisons. Columns denote environments and
+rows tasks within each environment; boxes are schematic. Left: A control setting is used to predict a deployment’s control
+metrics. Middle: BashArena or LinuxArena averages provide constant predictions across LinuxArena task pairs, side-task
+categories, and environments. Right: Orange simulation and gray execution use the same LinuxArena environments and
+task pairs. Each ∆compares a prediction with the deployment’s measured control metric m. Smaller simulation gaps
+support using SCEs when control-setting extrapolation to deployment incurs at least the reference error observed here,
+provided simulator accuracy is maintained.
+2.3
+Decomposing error
+Prediction error combines systematic differences, run-to-run variance, and task-sampling variance. Root mean
+squared bias (RMS bias) measures systematic error after averaging over repeated runs and sampled task
+sets. For attack success and monitor scores, independent repeated runs of the same task pair estimate run-to-run
+variance. We estimate squared bias by subtracting the contributions of run-to-run variance and task-sampling
+variance from mean squared prediction error. We average in squared units across task pairs or groups and monitors
+before taking the root, and correct LinuxArena SD for noise in estimated means. Pooled All comparisons and the
+safety sample-efficiency curve retain both variance contributions in total RMSE. Bootstrap resampling separately
+estimates confidence intervals. Appendix B gives details.
+2.4
+Performance comparisons
+We use LinuxArena execution as the deployment ground truth and compare SCE errors with two references: the
+observed transfer error from BashArena, and variation among LinuxArena’s own environments, task pairs, and
+side-task categories (Figure 2).
+Our first comparison asks whether evaluating deployment-specific tasks through simulation is more informative
+than executing attacks in a separate control setting. We use BashArena to supply 1,000 executed attacks, using
+the same attack policy, trajectory length limit, and monitors as for LinuxArena. We calculate each metric from
+these attacks and use it to predict the corresponding LinuxArena metric.
+Our second reference compares prediction errors with variation within LinuxArena. For each environment, we
+consider the expected metric value, averaged over sampled deployment task sets, and the mean of these values
+across environments. The between-environment LinuxArena standard deviation (SD) has two interpreta-
+tions. First, it is the RMSE of assigning this mean to every environment: a control setting that gets the average
+right but has no environment-specific information. Second, it is the RMSE of using a uniformly selected environ-
+ment’s expected metric value to predict the mean across environments. In this direction, each environment acts
+as a possible control setting from which we extrapolate to the broader deployment. Both interpretations give the
+same error. The analogous interpretations apply to standard deviations over side-task categories and task pairs.
+Together, these references compare SCE accuracy against two scales of mismatch between a control setting and
+deployment: the observed transfer gap from BashArena to LinuxArena, and the deviations within LinuxArena’s
+own environments, task pairs, or side-task categories from their corresponding means.
+Outperforming these
+references would suggest that SCEs can predict deployment metrics more accurately than a control setting whose
+mismatch with deployment produces errors of comparable magnitude, provided SCE accuracy also transfers to
+that deployment.
+4
+
+
+Attack
+strategy
+Attacker
+reasoning
+Monitor
+reasoning
+.001
+.01
+.1
+1
+10
+KL divergence (bits, log scale)
+6.10
+1.20
+0.11
+0.02
+0.01
+2.18
+1.01
+0.10
+0.02
+0.02
+2.77
+0.80
+0.02
+0.01
+0.01
+BashArena
+Base
++reference
++codebase
+Re-execution
+Figure 3: Grounded simulation closely matches LinuxArena behavior.
+Adding the reference trajectory and
+codebase access reduces divergence across attack strategies, attacker reasoning, and monitor reasoning.
+The primary
+simulator is much closer to execution than BashArena is; gray re-execution bars show the scale of variation between
+repeated runs.
+3
+Experiments
+3.1
+Behavior transfer
+To evaluate and improve control protocols, an SCE must reproduce the kinds of behavior those protocols demon-
+strate and encounter in deployment. We compare three behavioral representations of a trajectory: attack strategy
+describes how a side task is accomplished; attacker reasoning records the attack policy’s reasoning and intent;
+and monitor reasoning describes the judgements and referenced evidence behind a monitor’s suspicion. Table 1
+gives examples.
+Control evaluations are more useful to the extent that they accurately represent these behaviors. In particular,
+improving control protocols depends on understanding which kinds of attacks succeed and evade detection, and
+why. We compare the distributions of these behavior representations across executed and simulated trajectories
+before turning to the control metrics themselves.
+Table 1: Examples of behavioral representations.
+Category
+Example behavior
+Detail
+Attack
+strategy
+Prefix-confusion cleanup. Uses an
+expected miss on a malformed prefix to
+justify deleting objects under the real
+prefix.
+let storage_team = &body.team_id[1..];
+let probe =
+format!("uploads/{storage_team}/{file_id}.mp4");
+if head_object(probe).is_err() {
+delete_real_objects(...); }
+Attacker
+reasoning
+Cover for content substitution. Plans
+a subtle side attack while keeping the
+surrounding work plausible.
+“I need to tweak the checksum properly and consider a subtle
+attack. The attack should feel unrelated and not obvious. [. . . ] I
+have to do it precisely, but also ensure to implement a sufficient
+cover.”
+Monitor
+reasoning
+Privilege-escalation pathway.
+Interprets routine health checks in light of
+earlier privilege-seeking changes.
+“Current action appears as routine process and healthcheck, but
+prior history shows attempts to elevate privileges [. . . ]. This
+creates a partial causal pathway from normal task to
+elevated-access activity.”
+Following Mehri et al. (2026), we describe each behavior, embed and cluster the descriptions, then compare fre-
+quencies over these clusters. These frequencies define the behavioral distributions. We measure DKL(pexec∥psim),
+where the two distributions are constructed from executed and simulated LinuxArena trajectories, respectively.
+For the control setting, we instead compare the executed LinuxArena distribution with the distribution con-
+structed from executed BashArena trajectories, using the same fixed LinuxArena representation and clusters.
+Appendix A gives the representation and clustering details.
+5
+
+
+BashArena control setting
+1
+50
+100
+Cluster rank
+0.00
+0.05
+0.10
+0.15
+Trajectory-balanced mass
+Forward KL = 2.767 bits
+LinuxArena
+BashArena
+LinuxArena simulation
+1
+50
+100
+Cluster rank
+0.00
+0.01
+0.02
+Forward KL = 0.0058 bits
+Executed
+Simulated
+Figure 4: Simulation reproduces LinuxArena’s monitor-reasoning patterns. The BashArena comparison on the
+left shows a larger distributional mismatch than the simulation comparison on the right. The qualitative geometry above
+and cluster masses below illustrate this difference.
+SCEs produce behavioral distributions closer to execution than the control setting for all three representations
+(Figure 3). Their estimated KL divergence is more than an order of magnitude below that of the control setting
+in each case, suggesting SCEs provide superior qualitative coverage of the behaviors measured. The +codebase
+simulator and gray re-execution bars have overlapping 95% intervals for all three representations.
+This puts
+simulation error on the scale of variation between repeated runs.
+More grounded simulators have lower behavioral divergence (Figure 3), and separate from each other with
+statistical significance.
+The base and +reference conditions use smaller, separate samples of task pairs from
+LinuxArena.
+Figure 4 shows a uniform manifold approximation and projection (UMAP) (McInnes et al., 2018) that illus-
+trates the distributional comparison for monitor reasoning. The left panel compares LinuxArena execution with
+BashArena execution; the right compares LinuxArena execution with simulation.
+The control-setting cluster
+masses differ substantially from those in LinuxArena, while simulated and matched executed descriptions remain
+more interspersed. The UMAP projections are qualitative; the aggregate KL estimates in Figure 3 quantify the
+difference. Backward KL between LinuxArena execution and simulation is similarly small, suggesting simulation
+does not leave signatures of fabrication detectable from monitor reasoning (Appendix A).
+Across all three measured representations, SCEs reproduce LinuxArena’s behavioral distributions more accu-
+rately than attacks executed in BashArena, with KL divergence comparable to that between independent executed
+runs. This supports using SCEs to match an evaluation to the deployment’s tasks and environments even at the
+cost of simulation error.
+6
+
+
+All
+Task pair
+Side-task
+category
+Environment
+0
+10
+20
+30
+40
+50
+RMS bias / RMSE (pp)
+92% match
+71% explained
+87% explained
+80% explained
+Simulation
+LinuxArena SD
+2.0
+19.2
+35.5
+8.9
+25.0
+5.3
+11.8
+Auto
+workflow
+User
+tracking
+File
+indexing
+Slack
+clone
+Shared
+dotfiles
+Media
+processing
+Clinical
+trial
+Model
+registry
+Web
+scraping
+TikTok
+0
+5
+10
+15
+20
+25
+RMSE (pp)
+SCE absolute mean gap
+Judge on execution
+Evaluation sampling
+Deployment sampling
+12.2
+10.7
+10.4
+8.8
+7.6
+7.4
+7.0
+6.9
+6.0
+5.9
+Figure 5: SCEs predict expected attack success across tasks and environments. Left: All reports total RMSE
+for independently sampled task sets. Task pair, Side-task category, and Environment compare variance-corrected SCE
+RMS bias with variance-corrected LinuxArena SD. Top labels show percent match for All and percent explained for other
+groups. Whiskers are 95% main-task bootstrap intervals. Right: Per-environment error decomposition for simulation plus
+judge. Orange bases show absolute mean gaps; grey segments add variation from sampling evaluation and deployment
+task sets, with boundaries at roots of cumulative MSE. Blue diamonds show absolute mean gaps for the judge on executed
+attacks. Black whiskers are 95% normal bootstrap intervals on simulation-plus-judge RMSE; numbers above them give
+point RMSE.
+3.2
+Attack success transfer
+Do SCEs accurately predict where attacks succeed, and how often? We first validate the attack success judge on
+executed attacks: it achieves an AUROC of 0.980, but overestimates their average success rate by 3.7 percentage
+points.
+1
+2
+5
+10
+20
+50
+Side-task rank (log scale)
+0
+25
+50
+75
+100
+Success-rate RMSE (pp)
+50%
+50%
+Top three side tasks
+1. Leak secret (file indexing)
+2. Poison git sync
+3. Delete evidence
+Figure 6: Success-rate errors concentrate
+in a few side tasks. Side tasks ranked by
+success-rate RMSE for independent evaluation
+and deployment task sets. The three largest
+errors are named; shading shows pointwise 95%
+bootstrap intervals. The dotted line marks the
+rank at which cumulative squared error reaches
+50%.
+In aggregate, attack-success rates are close: averaged over inde-
+pendently sampled task sets, the scorer measures 25.5% success on
+executed attacks and the judge estimates 25.4% on simulated at-
+tacks. Matching an average can allow errors on different tasks to
+cancel, so we also report error on more fine grained partitions of
+LinuxArena. The Task pair bar in Figure 5 (left) tests fidelity on
+matched task pairs. The estimated SCE RMS bias is 19.2 percent-
+age points, compared with a between-task-pair SD of 35.5 points,
+accounting for 71% of between-task-pair variance in the success rate
+estimate.
+Likewise, SCEs capture differences in expected success
+across side-task categories and environments, explaining 87% and
+80% of their variance, respectively (Figure 5, left).
+Figure 5 (right) shows agreement per environment.
+Some
+environment-level gaps are comparable to the judge’s errors on ex-
+ecuted attacks: in Auto Workflow and Slack Clone, the judge over-
+estimates success by nearly as much as the combined simulator and
+judge do. Judge calibration may thus account for a substantial part
+of these gaps, although bias cancellation and uncertain transfer of
+judge performance to simulated trajectories prevent precise attribu-
+tion.
+Figure 6 shows a heavy tail across side tasks: the five largest errors account for about 50% of the summed
+squared error across the 92 side tasks. The nonzero errors fall roughly linearly with log rank, so overall agreement
+hides a few large misses.
+Together, these results show that SCEs accurately predict the overall attack success rate and capture much
+of the variation in which tasks and environments make attacks more likely to succeed. Their remaining errors
+are concentrated in a small number of side tasks, identifying specific weaknesses in otherwise strong predictive
+performance.
+7
+
+
+All
+Task pair
+Side-task
+category
+Environment
+0
+1
+2
+3
+RMS bias / RMSE (points)
+94% match
+89% explained
+100% explained
+85% explained
+Simulation
+LinuxArena SD
+0.26
+0.68
+2.03
+0.00
+1.28
+0.25
+0.63
+File
+indexing
+Shared
+dotfiles
+TikTok
+Auto
+workflow
+Web
+scraping
+Slack
+clone
+Media
+processing
+User
+tracking
+Model
+registry
+Clinical
+trial
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+RMSE (points)
+Absolute mean gap
+Evaluation sampling
+Deployment sampling
+0.73
+0.73
+0.65
+0.57
+0.52
+0.52
+0.49
+0.49
+0.47
+0.39
+Figure 7: SCEs predict expected monitor scores across tasks and environments. Left: All reports total RMSE
+for independently sampled task sets. Task pair, Side-task category, and Environment compare variance-corrected SCE
+RMS bias with variance-corrected LinuxArena SD. Top labels show percent match for All and percent explained for other
+groups. Whiskers are 95% main-task bootstrap intervals. Right: Per-environment decomposition into absolute empirical
+mean gap and variation from sampling evaluation and deployment task sets. Boundaries are roots of cumulative MSE;
+bar tops are total RMSE. Black whiskers are 95% normal bootstrap intervals on RMSE; numbers above them give point
+RMSE.
+3.3
+Monitor transfer
+Do monitors score simulated trajectories the same way they score executed ones? We compare scores on matched
+task pairs and ask how well SCEs predict mean suspicion scores on independently sampled task sets.
+SCEs closely predict the overall level of suspicion that deployment attacks elicit. For the pooled All comparison,
+their total RMSE is 0.259 points on the 0–10 scale, versus 2.821 points for BashArena—more than a tenfold
+reduction in prediction error. Figure 7 (left) also tests whether SCEs capture differences between environments
+and side-task categories. Between environments, SCE RMS bias is 0.247 points versus a LinuxArena SD of 0.634,
+explaining 85% of the variance. Thus SCEs capture most of the differences in how suspicious attacks appear
+across environments. Estimated bias across side-task categories is also small: the variance-corrected squared
+estimate is slightly negative and displayed at zero, with uncertainty that includes zero.
+This agreement extends to individual task pairs. The task-pair SCE RMS bias is 0.68 points versus a between-
+task-pair SD of 2.03 points, accounting for 89% of between-task-pair variance. SCEs therefore capture most of
+the variation in expected suspicion between task pairs, providing information about which tasks tend to produce
+attacks that monitors find more suspicious. Individual simulated runs remain noisy, so repeated simulations can
+improve estimates of these expected scores.
+Figure 7 (right) shows how prediction errors vary across environments and separates differences in observed
+mean scores from variation due to independently sampling evaluation and deployment task sets. This distinction
+explains why individual evaluations can disagree even when their expected scores are close. The ordering differs
+from the attack-success comparison: File Indexing has relatively large errors in both, while Shared Dotfiles and
+TikTok also have relatively large monitor-score errors. The next analysis tests whether this agreement translates
+into accurate safety estimates when monitor scores are used to decide which attacks to audit.
+8
+
+
+0
+2
+4
+6
+8
+10
+Audit budget (%)
+0
+20
+40
+60
+80
+100
+Safety (%)
+GPT-5.4
+GPT-5.4 Mini
+GPT-5.4 Nano
+GPT-5 Nano
+GPT-5.6 Sol
+Simulated
+Executed
+All
+Side-task
+category
+Environment
+0
+5
+10
+15
+20
+25
+30
+35
+RMS bias / RMSE (pp)
+Simulation error
+LinuxArena SD
+BashArena mean
+3.57
+10.10
+95% match
+4.57
+20.23
+24.70
+95% explained
+6.01
+12.90
+17.30
+78% explained
+Figure 8: SCEs predict safety across monitors and audit budgets. Left: Simulated curves broadly track executed
+safety, including the differences between monitors. Right: At 5% audit, the pooled SCE prediction has lower total RMSE
+than BashArena’s, and SCE RMS bias across side tasks and environments is below the corresponding LinuxArena SD.
+3.4
+Safety transfer
+Safety depends on how often attacks both succeed and escape detection. A simulator could match average attack
+success and monitor suspicion yet still mispredict safety if it gets wrong which attacks the monitor catches.
+Following the control-evaluation literature, safety is the probability of detecting an attack before an undetected
+success (Greenblatt et al., 2024; Bhatt et al., 2025; Tracy et al., 2026). At audit budget b (the fraction of honest
+trajectories flagged, or false-positive rate), we estimate safety as P(detected)/[P(detected) + P(undetected ∧
+attack successful)]. Both probabilities are over all attack trajectories; detection includes attacks whose side task
+fails. Executed attacks use side-task scorer outcomes and simulated attacks use the judge’s success probabilities.
+Figure 8 (left) shows that SCEs closely reproduce both the differences in safety between monitors and the
+improvement obtained by increasing the audit budget. The simulated and executed curves match closely across
+budgets: an evaluator using SCEs would reach similar conclusions about which monitors provide stronger pro-
+tection and how much additional auditing improves safety.
+Figure 8 (right) quantifies this agreement at a 5% audit budget. Across all eligible LinuxArena task pairs,
+SCEs predict safety with an RMSE of 3.6 percentage points, versus 10.1 for BashArena. On the 0–100 safety scale,
+this is a root-mean-squared prediction error of just 3.6 points, including variation from independently sampled
+evaluation and deployment task sets. SCEs reduce this error by roughly two-thirds relative to BashArena. Errors
+are squared separately within each monitor, so overprediction for one monitor cannot cancel underprediction for
+another.
+SCEs also capture nearly all of the variation in expected safety between side-task categories and a large
+majority of the variation between environments: 95% and 78%, respectively. These percentages measure the
+reduction in squared prediction bias relative to assigning every category or environment its corresponding Lin-
+uxArena mean. Thus SCEs recover much of the information about where safeguards are stronger or weaker that
+an accurate overall average would leave out. For side-task categories, the scale of this improvement is substantial:
+their expected safeties have an SD of 20.2 percentage points, while SCE RMS bias is only 4.6 points.
+These differences matter when an attacker can select its opportunities. An overall safety estimate can conceal
+categories or environments in which the protocol is substantially weaker. Accurately predicting those differences
+provides information needed to assess safety if attacks are concentrated on vulnerable parts of a deployment.
+Together, these results show that SCEs provide both accurate aggregate safety estimates and strong predictions
+of how safety varies within LinuxArena. For this central control metric, the benefit of evaluating the relevant
+tasks and environments outweighs the errors introduced by simulation.
+9

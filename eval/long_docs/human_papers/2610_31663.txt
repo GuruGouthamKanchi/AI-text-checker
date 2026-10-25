@@ -1,0 +1,471 @@
+Phase Transition from Random Features to Fully
+Trainable Networks
+Xin He, Huan Lao, Xiliang Lu, and Shijun Zhang*
+Abstract. Constructing accurate and computationally tractable approximation spaces is a funda-
+mental task in scientific computing. Partially trainable neural networks bridge fixed random features
+and fully adaptive representations. This paper quantifies a phase transition pattern in approximation
+bounds and observes analogous behavior in training errors: a rapid but smooth initial improvement
+followed by diminishing returns, with a sharper transition under greater initialization mismatch.
+Under polynomial spectral decay with exponent 𝛼> 1 and leverage compatibility, we establish a
+squared 𝐿2 approximation rate O((𝜅𝑃log(𝑚/𝛿)/𝑚) 𝛼) for two-layer networks of width 𝑚and train-
+able proportion 𝑃, where 𝜅𝑃= (𝑃/𝜅∗
+1 + (1 −𝑃)/𝜅∗
+0)−1. The bound holds uniformly over the unit ball
+of a reproducing kernel Hilbert space (RKHS) with probability at least 1 −𝛿. The constants 𝜅∗
+0 and 𝜅∗
+1
+quantify the fixed and trainable groups’ sampling mismatches relative to the target RKHS. For spher-
+ical biased-ReLU features in dimension 𝑑, we verify these assumptions with 𝛼= (𝑑+ 2)/(𝑑−1)
+and 𝜅∗
+0 = 4
+√
+2𝜏(𝑑+ 1)/𝑑for initialization scale 𝜏≥1, and 𝜅∗
+1 = 1 under ridge leverage sampling. For
+𝑑= 5 and 𝜏= 10, a trainable proportion of approximately 4.1% captures 90% of the reduction in the
+approximation bound from 𝑃= 0 to 𝑃= 1. A structured three-layer example illustrates how a few
+trainable first-layer neurons exploit fixed downstream blocks through nonlinear composition. Numer-
+ical experiments across diverse settings, including networks with up to 15 layers, exhibit similar phase
+transitions in training errors.
+Contents
+1. Introduction . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+2
+2. Preliminaries and Problem Setting . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+6
+3. General Approximation Results . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+12
+4. Analysis of Spherical Biased-ReLU Features . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+18
+5. A Structured Three-Layer Illustration . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+22
+6. Numerical Evidence of Phase Transitions . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+24
+7. Discussion and Conclusions . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+30
+Overview of the Appendices . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+31
+A. Additional Technical Notes . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+31
+B. Proofs of Main Results in Section 3 – General Bounds . . . . . . . . . . . . . . . . . . . . . . . .
+33
+*Corresponding author: shijun.zhang@polyu.edu.hk.
+Mathematics Subject Classification 2020: 41A46 (primary); 41A25, 68T07 (secondary).
+Keywords: Phase transition, partially trainable networks, random features, spectral decay, neural network
+approximation.
+arXiv:2610.31663v1  [math.NA]  22 Oct 2026
+
+
+2
+X. He, H. Lao, X. Lu, and S. Zhang
+C. Proofs of Main Results in Section 4 – Specific Spherical Setting . . . . . . . . . . . . . . . . .
+42
+D. Error Bounds for the Structured Three-Layer Example 5.1 . . . . . . . . . . . . . . . . . . . . .
+54
+E. Complementary Experiments . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+59
+References . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+65
+1. Introduction
+The pursuit of accurate, efficient, and stable representations lies at the heart of scien-
+tific computing. A key task is to construct suitable approximation spaces. Many classical
+methods, such as polynomial, Fourier, and wavelet approximation, prescribe a family of
+functions and approximate the target through their linear combinations. Random feature
+methods (RFMs) [45, 48] follow a similar principle, using fixed sampled features whose
+ability to capture the target depends on how well the initialization distribution matches it
+[4, 44, 52]. Feed-forward neural networks (FNNs) offer a more adaptive approach: train-
+ing the hidden parameters allows the feature functions themselves to adapt to the target,
+yielding strong expressive power [46, 59, 80]. RFMs and fully trainable FNNs thus rep-
+resent two endpoints, connected by partially trainable networks in which a proportion of
+hidden parameters are trainable and the rest randomly fixed. This paper investigates the
+phase transition between these endpoints, addressing the question:
+How does the performance of partially trainable neural networks vary as the trainable
+proportion increases?
+To investigate this question, this paper studies the 𝑃-trainable networks, where the same
+proportion 𝑃∈[0,1] of neurons in each hidden layer are trainable and the rest are randomly
+fixed. Although arbitrary subsets of network parameters can be made trainable, the present
+formulation assigns trainability at the neuron level. Our approximation analysis shows that
+the effect of the trainable proportion depends on how well the fixed and trainable neuron
+groups match the target function class. The corresponding theoretical bounds and numerical
+experiments together identify a distinct phase transition pattern: A small trainable group
+can offset the mismatch between the initialization distribution and the target function class,
+yielding substantial performance gains at small 𝑃followed by diminishing returns, and
+greater initialization mismatch sharpens the transition.
+Building on the approximation results for two-layer 𝑃-trainable networks with general
+activation functions, the analysis of spherical biased-ReLU features provides the explicit
+rates that quantify this dependence on initialization. Figure 1 illustrates qualitative agree-
+ment between the predicted and observed phase transitions across initialization scales 𝜏≥1.
+Within this family, the chosen admissible mismatch constant increases linearly with 𝜏.
+Increasing 𝜏generally sharpens phase transitions. More concretely, for 𝑑= 5 and 𝜏= 10, a
+trainable proportion of only about 4.1% captures 90% of the total reduction in the approx-
+imation bound from 𝑃= 0 to 𝑃= 1.
+A structured three-layer example further demonstrates how a small trainable group
+uses randomly fixed downstream neurons through nonlinear composition enabled by depth.
+
+
+Phase Transition from Random Features to Fully Trainable Networks
+3
+1
+2
+4
+7
+10
+Initialization Scale 휏
+0
+0.1
+0.2
+0.3
+0.4
+0.5
+Trainable Proportion 푃0.1
+Theory
+Numerical
+95% bootstrap
+(a) Threshold for 90% gain.
+0
+0.1
+0.25
+0.5
+0.75
+1
+Trainable Proportion 푃
+0
+0.5
+0.9
+1
+Normalized Gain 퐺(푃)
+Theory, 휏= 1
+Theory, 휏= 10
+Numerical, 휏= 1
+Numerical, 휏= 10
+(b) Normalized gain.
+Figure 1. Phase transitions for two-layer spherical biased-ReLU 𝑃-trainable networks with 𝑑= 5.
+Red curves are derived from the approximation bound, while blue curves show training results for a
+fixed RKHS target. Increasing the fixed initialization scale 𝜏≥1 raises the mismatch constant from its
+minimum at 𝜏= 1. Both theory and training show qualitatively similar transition shapes and sharper
+transitions at larger 𝜏. Quantitative differences are expected because training also depends on finite
+sampling, the optimizer, and the training budget. Threshold 𝑃0.1 marks 90% normalized gain. Shaded
+bands indicate 95% bootstrap intervals. See experimental details in Appendix E.1.
+0
+0.2
+0.4
+0.6
+0.8
+1
+Trainable Proportion 푃
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Normalized Gain 퐺(푃)
+3 Layers
+4 Layers
+5 Layers
+7 Layers
+0.1
+0.2
+0.96
+0.98
+1.0
+(a) Depth variation from 3 to 7 at width 64.
+0
+0.2
+0.4
+0.6
+0.8
+1
+Trainable Proportion 푃
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Normalized Gain 퐺(푃)
+Width 32
+Width 64
+Width 128
+Width 256
+0.1
+0.2
+0.96
+0.98
+1.0
+(b) Width variation from 32 to 256 at depth 6.
+Figure 2. Representative numerical normalized gains for 𝑃-trainable ReLU networks on a surface
+target function. Gains are normalized by the observed loss reduction between 𝑃= 0 and 𝑃= 1. Both
+depth and width comparisons show rapid gains at small 𝑃, followed by diminishing gains.
+Extensive numerical experiments across target functions and architectures exhibit similar
+phase transition patterns, with representative width and depth comparisons in Figure 2.
+1.1. Main Results
+The main contributions of this work are summarized as follows.
+(i) Small-𝑷Phase Transition for Shallow Networks. For two-layer 𝑃-trainable networks,
+the analysis samples the trainable group from an adjustable distribution to quantify how
+the trainable proportion and initialization mismatch affect approximation bounds.
+• General approximation rates. Theorem 3.2 gives a sufficient width condition for approx-
+imating the RKHS unit ball uniformly to any prescribed tolerance with high probability.
+
+
+4
+X. He, H. Lao, X. Lu, and S. Zhang
+Under polynomial spectral decay with exponent 𝛼> 1 and leverage compatibility, The-
+orem 3.6 then gives the approximation rate for width 𝑚
+O
+ 𝑃
+𝜅∗
+1
++ 1 −𝑃
+𝜅∗
+0
+
+𝑚
+log(𝑚/𝛿)
+−𝛼
+,
+𝑃∈[0, 1],
+with probability at least 1 −𝛿, where 𝛿∈(0, 1). The constants 𝜅∗
+1 and 𝜅∗
+0 control how
+well the sampling distributions of the trainable and randomly fixed groups match the
+target function class, respectively. Both groups contribute to the approximation bound,
+and their relative contributions depend on the mismatch ratio 𝜅∗
+0/𝜅∗
+1.
+• Phase transition sharpness. Corollary 3.10 shows that when 𝜅∗
+0/𝜅∗
+1 ≫1, a trainable pro-
+portion of order (𝜅∗
+0/𝜅∗
+1)−1 suffices to capture any fixed fraction of the reduction between
+the endpoint bounds. A larger mismatch ratio produces a sharper transition in the bound.
+• Spectral and mismatch verification. For spherical biased-ReLU features on S𝑑−1, Propo-
+sitions 4.1 and 4.2 establish the spectral exponent 𝛼= (𝑑+ 2)/(𝑑−1) and the admissible
+mismatch constant 𝜅∗
+0 = 4
+√
+2𝜏(𝑑+ 1)/𝑑. With 𝜅∗
+1 = 1 from ridge leverage sampling of
+the trainable group, Theorem 4.3 gives the explicit spherical rate. Increasing the fixed
+initialization scale 𝜏≥1 generally sharpens predicted and observed transitions (Figure 1).
+(ii) Similar Transitions in Deep Networks. A deep neural network example and numer-
+ical experiments show similar small-𝑃transitions and further examine the roles of depth
+and randomly fixed neurons.
+• Gains from nonlinear composition. Example 5.1 provides explicit approximation upper
+bounds for a structured three-layer network in which a few trainable first-layer neurons
+use several randomly fixed downstream neurons. The bounds exhibit a similar small-𝑃
+phase transition. At selected trainable neuron counts in the first hidden layer, the three-
+layer construction also gives a smaller error upper bound than its two-layer counterpart,
+highlighting the gains from nonlinear composition enabled by depth.
+• Phase transitions in training performance. Across three targets and different widths
+and depths, most tested configurations in Section 6 recover a substantial fraction of the
+observed loss reduction between the two endpoints at small 𝑃, followed by diminishing
+gains. The transition strength varies with the target and architecture, with representa-
+tive depth and width results in Figure 2. Besides, Table 4 shows lower training losses
+with more randomly fixed neurons at a fixed trainable neuron count per hidden layer,
+supporting the expressive role for the fixed group.
+1.2. Related Work
+The following discussion reviews approximation and learning theory for RFMs, partially
+trainable networks, and fully trainable FNNs, as well as studies of pruning and parameter
+freezing. For each topic, it explains the connections to our work and the differences in
+model construction, analysis, or research objectives.
+Approximation Theory for Random Feature Methods. RFMs approximate the infinite-
+dimensional feature representation of a kernel using finitely many random features sampled
+
+
+Phase Transition from Random Features to Fully Trainable Networks
+5
+from a prescribed distribution [48,49]. Early analyses focused on approximating the kernel
+itself, particularly with random Fourier feature analysis [67,68]. Subsequent operator-based
+work considered general integral feature maps and studied RFMs via a framework of func-
+tion approximation and statistical learning. In this framework, the required feature number
+is governed by the spectrum and effective dimension of the associated integral operator
+[4, 36, 52]. Beyond sampling from the original feature distribution, leverage-based sam-
+pling schemes have been developed at both the population and empirical levels to reduce
+the required number of features [2,4,34,35]. When the feature map is specialized to ReLU
+neurons, approximation bounds have also been established for two-layer networks with
+randomly sampled hidden parameters [19,25].
+RFMs also have limitations in approximation capacity. Under standard Gaussian inputs,
+approximating even a single ReLU neuron can require exponentially many features or expo-
+nentially large output coefficients in the input dimension [74]. Approximation lower bounds
+derived using ridgelet analysis show that two-layer RFMs with bounded hidden parameters
+can fail to achieve universal approximation when the sampling support omits a nonzero part
+of the target’s ridgelet spectrum [32].
+Our analysis extends the operator framework in [4] from a single sampling distribution
+to two independent groups of fixed sizes sampled from separate distributions, giving unified
+approximation bounds over 𝑃∈[0, 1]. Beyond the sampling support restrictions studied
+in [32], our mismatch factor quantifies insufficient sampling mass relative to the target
+RKHS and its effect on the sufficient network width. The bounds further show how a small,
+appropriately chosen trainable group can compensate for the initialization mismatch.
+Learning Theory for Partially Trainable Networks. Partially trainable networks have
+been studied under various constraints on which parameters are optimized. Semi-random
+feature models combine randomly fixed and trainable components within individual units
+[27], while other work establishes universal approximation for networks with fixed random
+weights and trainable biases [71]. Optimization and function-space analyses also provide
+convergence and complexity results for models with a randomly fixed first hidden layer
+[8, 9]. Related approximation studies investigate representations with a small number of
+target-dependent parameters [58,75], as well as multigrade and layer-wise approximation
+constructions [77,78].
+Our analysis considers a different form of partial trainability: hidden neurons within
+each layer are divided into trainable and randomly fixed groups, and we study the resulting
+finite-width approximation properties.
+Approximation TheoryforFeed-ForwardNeuralNetworks. Classicaluniversalapprox-
+imation theorems establish the density of FNNs with suitable activations in spaces of
+continuous functions [12, 24]. Quantitative approximation theory relates approximation
+accuracy to network size, target regularity, and architectural constraints. For shallow net-
+works, Barron-type and variation spaces provide important frameworks for this analysis
+[5, 13, 14, 63], with approximation rates and optimality results available under various
+
+
+6
+X. He, H. Lao, X. Lu, and S. Zhang
+assumptions on the activation and error norm [38,61,62,64]. More general approximation-
+space frameworks have also been developed for deep networks [20].
+Quantitative bounds for Hölder, Sobolev, and Besov classes have been established using
+ReLU and related rectified-power networks [21, 37, 40, 55, 59, 60, 69, 73]. Other results
+address analytic and bandlimited functions [15,43], as well as smooth functionals [66]. Fur-
+ther studies investigate how activation choices and constraints on network size or parameter
+magnitude affect approximation capabilities [26,30,31,56,57,76].
+Beyond target regularity, approximation theory also examines the role of input geometry
+[6,7,53] and architectural structure, including convolutional networks, dynamical-systems
+formulations, Transformers, and structured network models [10,11,33,54,79,81]. Connec-
+tions with finite element methods and hierarchical basis constructions provide additional
+perspectives [22,23].
+Our work complements these studies by examining how partial trainability affects
+approximation within a given architecture and target function class.
+Lottery Ticket Hypothesis and Parameter Freezing. The lottery ticket hypothesis states
+that a randomly initialized dense network contains a smaller subnetwork that, when trained
+in isolation, can attain performance comparable to the original network [17]. Related studies
+show that suitably pruned randomly initialized networks may contain subnetworks capa-
+ble of approximating target networks with little or no weight training [39, 50]. Instead,
+parameter freezing trains only a selected subset of parameters while holding the remainder
+fixed, often at their random initializations [51, 72]. Studies of parameter freezing inves-
+tigate parameter selection rules and freezing ratios, often with an emphasis on practical
+performance and training efficiency.
+Our setting is related to these studies but differs in both construction and objective.
+A prescribed proportion of hidden neurons is trainable. The remaining hidden parameters
+stay fixed after initialization, while all neurons are retained in the forward computation.
+The objective is to study approximation capacity as the trainable proportion varies, rather
+than to search for subnetworks or design parameter selection rules.
+Organization. The rest of the paper is organized as follows. Section 2 introduces the
+model, approximation task and analytical framework. Section 3 presents the general approx-
+imation bound, explicit polynomial rates, and the resulting phase transition phenomenon.
+Section 4 specializes the analysis to specific spherical biased-ReLU features. Section 5 pro-
+vides the structured three-layer illustration. Section 6 reports the numerical illustrations,
+and Section 7 concludes the paper. Supplementary proofs are provided in the appendices.
+2. Preliminaries and Problem Setting
+Notation. Let N+ ≔{1, 2, 3, . . .} and N ≔N+ ∪{0}. For 𝑛∈N+, write [𝑛] = {1, . . . , 𝑛},
+with [0] = ∅. Empty sums are understood to be zero. We denote the set of real numbers
+by R. Write 𝐴≲𝐵and 𝐵≳𝐴when 𝐴≤𝑐𝐵for a constant 𝑐> 0. And 𝐴≍𝐵means 𝐴≲𝐵
+
+
+Phase Transition from Random Features to Fully Trainable Networks
+7
+and 𝐵≲𝐴. Vectors written as tuples are understood as column vectors. For 𝑥∈R𝑑, ∥𝑥∥𝑝
+denotes the ℓ𝑝-norm for 𝑝∈[1, +∞). For a measurable function 𝑓: R𝑑→R, ∥𝑓∥𝐿𝑝(𝑑𝜇)
+denotes the 𝐿𝑝-norm with respect to 𝜇. Table 5 in the appendix summarizes the main
+notations for quick reference.
+2.1. Model Space: 𝑷-Trainable Neural Networks
+Feed-forward Neural Networks (FNNs). Let 𝑊∈N+ and 𝐿≥2. We consider a feed-
+forward neural network 𝑓𝐿∈F (𝑊, 𝐿) : R𝑑→R of width𝑊and depth 𝐿, with 𝐿−1 hidden
+layers. Set 𝑚0 = 𝑑and 𝑚𝐿= 1. For ℓ∈[𝐿−1], let 𝜃ℓ, 𝑗∈R𝑚ℓ−1+1 denote the parameter
+vector of the 𝑗-th neuron in the ℓ-th hidden layer and 𝜙: R →R be the activation function.
+The network is then defined recursively by
+𝑓0(𝑥) = (𝑥, 1),
+𝑓ℓ(𝑥) =  𝜙(𝑥; 𝜃ℓ,1), . . . , 𝜙(𝑥; 𝜃ℓ,𝑚ℓ), 1,
+ℓ∈[𝐿−1],
+𝑓𝐿(𝑥) =
+∑︁𝑚𝐿−1
+𝑗=1
+𝛽𝑗𝜙(𝑥; 𝜃𝐿−1, 𝑗),
+(2.1)
+where 𝛽= (𝛽1, . . . , 𝛽𝑚𝐿−1) ∈R𝑚𝐿−1 denotes the output coefficient vector. The width of
+the network is defined as 𝑊= max{𝑚0, 𝑚1, . . . , 𝑚𝐿}. With a slight abuse of notation, we
+define the feature induced by the 𝑗-th neuron as 𝜙(𝑥; 𝜃ℓ, 𝑗) := 𝜙(⟨𝜃ℓ, 𝑗, 𝑓ℓ−1(𝑥)⟩).
+𝑷-Trainable Neural Networks. Let 𝑃∈[0, 1] denote the proportion of trainable neurons
+in each hidden layer. For every ℓ∈[𝐿−1], define 𝑚ℓ,free(𝑃) = ⌊𝑃𝑚ℓ⌋and 𝑚ℓ,fix(𝑃) =
+𝑚ℓ−𝑚ℓ,free(𝑃). When the dependence on 𝑃is clear, write 𝑚ℓ,free and 𝑚ℓ,fix without their
+arguments. The hidden-layer widths {𝑚1, . . . , 𝑚𝐿−1} are fixed when comparing different
+values of 𝑃. For indexing, the trainable neurons are listed before the randomly fixed neurons
+in each hidden layer. Specifically,
+𝜃ℓ, 𝑗∈R𝑚ℓ−1+1, 1 ≤𝑗≤𝑚ℓ,free, and 𝜃ℓ, 𝑗= ¯𝜃ℓ, 𝑗−𝑚ℓ,free ∼𝜌0,ℓ, 𝑚ℓ,free + 1 ≤𝑗≤𝑚ℓ,
+where 𝜃ℓ, 𝑗denotes the parameter of a trainable neuron while ¯𝜃ℓ, 𝑗−𝑚ℓ,free denotes the param-
+eter sampled from a prescribed distribution 𝜌0,ℓ. In the two-layer setting, write 𝜌0 = 𝜌0,1.
+With 𝜙(𝑥; 𝜃ℓ, 𝑗) := 𝜙(⟨𝜃ℓ, 𝑗, 𝑓(𝑃)
+ℓ−1 (𝑥)⟩), the 𝑃-trainable network is defined by
+𝑓(𝑃)
+0
+(𝑥) = (𝑥, 1),
+𝑓(𝑃)
+ℓ
+(𝑥) =
+ 𝜙(𝑥; 𝜃ℓ, 𝑗)𝑚ℓ,free
+𝑗=1
+,  𝜙(𝑥; ¯𝜃ℓ, 𝑗)𝑚ℓ,fix
+𝑗=1 , 1
+
+,
+ℓ∈[𝐿−1],
+𝑓(𝑃)
+𝐿
+(𝑥) =
+𝑚𝐿−1,free
+∑︁
+𝑗=1
+𝛽𝑗𝜙(𝑥; 𝜃𝐿−1, 𝑗) +
+𝑚𝐿−1,fix
+∑︁
+𝑗=1
+𝛽𝑚𝐿−1,free+ 𝑗𝜙(𝑥; ¯𝜃𝐿−1, 𝑗),
+(2.2)
+where the output coefficient vector 𝛽= (𝛽1, . . ., 𝛽𝑚𝐿−1) = (𝛽free, 𝛽fix) is partitioned accord-
+ing to the trainable and fixed hidden neurons. All entries of 𝛽remain trainable. For a given
+realization of the fixed hidden parameters, the resulting class of 𝑃-trainable neural networks
+is denoted by F𝑃(𝑊, 𝐿). Figure 3 illustrates the architecture.
+
+
+8
+X. He, H. Lao, X. Lu, and S. Zhang
+· · ·
+⌊𝑃𝑊⌋Trainable Neurons
+𝑊−⌊𝑃𝑊⌋Fixed Neurons
+Input
+1
+2
+𝐿−1
+Output 𝐿
+Width 𝑊
+Depth 𝐿
+Figure 3. A 𝑃-trainable network with hidden layers of equal width 𝑊. Each hidden layer contains
+⌊𝑃𝑊⌋trainable neurons and 𝑊−⌊𝑃𝑊⌋fixed neurons. Thus, the network has O(𝑃𝑊2𝐿+ 𝑊) train-
+able parameters out of O(𝑊2𝐿) total parameters.
+Notably, there are two limiting cases. At 𝑃= 0, all hidden parameters are randomly
+initialized and held fixed, so only the output coefficients are trained. Thus, F0(𝑊, 𝐿) cor-
+responds to an RFM class. At 𝑃= 1, all hidden parameters are trainable, so the 𝑃-trainable
+network class coincides with the fully trainable FNN class, and hence F1(𝑊, 𝐿) = F (𝑊, 𝐿).
+Although the model (2.2) is defined for general depth 𝐿, the main approximation theory
+concerns two-layer networks in Sections 3 and 4. Section 5 provides a structured three-layer
+illustration, and Section 6 examines deeper networks numerically.
+Remark 2.1 (Neuron-wise Trainability). Partial training can also be defined at the level
+of individual parameter entries. Here, each hidden neuron is assigned to the trainable or
+fixed group through its entire incoming parameter vector 𝜃ℓ, 𝑗, including the bias. In deeper
+networks, the outputs of fixed neurons may still change as earlier trainable layers change.
+2.2. Approximation Task: Two Complementary Views
+For the two-layer analysis, set 𝑚= 𝑚1 and assume that 𝑃𝑚is an integer, so that 𝑚free = 𝑃𝑚
+and 𝑚fix = (1 −𝑃)𝑚. Let X ⊆R𝑑be the input domain and let 𝑓∗: X →R be a target
+function. The approximation task by a two-layer 𝑃-trainable network is described from
+two complementary viewpoints.
+Finite-dimensional View. Given input points {𝑥1, . . . , 𝑥𝑛} ⊂X and the corresponding
+target values { 𝑓∗(𝑥𝑖)}𝑛
+𝑖=1, the task is to choose the output coefficients and trainable hidden
+parameters. By (2.2), a two-layer 𝑃-trainable network 𝑓∈F𝑃(𝑊, 2) has the form
+𝑓(𝑃)
+2
+(𝑥) =
+𝑚free
+∑︁
+𝑗=1
+𝛽𝑗𝜙(𝑥; 𝜃𝑗) +
+𝑚fix
+∑︁
+𝑗=1
+𝛽𝑚free+ 𝑗𝜙(𝑥; ¯𝜃𝑗).

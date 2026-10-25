@@ -1,0 +1,816 @@
+How Well Do Decision Models Transfer to Vietnamese? An Empirical
+Study of Text Classification
+Phat Huu Ha1,2 and Nguyen Xuan Phuc1,2 and Nong Nhut Quy1,2 and
+Trinh Tran Tran1,2 and Nguyen Minh Triet1,2 and
+Dang Van Thin1,2
+1University of Information Technology, Ho Chi Minh City, Vietnam
+2Vietnam National University HoChiMinh City, Vietnam
+Corresponding Author: thindv@uit.edu.vn
+Abstract
+Recent advances in specialized decision mod-
+els have expanded the possibilities for zero-
+shot classification, yet their effectiveness on
+Vietnamese remains underexplored.
+This
+study evaluates four specialized decision mod-
+els across 13 classification settings spanning
+six task groups, examining zero-shot perfor-
+mance, sensitivity to label-description lan-
+guage, and robustness to Vietnamese linguis-
+tic variations. The evaluation considers En-
+glish, Vietnamese, and bilingual label descrip-
+tions, alongside common linguistic perturba-
+tions involving teencode, typographical errors,
+and diacritic removal. Under English label de-
+scriptions, JEV achieves the strongest overall
+performance, ranking first in 11 classification
+settings. The effects of label-description lan-
+guage vary across models and datasets, with
+bilingual descriptions providing no consistent
+improvement. Robustness experiments reveal
+that diacritic removal causes the most substan-
+tial performance degradation, reducing mean
+macro-F1 by 9.51–15.47 points across model
+configurations, considerably more than teen-
+code or typographical errors. These findings
+highlight the importance of label-description
+choices and Vietnamese orthographic variation
+when evaluating specialized decision models
+for zero-shot text classification.
+1
+Introduction
+Text classification is a fundamental task in natural
+language processing, covering applications such
+as sentiment analysis, intent detection, and nat-
+ural language inference. General-purpose large
+language models (LLMs) have demonstrated the
+ability to perform such tasks through zero-shot
+prompting. Recently, specialized decision mod-
+els have emerged to provide structured predictions
+over predefined candidate options without free-
+form text generation. Models such as JEV supports
+classification through typed decision interfaces or
+user-defined schemas (TypeSafe AI, 2026).
+Recent studies have evaluated specialized de-
+cision models across various tasks and domains.
+Deußer et al. (2026) evaluate JEV across 37
+datasets, reporting strong performance on sev-
+eral tasks alongside considerable variation in re-
+sults. Other studies examine decision models and
+compare their performance with general-purpose
+LLMs (Duan et al., 2026; Ibrahim and Zaki, 2026).
+Despite these efforts, their performance on Viet-
+namese text classification remains insufficiently
+characterized, particularly across tasks with differ-
+ent label inventories and linguistic characteristics.
+Classification performance may also depend on
+how labels are specified and how input text is
+written.
+Previous research has shown that op-
+tion labels can influence predictions in typed de-
+cision models even when label definitions are pro-
+vided (Azizi et al., 2026). This motivates exam-
+ining the effects of label-description language on
+Vietnamese classification tasks. Vietnamese user-
+generated text also contains abbreviations, non-
+standard spellings, and omitted diacritics (Nguyen
+et al., 2024, 2023). Previous evaluations of Viet-
+namese pretrained language models have reported
+substantial performance degradation under diacritic
+removal (Nguyen et al., 2023). These findings mo-
+tivate further investigation of decision-model sen-
+sitivity to both label descriptions and Vietnamese
+linguistic variations.
+This study evaluates four specialized decision
+models across 13 Vietnamese classification set-
+tings spanning six task groups, with additional
+comparisons against previously published LLM
+results. The evaluation examines zero-shot classifi-
+cation performance, the effects of label-description
+language, and robustness to Vietnamese linguistic
+perturbations. Under English label descriptions,
+JEV achieves the highest performance in 11 set-
+tings. The effects of label-description language
+vary across models and datasets, while diacritic re-
+moval causes the largest performance degradation
+1
+arXiv:2610.31422v1  [cs.CL]  22 Oct 2026
+
+
+among the evaluated perturbations.
+The main contributions of this study are:
+• Zero-shot evaluation of decision models for
+Vietnamese. A systematic comparison across
+diverse classification tasks, identifying differ-
+ences in model performance at both task and
+class levels.
+• Analysis of label-description sensitivity and
+linguistic robustness. An investigation of the
+effects of label-description language and Viet-
+namese linguistic variations, revealing model-
+dependent behavior and substantial sensitivity
+to diacritic removal.
+2
+Related Work
+2.1
+Specialized Decision Models and Their
+Evaluation
+Specialized decision models produce structured
+predictions over predefined candidate options with-
+out free-form text generation. JEV and LAYA pro-
+vide typed decision interfaces, while GLiNER2.5-
+multi-Decide supports multilingual classification
+with user-specified labels (TypeSafe AI, 2026;
+Convai Innovations, 2026; Zaratiana et al., 2025).
+These systems support related classification tasks
+despite differences in their architectures and infer-
+ence interfaces.
+Recent evaluations show that decision-model
+performance varies across tasks and evaluation
+conditions. Broad benchmarks report competi-
+tive results on several classification and knowledge
+tasks, alongside limitations on more demanding
+tasks and settings (Deußer et al., 2026; Duan et al.,
+2026; Ibrahim and Zaki, 2026; Li et al., 2026).
+More focused studies reveal behavior not captured
+by aggregate scores. Experiments on legal infer-
+ence identify sensitivity to request configuration,
+comparisons of JEV and LAYA show different per-
+formance and robustness profiles, and analyses of
+JEV report biases in the distribution of selected
+labels and ordinal scores (Zhang et al., 2026; Li,
+2026; Gao et al., 2026). However, evidence across
+diverse Vietnamese classification tasks remains
+limited.
+2.2
+Label Specifications and Vietnamese
+Linguistic Robustness
+The specification of candidate labels can influ-
+ence zero-shot classification. Studies of generative
+LLMs show that label wording and definitions af-
+fect classification performance (Mu et al., 2024; Li
+et al., 2025). Related findings have been reported
+for typed decision models, where option names can
+exert greater influence than their accompanying
+definitions (Azizi et al., 2026). This evidence mo-
+tivates examining the language of label descriptions
+as a separate factor in Vietnamese classification.
+Robustness evaluation examines model behav-
+ior under controlled changes to input text. Check-
+List and TextFlint establish methods for testing
+linguistic transformations, while DecisionRobust
+extends perturbation-based evaluation to decision
+models and emphasizes the importance of vali-
+dating that transformed inputs retain their original
+labels (Ribeiro et al., 2020; Wang et al., 2021; Lan
+et al., 2026). For Vietnamese, ViLexNorm docu-
+ments nonstandard lexical forms in social media,
+and ViSoBERT reports performance degradation
+under diacritic removal (Nguyen et al., 2024, 2023).
+These findings motivate evaluating the effects of
+Vietnamese linguistic variations on specialized de-
+cision models.
+3
+Experimental Setup
+3.1
+Tasks and Datasets
+The evaluation covers 13 classification settings
+from 12 Vietnamese datasets across six task
+groups: topic classification, emotion recognition,
+hate speech detection, sentiment analysis, intent de-
+tection, and natural language inference (NLI). The
+datasets include UIT-VSFC (Nguyen et al., 2018),
+NEU-ESC (Mai et al., 2025), UIT-VSMEC (Ho
+et al., 2019), UIT-ViOCD (Nhung et al., 2021),
+ViHSD (Luu et al., 2021), UIT-ViCTSD (Nguyen
+et al., 2021), PhoATIS (Dao et al., 2021),
+ViMQ (Huy et al., 2021),
+ViNLI (Huynh
+et al., 2022), ViANLI (Huynh et al., 2026),
+ViMedNLI (Phan et al., 2023), and vnNLI (Anh
+et al., 2022). UIT-VSFC is evaluated for both sen-
+timent and topic classification.
+3.2
+Models
+Four specialized decision models are evaluated.
+JEV (TypeSafe AI, 2026) is accessed through its
+hosted API using the typesafe/jev-1.13 model ver-
+sion. The remaining three models are evaluated lo-
+cally using open-weight checkpoints: LAYA Mul-
+tilingual (322M parameters)1, GLiNER2.5-multi-
+1https://huggingface.co/convaiinnovations/
+laya-multilingual
+2
+
+
+Table 1: Zero-shot classification performance (%) using English label descriptions and a supervised fine-tuned
+PhoBERT baseline. Acc, WF1, and MF1 denote accuracy, weighted-F1, and macro-F1. Bold and underlined MF1
+indicate the highest and second-highest reported scores. Dashes denote unavailable values. Means cover the 12
+settings shared by all four zero-shot models.
+Dataset
+LAYA
+GLiNER
+Quyet
+JEV
+Fine-tuning BERT
+Acc
+WF1
+MF1
+Acc
+WF1
+MF1
+Acc
+WF1
+MF1
+Acc
+WF1
+MF1
+Acc
+WF1
+MF1
+Topic classification
+NEU-ESC
+26.49 30.02 14.79 62.30 58.80 27.10 47.19 49.19 23.08 51.79 55.83 37.31 78.65
+–
+62.73
+UIT-VSFC
+49.15 57.08 46.02 44.91 55.03 48.99 82.56 81.86 63.63 83.77 84.61 74.36 88.22
+–
+78.08
+Emotion recognition
+UIT-VSMEC
+34.34 35.80 31.89 18.76
+6.13
+5.10
+56.28 56.59 51.76 55.70 54.58 49.99 64.65 63.80
+59.06
+Hate speech detection
+ViHSD
+58.95 65.38 38.35 10.33
+1.98
+6.25
+29.12 37.45 30.59 83.70 83.87 59.34 86.75 86.52
+64.76
+UIT-ViCTSD
+87.80 85.61 58.08 87.30 83.88 50.90 89.50 88.84 69.89 89.50 88.73 69.32 90.78 90.27
+71.31
+UIT-ViOCD
+51.55 38.55 39.00 63.39 58.17 58.41 87.07 86.99 86.98 92.90 92.86 92.85 94.35 94.35
+94.35
+Sentiment analysis
+UIT-VSFC
+49.81 58.71 45.67 42.89 50.80 39.49 75.87 81.12 64.46 86.58 88.44 73.44 93.87 93.45
+82.83
+Intent detection
+PhoATIS
+15.79 17.94 19.86 23.74 26.29 27.72
+–
+–
+–
+81.08 87.60 79.26 90.82 90.82
+–
+ViMQ
+44.00 44.71 37.96 48.40 46.48 38.77 38.70 31.34 37.15 79.90 79.42 80.20
+–
+–
+89.50
+Natural language inference
+ViNLI
+47.61 46.84 46.66 28.28 23.86 23.63 51.19 48.69 48.48 79.91 80.85 81.00 80.67
+–
+80.69
+ViANLI
+31.80 31.21 31.21 32.10 20.24 20.25 34.40 33.02 33.01 53.80 53.48 53.49
+–
+–
+–
+ViMedNLI
+58.44 57.28 57.28 36.78 23.99 23.99 59.07 59.03 59.03 73.14 73.40 73.40 73.70
+–
+73.70
+vnNLI
+71.99 71.79 71.79 40.24 32.20 32.19 75.34 75.24 75.24 85.71 85.89 85.90 73.76
+–
+73.80
+Mean (12 shared) 50.99 51.92 43.23 42.97 38.46 31.26 60.52 60.78 53.61 76.37 76.83 69.22
+–
+–
+–
+Decide (287M parameters)2, and Quyet-1.0-Small
+(328M parameters)3. Quyet supports a maximum
+of ten candidate labels and is therefore excluded
+from PhoATIS, which contains 28 intent labels.
+3.3
+Zero-Shot Evaluation Protocol
+All models are evaluated with frozen weights, with-
+out task-specific fine-tuning or labeled demonstra-
+tions. Each model receives the task input and its
+predefined candidate labels. To examine the effects
+of label-description language, three configurations
+are considered: English (EN), Vietnamese (VI),
+and bilingual English–Vietnamese (EN+VI). La-
+bel identities and their order remain fixed across
+configurations, while EN+VI combines the English
+and Vietnamese descriptions. English descriptions
+serve as the reference configuration for the main
+evaluation.
+Macro-F1 is the primary evaluation metric, with
+accuracy and weighted-F1 reported as supplemen-
+tary measures. Macro-F1 is computed over classes
+2https://huggingface.co/fastino/GLiNER2.
+5-multi-Decide
+3https://huggingface.co/chinhnc/Quyet-1.0-Small
+represented in the gold test set. Robustness is mea-
+sured by the change in macro-F1 between original
+and perturbed inputs under the same model config-
+uration. The perturbation procedures are described
+in Section 5.
+4
+Results and Analysis
+4.1
+Overall Performance Across Tasks
+Table 1 presents the zero-shot classification results
+under English label descriptions. JEV achieves the
+highest macro-F1 in 11 of the 13 settings, with an
+average of 69.22 across the 12 settings shared by all
+models, followed by Quyet (53.61), LAYA (43.23),
+and GLiNER (31.26). Its advantage is particu-
+larly pronounced in intent classification, achieving
+79.26 macro-F1 on PhoATIS and 80.20 on ViMQ,
+exceeding the next-best models by 51.54 and 41.43
+points, respectively. Notably, PhoATIS contains
+28 candidate intent classes, indicating strong per-
+formance even with a relatively large label inven-
+tory. Substantial variation is also observed within
+task families. In topic classification, JEV achieves
+74.36 macro-F1 on UIT-VSFC but only 37.31 on
+3
+
+
+0
+10
+20
+30
+40
+50
+60
+70
+80
+90
+100
+Macro-F1 (%)
+UIT-VSFC · Sentiment
+UIT-VSMEC
+UIT-VSFC · Topic
+NEU-ESC
+ViNLI
+ViMedNLI
+vnNLI (VLSP)
+ViMQ
+UIT-ViCTSD · Toxicity
+ViHSD
+UIT-ViOCD
+JEV
+LAYA
+GLiNER
+Quyet
+Gemma-3-27b-it
+Qwen3-32B
+Llama-3.3-70B-Instruct
+GPT-4o
+GPT-4.1
+Figure 1: Zero-shot macro-F1 (%) of specialized decision models and general-purpose LLMs across 11 Vietnamese
+classification settings.
+NEU-ESC. Across the NLI benchmarks, all four
+models obtain their lowest scores on ViANLI, a
+dataset constructed using adversarial examples to
+challenge existing NLI systems. Nevertheless, JEV
+does not consistently outperform the other mod-
+els, with Quyet achieving slightly higher scores
+on UIT-VSMEC and UIT-ViCTSD. Differences
+are also observed across evaluation metrics. On
+NEU-ESC, GLiNER achieves the highest accuracy
+(62.30%), whereas JEV obtains the highest macro-
+F1 (37.31%), illustrating how model rankings can
+differ depending on the evaluation metric.
+4.2
+Comparison with LLMs
+To contextualize the performance of specialized de-
+cision models, we compare their zero-shot classifi-
+cation results with those reported for five general-
+purpose LLMs in prior work (Thin et al., 2024).
+Figure 1 presents macro-F1 scores on 11 overlap-
+ping classification settings, with detailed results
+provided in Table 10 in the appendix. The compar-
+ison uses English label descriptions for the decision
+models and previously reported zero-shot prompt-
+ing results for the LLMs.
+JEV demonstrates competitive performance
+against substantially larger general-purpose mod-
+els, outperforming all three open-weight LLMs
+on five of the 11 settings:
+UIT-VSFC topic
+and sentiment classification, ViHSD, ViNLI, and
+vnNLI. It also achieves the highest reported macro-
+F1 on ViHSD (59.34), exceeding Qwen3-32B
+(57.56), and on UIT-VSFC sentiment classifica-
+tion (73.44), slightly surpassing GPT-4.1 (73.14).
+On NEU-ESC, JEV performs comparably to the
+strongest LLM, Gemma-3-27b-it (37.31 versus
+37.32). Among the remaining decision models,
+Quyet is particularly competitive on UIT-ViCTSD,
+reaching 69.89 macro-F1 compared with 70.72 for
+Llama-3.3-70B-Instruct. Nevertheless, the relative
+performance varies across tasks. On UIT-VSMEC,
+GPT-4.1 exceeds JEV by 7.66 macro-F1 points,
+while GPT-4o achieves a 7.17-point advantage on
+ViMedNLI. Llama-3.3-70B-Instruct also outper-
+forms JEV on ViMQ by 4.62 points.
+4.3
+Error Analysis
+On PhoATIS, JEV frequently predicts compound
+intents for queries annotated with a single in-
+tent.
+Of its 169 incorrect predictions, 140 in-
+clude the gold intent together with an additional
+intent. The most frequent confusion is flight →
+flight#flight_time (109 cases).
+For example,
+JEV assigns flight#flight_time to the query “cho
+tôi biết các chuyến bay từthành phốhà nội đến
+thanh hóa khởi hành sau 5 giờchiều thứtư” (“show
+me flights from Hanoi to Thanh Hoa departing af-
+ter 5 p.m. on Wednesday”), although its gold label
+is flight. The departure time specifies a search
+constraint, not a separate request for flight-time
+information. JEV correctly identifies 19 of the
+4
+
+
+Anger
+Disgust
+Enjoyment
+Fear
+Sadness
+Surprise
+Other
+Predicted label
+Anger
+Disgust
+Enjoyment
+Fear
+Sadness
+Surprise
+Other
+Gold label
+85
+61
+13
+83
+13
+13
+54
+71
+14
+35
+32
+14
+21
+22
+43
+(a) JEV
+0
+20
+40
+60
+80
+100
+Within-class share (%)
+Anger
+Disgust
+Enjoyment
+Fear
+Sadness
+Surprise
+Other
+Predicted label
+Anger
+Disgust
+Enjoyment
+Fear
+Sadness
+Surprise
+Other
+32
+35
+20
+15
+41
+14
+20
+74
+17
+50
+15
+54
+24
+27
+49
+22
+16
+60
+(b) Quyet-1.0-Small
+0
+20
+40
+60
+80
+100
+Within-class share (%)
+Gold label
+Figure 2: Comparison of JEV and Quyet confusion
+matrices on UIT-VSMEC.
+20 examples annotated with compound intents,
+suggesting that distinguishing requested informa-
+tion from query constraints is a prominent diffi-
+culty in this setting. However, the small number
+of compound examples limits conclusions about
+compound-intent recognition more broadly.
+On UIT-VSMEC, a prominent difference be-
+tween JEV and Quyet concerns the distinction be-
+tween anger and disgust. JEV misclassifies 80 of
+the 132 disgust examples as anger, obtaining an
+F1 of 21.94 for disgust, compared with 49.09 for
+Quyet. Conversely, JEV achieves higher recall for
+anger (85.00% versus 32.50%). Figure 2 shows
+these contrasting confusion profiles, which are not
+reflected in the relatively close overall macro-F1
+scores.
+Another recurring error pattern is the dispropor-
+tionate selection of particular labels. On UIT-VSFC
+sentiment classification, all four models overpre-
+dict neutral, assigning it to 395–1,875 examples
+against 167 gold instances, with neutral precision
+ranging from 7.36% to 27.09%. For example, the
+positive comment “trình bày vấn đềmột cách chính
+xác và dễhiểu” (“presents the material accurately
+and clearly”) is classified as neutral by JEV, LAYA,
+and GLiNER. On ViNLI, 551 of JEV’s 601 errors
+involve predicting neutral for examples with other
+gold labels. More extreme prediction concentration
+occurs for GLiNER, which assigns other to 692 of
+693 UIT-VSMEC examples and hate to 6,678 of
+6,680 ViHSD examples. These distributions indi-
+cate that, in some evaluated configurations, errors
+are dominated by repeated selection of particular
+labels rather than confusions spread across multiple
+categories.
+4.4
+Effects of Label-Description Language
+Table 2 shows distinct patterns of sensitivity to
+label-description language across models. JEV ex-
+hibits the most stable average performance, with
+macro-F1 varying by only 0.35 points across the
+three configurations and reaching its highest value
+under EN+VI descriptions (69.44).
+Quyet and
+LAYA achieve their highest average scores with
+Vietnamese descriptions, although the improve-
+ments over English are modest and both models
+perform substantially worse with bilingual descrip-
+tions. GLiNER, in contrast, performs best with En-
+glish descriptions and exhibits the largest average
+degradation under VI and EN+VI. These results
+suggest that multilingual label descriptions do not
+necessarily benefit models built on multilingual
+encoders.
+The effects are also strongly task-dependent.
+Quyet, for example, gains 21.06 macro-F1 points
+on ViNLI with Vietnamese descriptions, largely
+through improved discrimination between other
+and neutral. However, the same configuration re-
+duces its performance on ViHSD by 14.23 points,
+accompanied by increased misclassification of
+clean examples as offensive. Additional instance-
+level prediction comparisons are provided in Ap-
+pendix A.1. This contrast suggests that the effect
+of description language is closely related to the dis-
+tinctions between task-specific labels, rather than
+a general preference for Vietnamese descriptions.
+The degradation observed for LAYA and GLiNER
+is particularly pronounced in some settings. LAYA
+loses 18.70 macro-F1 points on ViMQ with bilin-
+gual descriptions, while GLiNER assigns other to
+every ViNLI example under both Vietnamese and
+bilingual descriptions. These findings indicate that
+5
+
+
+Table 2: Changes in macro-F1 relative to English label descriptions (percentage points).
+Dataset
+LAYA
+GLiNER
+Quyet
+JEV
+VI
+EN+VI
+VI
+EN+VI
+VI
+EN+VI
+VI
+EN+VI
+Topic classification
+NEU-ESC
++6.06
+−4.07
+−1.37
++1.32
++3.63
+−3.18
+−0.67
+−0.32
+UIT-VSFC
+−5.24
+−15.08
+−11.65
+−13.68
++2.96
+−1.42
++0.26
++0.84
+Emotion recognition
+UIT-VSMEC
+−2.36
+−4.83
++0.57
++0.59
++3.38
+−11.86
++1.42
++1.55
+Hate speech detection
+ViHSD
++0.68
+−4.02
+−0.01
+−0.01
+−14.23
+−18.94
+−0.62
++0.34
+UIT-ViCTSD
+−1.70
+−0.69
+−3.31
+−2.23
+−1.15
+−3.86
++0.14
++0.77
+UIT-ViOCD
++13.33
+−4.25
+−9.64
+−23.48
+−1.93
+−19.50
+−0.19
++0.37
+Sentiment analysis
+UIT-VSFC
++8.00
++5.28
+−4.43
+−23.44
+−6.66
+−11.18
+−1.32
+−0.22
+Intent detection
+PhoATIS
++2.14
+0.00
+−4.68
+−3.41
+–
+–
+−4.82
+−1.09
+ViMQ
+−2.37
+−18.70
+−22.46
+−22.06
+−0.86
+−7.24
+−0.48
++1.15
+Natural language inference
+ViNLI
++4.56
+−1.16
+−13.85
+−13.85
++21.06
++15.97
++1.50
++0.07
+ViANLI
+−0.55
+−0.23
+−2.61
+−2.68
+−1.65
++0.05
+−0.12
+−0.77
+ViMedNLI
+−2.67
+−4.78
+−6.45
+−6.45
++1.03
+−3.87
+−0.67
+−0.81
+vnNLI
+−0.92
+−1.27
+−12.74
+−12.01
+−0.29
+−0.88
+−0.73
+−0.33
+Mean (12 shared)
++1.40
+−4.48
+−7.33
+−9.83
++0.44
+−5.49
+−0.12
++0.22
+label-description language affects not only classi-
+fication performance but also the distribution of
+predicted labels, with substantial differences across
+models and tasks.
+5
+Robustness to Vietnamese Linguistic
+Variation
+5.1
+Perturbation Design
+We consider three types of Vietnamese linguis-
+tic variation. Teencode introduces informal lexical
+substitutions commonly found in online commu-
+nication, such as “không” →“ko” (“not”). Ty-
+pographical noise simulates typing errors through
+Telex-related substitutions, diacritic modifications,
+and character-level edits. Diacritic removal re-
+moves Vietnamese tone and vowel diacritics, in-
+cluding the conversion of đ to d. Each perturbation
+is applied independently to the original test inputs
+while retaining the original labels. For NLI, teen-
+code and diacritic removal affect both the premise
+and hypothesis, whereas typographical noise is ap-
+plied only to the hypothesis.
+Table 3 summarizes perturbation coverage and
+character edit burden across the 13 evaluation set-
+tings, with dataset-level statistics provided in Ap-
+pendix C. Coverage measures the proportion of
+modified inputs, while edit burden is the total
+Table 3: Perturbation coverage and character edit burden
+across the 13 evaluation settings.
+Perturbation
+Changed (%)
+Edit burden (%)
+Teencode
+61.70
+2.14
+Typo
+90.18
+4.93
+No accents
+98.10
+18.28
+character-level Levenshtein distance normalized by
+the original input length. Diacritic removal pro-
+duces the highest coverage and edit burden, fol-
+lowed by typographical noise and teencode.
+5.2
+Performance Under Linguistic
+Perturbations
+Table 4 reports changes in macro-F1 relative to un-
+perturbed inputs. For each model, we use the label-
+description configuration that achieves the highest
+mean macro-F1 on the original test data (EN+VI
+for JEV, EN for GLiNER, and VI for LAYA and
+Quyet) and keep it fixed across all perturbation
+conditions. JEV maintains the strongest overall
+performance across all three perturbation types. Its
+mean macro-F1 across the 12 shared settings de-
+creases from 69.44 on the original inputs to 59.93
+under diacritic removal, 68.34 under teencode, and
+66.37 under typographical noise, remaining above
+6

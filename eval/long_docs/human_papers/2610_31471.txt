@@ -1,0 +1,640 @@
+Ask About the Right Moment: Training-Free Object Identity Reasoning
+for Video-Language Models
+Di Yang1,†
+Xiaochang Li1
+Muyang Liu1
+Yufei Wang2,∗
+Yanhai Xiong1,∗
+1College of William & Mary
+2SparcAI Inc.
+dyang06@wm.edu
+xli59@wm.edu
+mliu22@wm.edu
+yxiong05@wm.edu
+yufei.wang@sparclab.ai
+Question
+Where is the hidden object at the end of the game, from the person’s point of view?
+One object, similar
+mugs
+The lime is visible early.
+Its identity must survive
+the shuffle.
+Identifying evidence
+4.0 s
+Shuffle
+10.3 s
+Final state
+13.5 s
+The lime starts under
+the middle mug.
+After the shuffle,
+the mugs alone do not
+reveal its identity.
+Direct Video-LM
+Identity held inside the model
+Reconstruct the target’s identity through the shuffle
+B Second
+✗
+“Middle mug”
+Track, Then Bind
+Bind identity
+Which numbered mug
+held the lime just after it
+was hidden?
+Lime →track #2
+Persistent track #2 carries the bound identity
+Read tracked facts
+Camera order:
+#2
+#3
+#1
+The person faces the
+camera: #2 is third.
+C Third
+✓
+Figure 1. Bind identity, then follow the track (Perception Test video_6159, test set, Qwen3-VL-8B). A lime is visible under the middle
+mug before three identical mugs are shuffled. The direct Video-LM answers that it stayed in the middle. Our agent asks which mug held the
+lime just after it was hidden, binds the answer to track #2, and reads its final position from that track. Fig. 2 shows the full method.
+Abstract
+Many questions about a video concern one physical object.
+Where does the ball end up after the cups are shuffled?
+Which card is the queen? How often was the mug covered?
+Video-language models (Video-LMs) recognise such objects
+in single frames but do not keep them apart over time. On
+real shell-game videos, open models from 8B to 235B pa-
+rameters, their thinking variants, a reinforcement-learned
+tool agent and three training-free tool agents all stay within
+ten points of chance. We separate semantic identity binding
+from temporal identity maintenance. An object’s identity
+should be fixed at a moment when the evidence for it is visi-
+ble, and carried afterwards by a tracker. Track, Then Bind
+implements this principle without training. A promptable
+video tracker follows every candidate object and draws it
+∗Corresponding authors.
+†Project lead.
+Work in progress.
+with a track number. A frozen vision-language model an-
+swers a static question about the identifying evidence, which
+binds the target to a track. The answer is then derived
+from the tracked state in text, without asking the model to
+reinterpret the original video during read-out. A single con-
+figuration covers all benchmarks. With Qwen3-VL-32B it
+solves both VET-Bench tasks, where a fine-tuned trajectory
+model reaches 92% and 90% and the same VLM voting over
+16 samples stays at 30–32%. It answers 55.4% of the hardest
+Perception Test cup games, where the best published model
+answers 41.5%, and, using track-derived timelines, 48.6%
+of TOC-Bench questions, against 37.1% for the same model
+answering directly. Drawing the same tracks on the video
+and asking the question directly falls 12–19 points short of
+the agent on real cup games.
+1
+arXiv:2610.31471v1  [cs.CV]  22 Oct 2026
+
+
+Video + question
+Identity, visibility or events
+1
+Plan
+Target, carriers, subjects
+Identity cue and viewpoint
+Final location?
+Frozen VLM · 2 fps
+2
+Perceive
+VLM boxes on 8 sampled frames
+SAM2.1 instance tracking at 6 fps
+Adaptive dense pass
+Boxes and tracks shared across questions
+Persistent, numbered tracks
+Object masks, IDs and positions over time
+Identity binding
+Where is the Queen
+of Hearts at the end?
+Bind the target to one
+persistent carrier ID.
+3
+Find evidence
+0.0 s: queen visible
+1.3 s bind clip
+4
+Bind
+Which numbered card
+is the Queen of Hearts?
+Queen →track #3
+Frozen VLM · numbered clip
+5a
+Read tracked facts
+Last-frame order:
+#3
+#2
+#1
+Leftmost: #3
+Frozen VLM · text only
+Answer
+(A) Left
+✓
+Visibility / events
+Do the eggs ever get
+fully hidden?
+No identity binding.
+Build a visibility timeline
+Mask area over time →visibility events
+Tracked events
+2.0 s: fully hidden
+3.3 s: visible again
+5b
+Read with a timeline
+Events + video frames
+Frozen VLM
+Benchmark prompt; 32 frames
+Answer
+(B) Gets hidden ✓
+All models frozen
+·
+One configuration across benchmarks
+·
+Examples from logged Qwen3-VL-8B test runs
+Figure 2. Method. A frozen VLM plans the question (1) and boxes its entities, which SAM2.1 tracks as numbered instances (2). If a target
+must be told apart from look-alikes or containers, the VLM answers one static question about the evidence moment on the numbered clip
+(3–4), and the answer is read out from the tracked state in text (5a; VET card monte card_003). Otherwise the tracks become a timeline
+that is appended to the benchmark prompt (5b; TOC-Bench 8b0c33d38075). Both examples are logged test runs with Qwen3-VL-8B.
+1. Introduction
+Many questions about a video are questions about one physi-
+cal object. Which cup hides the ball after the shuffle? Which
+card is the queen once all three are face down? Is the cap that
+reappears the one that left? Such questions arise wherever
+objects are moved, stacked or put away. Examples are assis-
+tants that remember where an item was left, robots whose
+own arm hides the object they manipulate, and laboratory
+procedures with rows of identical tubes. Answering them re-
+quires following one object through occlusion, containment
+and look-alike copies.
+Video-LMs fail at this. On VET-Bench [1], the strongest
+closed models stay at chance on the shell game, and only
+a model fine-tuned on synthetic trajectories (SGCoT) es-
+capes it. On real cup-game videos from the Perception
+Test [2], the same fine-tuned model returns to chance (Ta-
+ble 1). Scale and deliberation do not help: Qwen3-VL at
+8B, 32B and 235B answers 27.7–33.8% of the 65 shuffled
+three-cup videos, and a reinforcement-learned tool agent
+answers 33.8%. Three training-free tool agents with Qwen3-
+VL-32B answer 30.8–38.5%. They are SpatialClaw [15]
+(code around SAM3 [44]), VideoAgent [7] (a tracking-based
+object memory) and VideoINSTA [8] (captioned event clips).
+On TOC-Bench [3], the 32B thinking variant performs nearly
+the same as the direct 32B model (36.9% versus 37.1%).
+A central difficulty is that the model must re-derive which
+object is which from a sparse sample of frames. Identical
+objects that cross or disappear leave almost no visual trace
+from which to do so. A promptable video tracker such as
+SAM2 [4] has the opposite strengths. It follows each object
+mask through motion and brief occlusion, but it does not
+know which object a question refers to. We study two design
+choices in combining them. When should the system ask
+the VLM about an object’s identity? A hidden ball can only
+be recognised before it is hidden, a card only while it is
+face up. And once the identity is fixed, what should decide
+the answer: the VLM’s reading of the video, or the tracked
+state?
+We answer them with two design rules and test each in
+isolation. First, the VLM is asked about an object’s identity
+only through a static question about the moment at which
+the identity can be seen. A tracker then carries the identity,
+and the VLM is not asked again. Second, once the target
+is bound, the answer is read from the tracked state as text,
+without showing the video again. Track, Then Bind (Fig. 1)
+implements both rules without training. Every candidate
+carries a track number on the clip that the VLM sees, so its
+answer binds the target to one track. A plan made by the
+VLM decides which objects to follow and how the target
+can be recognised. As an extension to visibility and event
+questions that need no identity binding, the same framework
+supplies a timeline built from the tracks. One program and
+one set of thresholds serve all benchmarks.
+Our contributions are:
+• A diagnosis across model families. On shuffled real cup
+games, closed and open Video-LMs, thinking variants, a
+trajectory-fine-tuned model, a reinforcement-learned tool
+agent and three training-free tool agents all stay within ten
+points of chance. Voting over 16 samples of Qwen3-VL
+2
+
+
+Table 1. Accuracy (%) on the test sets. VET: VET-Bench, 50 videos per task. PT: Perception Test cup games filtered by the VET-Bench
+authors (107 videos); PT-65: its 65 videos with three cups and at least one swap. TOC: TOC-Bench test split (1,845 questions). Closed
+models are cited; all other rows were evaluated by us with each benchmark’s prompt, frames and scorer. Best result per column in bold.
+Method
+Type
+VET cup
+VET card
+PT
+PT-65
+TOC
+Random
+–
+33.3
+33.3
+33.3
+33.3
+30.3
+Closed Video-LMs (cited: VET and PT from [1], TOC from [3])
+Gemini-3-Pro [62]
+direct answer
+40.0
+34.0
+36.5
+30.8
+43.9∗
+GLM-4.6V-Flash [64]
+direct answer
+28.0
+34.0
+43.9
+41.5
+–
+Doubao-Seed-2.0-mini [65]
+direct answer
+32.0
+30.0
+46.7
+40.0
+–
+GPT-5.5 [66]
+direct answer
+–
+–
+–
+–
+47.1∗
+Open Video-LMs
+Qwen3-VL-8B [17]
+direct answer
+28.0
+28.0
+33.6
+27.7
+25.1
+Qwen3-VL-32B [17]
+direct answer
+32.0
+38.0
+35.5
+33.8
+37.1
+Qwen3-VL-235B-A22B [17]
+direct answer
+22.0
+38.0
+38.3
+27.7
+–
+Molmo2-8B [18]
+direct answer
+30.0
+40.0
+33.6
+30.8
+–
+Reasoning-enhanced and tool-using
+Qwen3-VL-8B-Thinking [17]
+thinking
+28.0
+24.0
+37.4
+36.9
+30.0
+Qwen3-VL-32B-Thinking [17]
+thinking
+24.0
+22.0
+33.6
+32.3
+36.9
+Molmo2-SGCoT [1]
+trajectory CoT, fine-tuned
+92.0
+90.0
+32.7
+38.5
+–
+Open-o3-Video-v2-8B [5]
+RL-trained crop tool
+26.0
+30.0
+38.3
+33.8
+33.9†
+SpatialClaw [15] (Qwen3-VL-32B)
+code agent, SAM3 + depth
+28.0
+36.0
+26.2
+30.8
+35.7
+VideoAgent [7] (Qwen3-VL-32B)
+object-memory agent
+40.0
+28.0
+37.4
+36.9
+33.0
+VideoINSTA [8] (Qwen3-VL-32B)
+clip-reasoning agent
+42.0
+28.0
+42.1
+38.5
+34.5
+Track, Then Bind (Qwen3-VL-8B)
+training-free agent
+100
+100
+51.4
+52.3
+43.0
+Track, Then Bind (Qwen3-VL-32B)
+training-free agent
+100
+100
+52.3
+55.4
+48.6
+–: not evaluated. ∗Reported on all 2,323 TOC-Bench questions (Gemini: version 3.1-Pro [63]). †The official evaluator cannot express the 89 ordering questions, which count
+as wrong; on the other 1,756 questions the accuracy is 35.6%. Random: expected accuracy of uniform guessing over each question’s answer space. SpatialClaw, VideoAgent
+and VideoINSTA run their official code with Qwen3-VL-32B-Instruct as the model (Appendix C). Closed-model VET and PT numbers are recomputed from the predictions
+released by the VET-Bench authors. Qwen3-VL rows answer in vLLM, except the TOC-Bench thinking rows, which use the TOC-Bench authors´Transformers runner; Molmo2
+rows use the authors’ Transformers code (Appendix C). Qwen3-VL answering directly in Transformers, the engine of our agent, reaches 22.0 / 34.0 / 31.8 / 29.2 / 25.2 at 8B
+and 24.0 / 28.0 / 27.1 / 27.7 / 36.9 at 32B (same columns).
+leaves VET-Bench at 28–32%.
+• Binding through a static question about the identifying
+moment. With the tracks held fixed, asking which cup the
+target is under right after it is hidden, instead of where it is
+at the end, raises development cup-game accuracy by 8.7
+points at 8B and 8.2 points at 32B (Appendix E). Draw-
+ing the same tracks on the video and asking the question
+directly stays at 32.7–44.0% at 8B, against 51.4–100%
+for the agent, and 12.1 points below the agent on real cup
+games at 32B.
+• Answering from the tracked state. Given the same cor-
+rect facts together with the shuffled video, the VLM fol-
+lows its own reading of the video. The synthetic cup game
+drops from 100% to 38.0% at 8B and to 76.0% at 32B,
+and real cup games drop by 3.7–4.7 points.
+• One configuration across benchmarks. The agent is
+tuned once on development videos of all benchmarks. At
+32B it improves the direct answer by 16.8 points on real
+cup games and by 11.5 points on TOC-Bench. It matches
+agents tuned separately for each benchmark and issues
+about half their model calls on TOC-Bench.
+2. Related Work
+Video-LMs and their temporal limits. Video-LMs pair a
+visual encoder with a language model and are tuned on
+video instructions [22–24].
+Current open families such
+as Qwen2.5-VL [20], InternVL3 [21], Qwen3-VL [17]
+and Molmo2 [18] add dynamic frame rates, timestamps
+and grounding outputs. Benchmarks that isolate time find
+that much of their accuracy comes from single frames.
+MVBench [25] and NExT-QA [26] probe temporal and
+causal actions, EgoSchema [27] and Video-MME [19] long
+videos, TempCompass [28] finds that many models barely
+exceed chance once single-frame and language shortcuts are
+removed, and TOMATO [29] measures a 57-point gap to
+humans on questions that need the frame order. VELOC-
+ITI [30] finds weak binding of agents to actions across events,
+and VSI-Bench [31] limited visual-spatial reasoning. VET-
+Bench [1] and TOC-Bench [3] target object identity directly,
+the setting of this paper.
+Reasoning-enhanced Video-LMs.
+Chain-of-thought
+prompting [32] and its video variants [33] write intermediate
+3
+
+
+steps before the answer, and self-consistency [34] votes over
+sampled chains. On VSI-Bench neither improves spatial
+answers [31]. Reinforcement-learned models such as Video-
+R1 [35] and Open-o3-Video-v2 [5] add textual or grounded
+reasoning traces. SGCoT [1] fine-tunes Molmo2 to write
+object trajectories before answering, and RGA3 [6] trains
+a Video-LLM to refer to and ground objects with spatio-
+temporal prompts. In all of these, identity is held in learned
+representations or generated tokens, which our diagnosis
+shows is not enough for look-alike and hidden objects. We
+use self-consistency as a call-matched baseline (Table 3).
+Object permanence. Infants expect a hidden object
+to persist [36] and parse scenes into cohesive bodies that
+move continuously [37].
+In vision, CATER [38] and
+CLEVRER [39] test these abilities on synthetic videos with
+containment and collisions. Learned models localise con-
+tained and carried objects [40], keep tracks through full
+occlusion [41], learn intuitive physics from object-centric
+codes [42], and segment objects inside containers [16]. Xie
+and Alanwar [68] find that video world models keep visi-
+ble objects but drop hidden ones. We use a frozen tracker
+and VLM to maintain explicit identity associations across
+occlusion and containment.
+Segmentation and tracking.
+Promptable segmenta-
+tion [43] extends to video with a streaming memory in
+SAM2 [4] and to concept prompts in SAM3 [44]. Memory-
+based video object segmentation [45, 46], point tracking [47]
+and tracking-by-detection [48] keep identities through mo-
+tion and short occlusion, and open-vocabulary detectors [49]
+supply the initial boxes. None of them knows which object
+a question refers to. Our agent obtains the boxes from the
+VLM and the identities from SAM2.1.
+Visual prompting with tracks. Marks drawn on an im-
+age steer a model to a region: a red circle for CLIP [50], num-
+bered regions in Set-of-Mark [10], and free-form prompts
+learned by ViP-LLaVA [51]. Coarse Correspondences [11]
+draws tracker IDs on video frames and lets the model an-
+swer the whole question. Elysium [52], VideoRefer [53] and
+Sa2VA [54] instead train Video-LLMs to track, refer to or
+segment objects. We draw the same kind of numbered tracks,
+but the model only answers a static question about one mo-
+ment, and the answer comes from the tracks. Section 5.3
+shows that the overlay alone recovers little of the gain at 8B
+and part of it at 32B.
+Tool-using agents. VisProg [55] and ViperGPT [56]
+compose vision modules through generated programs, and
+ReAct [57] interleaves reasoning with tool calls.
+For
+video, agents retrieve frames iteratively [58], summarise
+clip captions [8, 59], plan over a symbolic memory [60], or
+store object-centric tracking states that an LLM queries [7].
+STRAND [9] links per-chunk object states by attribute and
+position similarity, making identical objects difficult to sep-
+arate. SpatialClaw [15] writes code that calls SAM3 and
+Depth Anything 3 [61].
+AgentRVOS [12] reasons over
+SAM3 tracks to segment a referred, visible object, and Dual-
+Agent [13] and ACTrack [14] use a VLM to verify or re-
+prompt a tracker. These agents, like ours, keep object state
+outside the model, and they leave the final judgement of
+which object is which to the model. Our design differs in
+when the model is asked about identity and in what decides
+the answer once identity is fixed.
+3. Problem Formulation
+Setting. A video V = (I1, . . . , IT ) shows a set of physical
+objects O. A question q with answer space A concerns a
+target o⋆∈O. It may ask where the target is at the end,
+which of several objects it is, or when and how often an
+object is visible. The objects that hide, cover or resemble
+the target are its carriers C = {c1, . . . , cK} ⊂O. A Video-
+LM f answers directly from a sparse frame sample VS =
+(It)t∈S:
+ˆadirect = f(VS, q),
+ˆadirect ∈A.
+(1)
+Our agent uses the same frozen model f, which we call the
+VLM when it is asked about single frames, short clips or text.
+Evidence moments. An evidence moment t has a local
+observation window Wt = V[t−δ, t+δ] in which the target or
+its containing carrier can be identified:
+E = { t : o⋆is identifiable among C from Wt }.
+(2)
+The target is identified either by its look, as the queen while
+it is face up, or as hidden in a carrier, as the ball at the
+moment it is covered. In shell and card games, this evidence
+often disappears before the final frame. A direct answer
+(Eq. 1) must then carry identity from an evidence moment
+te ∈E to T through a sparse sample of frames in which
+identical carriers cross. Under occlusion over time, q asks
+when an object disappears or returns, and these events may
+fall between the sampled frames.
+Principle. A tracker follows each carrier ck with a mask
+track τk = (mk,1, . . . , mk,T ). We fix identity once, at an
+evidence moment, and keep it outside the model afterwards.
+The answer factors into a bind and a read-out:
+k⋆= f
+ Wb ⊕{τk}K
+k=1, qb
+
+,
+(3)
+ˆa = f
+ q, F(k⋆, {τk}K
+k=1)
+
+.
+(4)
+In Eq. 3, the bind clip Wb is Wte when a moment is located,
+or the sampled whole video otherwise. The operator ⊕draws
+each track with its number k on this clip, and qb asks about
+the identifying moment in it. The VLM returns the track
+index k⋆of the target. In Eq. 4, F states the tracked state in
+text, for example the left-to-right order of the tracks in the
+last frame. The VLM answers q from these facts, without
+the video. Identity thus crosses the interval (te, T] only
+4
+
+
+through the track τk⋆, and the VLM never has to recognise
+the target after the evidence is gone. Questions without a
+target to bind, such as how often an object is hidden, receive
+a timeline instead:
+ˆa = f
+ VS, q ⊕L({τk})
+
+,
+(5)
+where L lists per-object visibility segments and events com-
+puted from the mask areas, and ⊕appends them to the
+prompt.
+4. Method
+Track, Then Bind organises inference into five steps (Fig. 2;
+Algorithm 1 in Appendix A). A plan decides which steps
+run, and all thresholds are the same for every benchmark.
+Step 1: Plan. The VLM watches V at 2 fps and fills
+a fixed schema. It lists the entities in q with their roles:
+the target, its carriers, and other subjects. It states how the
+target is recognised, by its look or as hidden in a carrier, and
+whose left and right the question uses. A separate text-only
+question asks whether q is about the target’s final location.
+If the target is recognised by its look and no carrier is named,
+all objects of the target’s category become its carriers. The
+plan selects these operations from the question using the
+same schema across benchmarks.
+Step 2: Perceive. The VLM boxes all entities in one call
+per frame, on 8 frames spaced evenly over the video. Entities
+found on none of these frames receive a second round of 8
+frames in between. SAM2.1 [4] is prompted on the earliest
+frame that shows the most common number of instances, or
+on the largest box for a single object. It propagates every
+instance forward and backward at 6 fps. Carrier tracks that
+overlap, move more than a quarter of their width per frame,
+or end early trigger a second pass. This pass tracks the
+carriers and the target at the native frame rate, up to 300
+frames. Tracking all candidates jointly separates identical
+objects by their trajectories, and the dense pass is spent only
+where they cross. All questions about one video share its
+boxes and tracks.
+Step 3: Find evidence moments. The bind question of
+step 4 always names the moment it is about: the target in
+view, or the target right after it is hidden. Step 3 tries to locate
+that moment te in the tracks, so that the VLM sees a short
+clip (Eq. 3). For a target recognised by its look, the moments
+are the frames on which the VLM found it in step 2. A mask
+track alone cannot tell a face-up card from its back. For a
+hidden target, the moment is its last view before its own track
+vanishes inside the frame. Small hidden objects are often
+lost by the tracker or never vanish cleanly. In that case no
+moment is located, and the clip covers the whole video. The
+VLM then finds the moment named by the question itself.
+Section 5.3 reports how often each case occurs (Table 6) and
+when a located moment matters (Table 5).
+Step 4: Bind. Each carrier track is drawn as a numbered
+box on a 4 fps clip, with at most 96 frames. The clip spans
+3 s around a located moment (δ = 1.5 s), or the whole video.
+The VLM answers one static question qb and returns k⋆. For
+a target recognised by its look it names the numbered carrier
+that is the target. For a hidden target it names the carrier the
+target is under right after it is hidden. When several moments
+exist, the last one with a valid number decides. The question
+concerns a single moment, not the history after it, so the
+VLM never has to follow the target through the shuffle.
+Step 5: Read out. A bound target is answered from
+facts. The agent states them in plain words, for example “the
+hidden object was hidden under mug #2 ... so the hidden
+object is under the first mug from the camera’s left”. If q
+uses a person’s point of view, one more VLM call on four
+frames asks whether that person is opposite the camera. The
+facts then also give the person’s left-to-right position. These
+facts are F in Eq. 4. The VLM answers q from them alone,
+without the video, making the tracked facts the evidence for
+read-out. Questions without a bound target use the timeline
+L of Eq. 5. Per-subject visibility segments, an ordered list
+of events and the coarse direction of motion are appended to
+the benchmark’s prompt. The VLM then answers with the
+benchmark’s own frames, template and parser. An answer
+that cannot be parsed falls back to the direct answer.
+5. Experiments
+5.1. Experimental Setup
+Benchmarks. We evaluate on three benchmarks that ask
+about object identity. VET-Bench [1] contains 50 synthetic
+shell-game videos (cup) and 50 card-monte videos (card).
+The Perception Test [2] cup-game subset (PT) has 107 real
+test videos. The VET-Bench authors filtered it to remove
+single-frame shortcuts. Following them, we also report its
+65 videos with three cups and at least one swap (PT-65).
+TOC-Bench [3] asks about object consistency in real videos
+along ten dimensions, such as event counts, durations and
+reappearance. Accuracy is scored with each benchmark’s
+own answer parser.
+Development and test data. Design choices and thresh-
+olds are selected on development data. These are 195 cup-
+game videos from the Perception Test validation split, 56
+card-monte videos rendered with the VET-Bench generator,
+and 478 TOC-Bench questions. We split the 2,323 TOC-
+Bench questions by video into these 478 development ques-
+tions and 1,845 test questions. The configuration is frozen
+and then run once on the test sets. Each ablation on the test
+sets changes one step of the frozen configuration.
+Baselines. Open Video-LMs answer directly with each
+benchmark’s prompt, frames and parser. We run them in
+vLLM [67]. The footnote of Table 1 also gives Qwen3-VL
+answering in Hugging Face Transformers, the engine of our
+5

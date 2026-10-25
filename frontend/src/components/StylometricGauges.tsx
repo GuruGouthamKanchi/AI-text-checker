@@ -144,7 +144,7 @@ export const StylometricGauges: React.FC<StylometricGaugesProps> = ({
       statusColor: lexVal >= 75 ? '#10b981' : lexVal >= 50 ? '#6366f1' : '#f59e0b',
       strokeGradient: ['#6366f1', '#10b981'],
       description: 'Percentage of unique vocabulary tokens relative to total word count (Type-Token Ratio).',
-      benchmarks: 'Human academic papers typically score 70% – 95%.'
+      benchmarks: 'Heuristic rule-of-thumb: academic writing often exhibits 70% – 95% TTR.'
     },
     {
       id: 'burstiness',
@@ -154,7 +154,7 @@ export const StylometricGauges: React.FC<StylometricGaugesProps> = ({
       statusColor: burstVal >= 55 ? '#10b981' : burstVal >= 30 ? '#6366f1' : '#ef4444',
       strokeGradient: ['#3b82f6', '#06b6d4'],
       description: 'Sentence length variance index measuring natural stylistic shifts in paragraph cadence.',
-      benchmarks: 'High human variation > 50%; uniform AI rhythm < 30%.'
+      benchmarks: 'Heuristic rule-of-thumb: higher length variance (>50%) often accompanies natural prose.'
     }
   ];
 
@@ -171,7 +171,7 @@ export const StylometricGauges: React.FC<StylometricGaugesProps> = ({
         </h4>
         <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-slate-950 text-slate-400 border border-slate-800 flex items-center gap-1">
           <CheckCircle className="w-3 h-3 text-emerald-400" />
-          100% Calibrated
+          Heuristic Gauges
         </span>
       </div>
 

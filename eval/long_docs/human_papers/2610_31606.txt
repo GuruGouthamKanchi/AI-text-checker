@@ -1,0 +1,810 @@
+How Ground Truth Shapes Retrieval Scores:
+Evidence-Aware Evaluation of a Retrieval-Augmented
+Generation System for Breast Lesions
+Miguel Mochizuki Silva1
+Samuel Ismael1
+Mateus C. Dias1
+Thais Gaudêncio1
+Yuri Malheiros1
+Bruno Barufaldi2,∗
+1Universidade Federal da Paraíba (UFPB), João Pessoa, PB, Brazil
+2Department of Radiology, Perelman School of Medicine,
+University of Pennsylvania, Philadelphia, PA, USA
+∗Corresponding author: bruno.barufaldi@pennmedicine.upenn.edu
+October 23, 2026
+Abstract
+Purpose: Retrieval scores for clinical retrieval-augmented generation (RAG) are usually
+reported against annotated chunk per queries, which mixes retriever quality with annotation
+coverage. To describe the corpus, RAG (RAG) pipeline, and evidence-aware retrieval evaluation
+protocol developed for a question-answering system over the breast lesion management literature
+and to report retrieval performance under the selected configuration.
+Methods: An 18-document corpus focused on breast lesions was used for retrieval bench-
+marking, ground-truth construction, and generation evaluation. One simple and direct evalu-
+ation query was created for each document, resulting in an 18-query development benchmark
+composed of Yes/No and WH-questions. Retrieval combines dense embeddings, BM25, and a
+cross-encoder reranker. Chunk size (128–1024 tokens), chunk overlap (0–20%) varied one factor
+at time, and four retriever configurations were compared in an ablation. Ground-truth relevance
+is defined at the level of evidence spans, which are mapped to every chunk containing them,
+so that chunks expressing the same underlying fact under overlapping chunking are scored as
+equivalent rather than as competing candidates. Retrieval quality is reported with R-Precision,
+Recall@K, MRR, and nDCG@K on an 18-query ground-truth development set.
+Generation
+quality was assessed in a separate experiment on an 512-token index, using DeepEval claim-
+level metrics with deepseek-v4-pro as the LLM judge, together with classical BLEU/ROUGE
+metrics across context depths K = 1–5.
+Results: The selected hybrid retriever (384-token chunks, 20% overlap) retrieved accepted
+evidence in the top three results for 17 of 18 queries. Recall@3, R-Precision, MRR@3, and
+nDCG@3 each reached 0.94. Ground-truth curation increased the number of evidence spans
+from 25 to 37 and accepted chunk targets from 36 to 51 without changing retrieval rankings.
+Conclusion: Cross-encoder reranking produced the highest retrieval scores. Ground-truth
+curation expanded the set of recognized evidence without changing retrieval rankings, under-
+scoring the dependence of evaluation scores on relevance annotations. The small development
+set and retrieval-informed curation warrant independent validation, including radiologist assess-
+ment of evidence sufficiency.
+1
+arXiv:2610.31606v1  [cs.CL]  22 Oct 2026
+
+
+1
+Introduction
+Management of benign and high-risk breast lesions requires integrating imaging findings, biopsy
+pathology, radiologic–pathologic concordance, and patient risk. Supporting evidence is distributed
+across society guidelines, appropriateness criteria, and lesion-specific studies, which may differ in
+their recommendations. For lesions of uncertain malignant potential (B3 lesions), international
+consensus supports vacuum-assisted excision as an alternative to open surgery for selected cate-
+gories [20], whereas U.S. guidance permits imaging surveillance for selected radiologic–pathologic
+concordant lesions [38]. Retrieving the correct recommendation therefore requires preserving the
+clinical conditions under which it applies.
+Large language models (LLMs) encode substantial clinical knowledge [23] but may generate un-
+supported statements [10]. Retrieval-augmented generation (RAG) conditions answers on retrieved
+passages and makes supporting sources available for inspection [14]. In medical question answering,
+retrieval has improved performance in some settings, although outcomes depend on the corpus and
+retrieval strategy [29]. Missing evidence can limit answer correctness, while supplying additional
+passages does not necessarily resolve the problem because language models may fail to use relevant
+information in long contexts [16].
+Medical RAG systems have been evaluated using guidelines and clinical resources, including
+clinical question answering and simulated oncology cases [6, 32]. Radiology-focused studies have
+also reported improvements that vary across models and sources [25, 26]. However, evaluation
+protocols remain heterogeneous [1], and expert assessment has identified retrieval and evidence
+selection as important failure points [12]. These findings motivate evaluating retrieved evidence
+separately from generated answers.
+Retrieval scores depend on which passages are annotated as relevant.
+When a benchmark
+recognizes only one chunk per question, another chunk containing the same supporting evidence
+may be scored as nonrelevant.
+Overlapping segmentation makes such alternatives more likely,
+while additional relevant passages may remain unannotated. In information retrieval, incomplete
+relevance judgments have long been recognized as a source of evaluation bias [2, 3, 33]. The effects
+on individual metrics depend on their definitions and the accepted evidence targets; overlap alone
+does not establish a fixed penalty.
+Question-answering benchmarks have represented supporting evidence through answer spans,
+sentence-level facts, and source provenance [13, 19, 21, 30].
+In RAG evaluation, conventional
+ranking metrics may not fully capture whether retrieved passages supply the information needed
+to answer a question [31]. Chunk-based evaluation is also sensitive to how evidence is partitioned
+and repeated across overlapping segments [24]. Evidence-level relevance annotations can therefore
+reduce dependence on a single chunk identifier, provided that accepted alternatives are explicitly
+defined and audited.
+We present RAG-MAMA, a retrieval-augmented generation system evaluated on a curated 18-
+document breast-lesion corpus and an 18-query development benchmark. We investigate whether
+incomplete ground-truth annotations can underestimate retrieval performance. Canonical evidence
+spans are defined independently of chunk identifiers and mapped to each segmentation configura-
+tion. We distinguish alternative supporting chunks from complementary evidence requirements, au-
+dit previously unrecognized evidence while keeping retrieval rankings fixed, and separately evaluate
+retrieval configurations and generation quality. The system focuses on excision-versus-surveillance
+decisions, with fixed deferral for excluded categories. This study establishes a small-scale method-
+ological baseline rather than demonstrating clinical effectiveness or validity on more complex, multi-
+evidence questions.
+2
+
+
+2
+Methods
+Figure 1 shows the RAG-MAMA pipeline. The corpus comprised 18 papers, which were pre-
+processed and split into 757 chunks (size 384, overlap 77). Each query was retrieved in parallel by
+a dense retriever (BGE-Large) and a lexical retriever (BM25). The two ranked lists were combined
+with Reciprocal Rank Fusion and reranked with a BGE cross-encoder. The top-K chunks were
+passed to Qwen 3.6 (27B) to generate a grounded answer. Retrieval was evaluated with ranking
+metrics and generation with DeepEval.
+Corpus Preparation
+18 papers
+Pre-process
+Chunking
+384 / 77
+757 chunks
+GT quality 
+filter
+query
+User
+Hybrid Retrieval
+BGE-Large
+Dense
+fusion
+RRF
+Rerank
+BGE
+Lexical
+BM25
+RAG-MAMA
+Generation
+Qwen 3.6
+27B
+chunks
+Top-K
+Evaluation
+Retrieval
+MRR · nDCG
+R@K · R-Prec
+DeepEval · BLEU 
+· ROUGE
+Generation
+Length · wording 
+· PPL
+Query analysis
+Figure 1: Overview of the RAG-MAMA architecture, illustrating corpus preparation, hybrid retrieval,
+response generation, and evaluation.
+2.1
+Corpus Compilation, Pre-processing, and Quality Assurance
+The corpus was scoped a priori to a fixed reference table of 15 breast pathology categories
+defined by the American Society of Breast Surgeons (ASBrS) high-risk lesion taxonomy [38].
+Thirty candidate documents were assembled by purposive expert selection, comprising society
+guidelines, American College of Radiology (ACR) appropriateness criteria, World Health Orga-
+nization (WHO) classification, and lesion-specific primary literature. Documents were eligible if
+they provided management recommendations, upgrade-risk estimates, radiologic–pathologic con-
+cordance criteria, or nomenclature definitions for at least one retrieval-eligible category. Each was
+evaluated by category-specific term frequency and adjudicated by full-text review. Malignant cat-
+egories and fibromatosis/desmoid tumor are not answered by retrieval: a scope gate applied to the
+normalized pathology label returns a fixed deferral before retrieval runs. Fibromatosis is excluded
+because current sarcoma guidance favors active surveillance over the excision and desmoid text
+remains in the indexed corpus.
+Table 1: Classification and typical management of benign, high-risk, and malignant breast pathology
+entities. Malignant lesions are routed to a fixed response by the scope gate.
+Pathology entities
+Classification
+ASBrS
+category
+Typical
+management
+Atypical ductal hyperplasia (ADH)
+High-risk lesion
+ADH
+Surgical excision
+3
+
+
+Table 1 (continued)
+Pathology entities
+Classification
+ASBrS
+category
+Typical
+management
+Flat epithelial atypia (FEA)
+High-risk lesion
+Flat epithelial
+atypia
+Selective excision
+or observation
+Lobular carcinoma in situ (LCIS); atypical lobular
+hyperplasia (ALH)
+High-risk lesion
+Lobular
+neoplasia
+Observation or
+selective excision
+Pleomorphic LCIS; florid LCIS
+High-risk lesion
+Non-classic
+LCIS
+Surgical excision
+Papilloma without atypia; intraductal papilloma;
+peripheral duct papilloma
+Benign lesion
+Papillary
+lesions
+Observation or
+selective excision
+Papilloma with atypia
+High-risk lesion
+Papillary
+lesions
+Surgical excision
+Radial scar; complex sclerosing lesion
+High-risk lesion
+Radial scar /
+complex
+sclerosing
+lesion
+Observation or
+excision
+Mucocele-like lesion
+High-risk lesion
+Mucocele-like
+lesion
+Observation or
+excision
+Pseudoangiomatous stromal hyperplasia (PASH)
+Benign lesion
+PASH
+Observation in
+most patients
+Fibromatosis; desmoid tumor
+Benign lesion
+Fibromatosis
+Deferred:
+sarcoma
+multidisciplinary
+team
+Sclerosing adenosis; adenosis; apocrine metaplasia;
+usual ductal hyperplasia; fibroadenomatoid
+hyperplasia
+Benign
+proliferative
+lesion
+—
+Routine clinical
+management
+Fibrocystic change; fibroadenoma; benign cyst; fat
+necrosis; duct ectasia; hamartoma; and related
+benign diagnoses
+Benign lesion
+—
+Routine clinical
+management
+Ductal carcinoma in situ (DCIS), all grades and
+histologic subtypes; intraductal (adeno)carcinoma,
+non-infiltrating
+Malignant
+(Stage 0)
+—
+Breast cancer
+treatment
+guidelines
+Invasive (infiltrating) ductal carcinoma; invasive
+(infiltrating) lobular carcinoma; mixed ductal and
+lobular carcinoma; invasive mammary carcinoma;
+tubular carcinoma; metaplastic carcinoma
+Malignant
+—
+Breast cancer
+treatment
+guidelines
+Metastatic carcinoma to axillary or intramammary
+lymph node; lymphoma involving the breast;
+metastatic melanoma to the breast
+Malignant
+—
+Disease-specific
+oncologic
+management
+Eighteen documents were retained and indexed, stratified into four tiers used as retrieval pri-
+ors (Table 2): core management guidelines (n = 4), lesion-specific and concordance sources (n =
+4
+
+
+9), imaging appropriateness criteria (n = 3), and benign breast disease risk literature (n = 2).
+Ten documents were excluded: treatment guidelines for established malignancy (n = 3), since the
+reference table defers these categories without requiring their text and their volume (NCCN with
+over 820k chars) would dominate retrieval; disease entities outside the table (n = 3); documents
+without lesion-specific management content (n = 2); a superseded WHO edition (n = 1); and
+the EUSOMA B3 guideline (n = 1), which specifies vacuum-assisted excision as the default ther-
+apeutic step whereas the retained guidelines frame management as excision versus surveillance.
+The retained corpus is therefore internally consistent on the excision-versus-surveillance axis and
+represents North American practice.
+Table 2: Guidelines and scientific literature supporting the management of breast lesions.
+Authors
+Source
+Year
+Document
+type
+ASBrS
+Resource Guide: Surgical Management of Benign or High-Risk
+Lesions
+2024
+Archived society
+resource guide
+Nakhlis et
+al.
+American Society of Breast Surgeons, Society of Breast
+Imaging, and College of American Pathology 2026 Guidelines
+for the Management of Proliferative Lesions With Atypia and
+Lobular Carcinoma In Situ. JAMA Surg
+2026
+Society guideline
+/ Special
+Communication
+Zamora et
+al.
+Management of High-Risk Breast Lesions: A Comprehensive
+Update. J Breast Imaging
+2026
+Scientific review
+Eisen et al.
+High-Risk Benign Breast Lesions: An Ontario Health (Cancer
+Care Ontario) Recommendations Report. Curr Oncol
+2026
+Recommendations
+report / review
+Rosenberger
+et al.
+American Society of Breast Surgeons and Society of Breast
+Imaging 2025 Guidelines for the Management of Benign
+Breast Fibroepithelial Lesions. JAMA Surg
+2025
+Society guideline
+/ Special
+Communication
+Mitchell et
+al.
+American Society of Breast Surgeons, Society of Breast
+Imaging, and College of American Pathology 2025 Guidelines
+for the Management of Infectious and Inflammatory Lesions of
+the Breast. JAMA Surg
+2026
+Society guideline
+/ Special
+Communication
+Guirguis et
+al.
+Mimickers of Breast Malignancy: Imaging Findings,
+Pathologic Concordance and Clinical Management. Insights
+Imaging
+2021
+Educational
+review
+Estes et al.
+Pseudoangiomatous Stromal Hyperplasia: Overview and
+Clinical Management. Ann Breast Surg
+2020
+Review article
+Yoon et al.
+Optimal Treatment of Pseudoangiomatous Stromal
+Hyperplasia of the Breast. Asian J Surg
+2020
+Original cohort
+study
+Quinn et al.
+World Health Organization Classification of Tumours of the
+Breast 6th Edition 2026. Histopathology
+2026
+WHO
+classification
+review
+ASBrS
+Concordance Assessment Following Image-Guided Breast
+Biopsy
+2010
+Quality measure
+ASBrS
+Image-Guided Percutaneous Biopsy of Palpable and
+Nonpalpable Breast Lesions
+2018
+Society resource
+guide
+5
+
+
+Table 2 (continued)
+Authors
+Source
+Year
+Document
+type
+ASBrS
+Position Statement on Stereotactic Breast Procedures
+2010
+(rev.)
+Position /
+practice guideline
+Sanford et
+al.
+ACR Appropriateness Criteria: Evaluation of Nipple
+Discharge: 2022 Update. J Am Coll Radiol
+2022
+Appropriateness
+criteria
+Klein et al.
+ACR Appropriateness Criteria: Palpable Breast Masses: 2022
+Update. J Am Coll Radiol
+2023
+Appropriateness
+criteria
+Niell et al.
+ACR Appropriateness Criteria: Evaluation of the
+Symptomatic Male Breast. J Am Coll Radiol
+2018
+Appropriateness
+criteria
+Hartmann et
+al.
+Benign Breast Disease and the Risk of Breast Cancer. N Engl
+J Med
+2005
+Cohort study
+Dyrstad et
+al.
+Breast Cancer Risk Associated With Benign Breast Disease:
+Systematic Review and Meta-analysis. Breast Cancer Res
+Treat
+2015
+Systematic
+review and
+meta-analysis
+An 18-query retrieval benchmark was constructed, with one question per source document.
+Questions, reference answers, and supporting evidence were drafted with Codex (recorded session
+model: gpt-5.6-terra) and reviewed by the authors.
+Each Yes/No or WH query targeted a
+focused, source-supported answer.
+Under the selected fixed-size chunking configuration of 384 tokens with a 77-token overlap, the
+18-document corpus yielded a total of 757 chunks. Text is extracted with PyMuPDF (1.23.0+).
+Unicode control characters (U+0000–U+009F) are replaced with spaces, soft hyphens (U+00AD)
+and zero-width spaces (U+200B) are removed, and whitespace is collapsed. Repeated header/footer
+lines are removed when they recur three or more times. Reference sections are identified by heading
+pattern and removed when citation density exceeds 25% of lines.
+A seven-feature noise classifier assigned chunks to five categories. All 757 chunks were stored
+in ChromaDB; 558 were eligible for retrieval after filtering.
+2.2
+Retrieval-Augmented Generation Pipeline
+The system implements a modular RAG architecture. Dense retrieval uses BAAI/bge-large-en-v1.5
+embeddings over a ChromaDB vector store, while lexical retrieval uses BM25 [22]. The semantic and
+lexical rankings are combined using reciprocal-rank fusion (RRF) [4], with an RRF parameter of 50.
+The selected environment configures a hybrid fetch multiplier of 2 and a semantic retrieval cap of 30
+results. Up to 20 fused candidates are subsequently re-scored using the BAAI/bge-reranker-v2-m3
+cross-encoder [17, 28]. The final retrieval depth used in the initial benchmark is K = 3. Table 3
+shows the full configuration.
+2.2.1
+Chunking
+Token counts used during chunk construction were computed using the tokenizer associated
+with the dense embedding model, BAAI/bge-large-en-v1.5, loaded through the Hugging Face
+AutoTokenizer interface.
+6
+
+
+Table 3: Selected retrieval and generation configuration.
+Component
+Setting
+Chunking
+Fixed-size, 384 tokens; 77-token (20%) overlap; 757 chunks
+Tokenizer for
+chunking
+bge-large-en-v1.5 (Hugging Face AutoTokenizer)
+Dense retrieval
+BAAI/bge-large-en-v1.5; ChromaDB; semantic cap 30
+Lexical retrieval
+BM25 (rank-bm25); biomedical-aware tokenizer
+Fusion
+RRF, k = 50; hybrid fetch multiplier 2
+Reranker
+BAAI/bge-reranker-v2-m3; candidate pool 20
+Final retrieval depth
+K = 3
+Generator
+qwen/qwen3.6-27b; temperature 0.3; max output 2048 tokens; prompt
+rag-evaluation-v1
+Generation context
+Top-K chunks in rank order; each capped at 3,500 characters; metadata included
+Judge
+deepseek-v4-pro; DeepEval 4.0.7; threshold 0.5
+The fixed-size chunking procedure operates on extracted text units rather than splitting the nor-
+malized document at arbitrary character positions. Text units are packed until adding another unit
+would exceed the configured token limit. Overlap between consecutive chunks is constructed from
+trailing text units whenever possible. Chunk-level provenance, including page ranges, contributing
+text blocks, and section metadata, is retained during this process.
+Chunk size and overlap were varied one factor at a time. Chunk size was varied from 128 to
+1024 tokens with approximately 20% overlap. After selecting a chunk size of 384 tokens, overlap
+was varied from 0% to 20%, corresponding to 0, 38, 58, and 77 tokens. The selected configuration
+uses 384-token chunks with a 77-token overlap.
+2.2.2
+Embedding, reranking, and lexical retrieval
+Dense retrieval represents both documents and queries using BAAI/bge-large-en-v1.5. Lexical
+retrieval uses BM25 with a separate biomedical-aware tokenizer.
+The BM25 tokenizer lowercases text, normalizes hyphen variants, removes common punctuation,
+and preserves clinically relevant lexical forms such as HER2+, ER-, BI-RADS, percentages, decimal
+values, and comparison operators.
+The semantic and lexical rankings are combined using RRF with parameter 50. The hybrid
+retrieval stage uses a fetch multiplier of 2, with the semantic retrieval stage configured to return up
+to 30 results. Up to 20 fused candidates are then re-scored using the BAAI/bge-reranker-v2-m3
+cross-encoder, and the top three chunks are returned as the final retrieval output.
+The retrieval ablation compares four configurations: BM25, dense semantic retrieval, hybrid
+RRF, and hybrid RRF followed by cross-encoder reranking. All variants use the same corpus, 18-
+query development set, selected 384-token/77-token segmentation, and relevance annotations for
+the ablation; only the retrieval component under evaluation is changed.
+7
+
+
+2.2.3
+Answer generation
+The answer-generation component was performed using qwen/qwen3.6-27b through an OpenAI-
+compatible chat-completions interface (Table 3).
+Generation context is constructed from the
+highest-ranked retrieved chunks in their final retrieval order.
+For each selected chunk, the im-
+plementation keeps at most the 3,500 characters of chunk text and then adds identifying metadata,
+including chunk ID, document ID, source file, DOI, and rank. Truncation is therefore character-
+based rather than token-based and may occur inside a sentence, table, or section.
+The implementation does not enforce a separate global token budget or a project-level model
+context-window check for answer generation.
+Chunks below the configured generation-context
+depth are omitted, while each selected chunk is independently capped at 3,500 characters.
+If
+the generation request fails, the run records a generation failure rather than rebuilding a smaller
+context. No generation failures occurred in the preserved K1–K5 full-RAG experiments.
+2.3
+Retrieval Evaluation
+The development benchmark contains 18 queries, one per source document, with simple and
+direct Yes/No or WH formulations. Each query is associated with canonical evidence containing
+the information required to support its reference answer.
+Retrieval was evaluated using Recall@3, R-Precision, MRR@3, and nDCG@3 [8]. Results were
+macro-averaged across 18 queries.
+Canonical evidence is maintained independently from chunk identifiers. Because different chunk-
+size and overlap configurations produce different chunk boundaries and identifiers, an evidence-to-
+chunk binding is generated for each evaluated collection. Thus, the chunk-size and overlap sweeps
+use the same 18-query development ground truth while mapping its canonical evidence to the chunk
+representation produced by each segmentation configuration.
+Automatic evidence-to-chunk binding matched the complete canonical evidence span to chunks
+from the same document after Unicode NFC normalization and whitespace collapsing, preserving
+case and punctuation. When no individual chunk contained the complete span, the mapper ex-
+amined consecutive chunks, removed exact suffix–prefix token overlap, and identified the shortest
+sequence reconstructing the span. Partial containment alone did not qualify a chunk as a stan-
+dalone evidence target. Additional accepted chunks could be included through manual curation;
+their clinical sufficiency and preservation of required qualifiers were annotation judgments rather
+than guarantees of string matching.
+Evidence routes distinguish alternative chunks (OR) from complementary chunks required
+jointly (AND). In the reported 18-query benchmark, however, each query had one required ev-
+idence group, and all accepted targets were individual chunks. No complementary multi-chunk
+routes were annotated. Each alternative was evaluated separately, retaining the maximum score
+per query and metric before macro-averaging. Consequently, Recall@3 indicates whether any ac-
+cepted alternative appears within the first three ranks; R-Precision indicates an accepted rank-one
+result; MRR@3 uses the reciprocal of the best accepted rank up to three; and nDCG@3 uses dis-
+counted binary gain. Equivalent chunks were not counted as multiple relevant items within a single
+target, but the scores can still depend on the accepted alternatives and their positions. Invariance
+to overlapping chunks is therefore not established.
+Following selection of 384-token chunks with 77-token overlap, high-ranking chunks absent from
+the initial ground truth were reviewed, including those ranked above the original gold evidence.
+Additional chunks judged to support the reference answers were added to the curated relevance set.
+8
+
+
+The final retrieval ablation used these annotations. Rankings remained fixed during ground-truth
+enrichment; score changes therefore reflect revised relevance labels, not retriever changes.
+An exploratory analysis of query length, wording, question form, and perplexity is reported in
+Supplementary Section A.1.
+2.4
+Generation Evaluation
+Generation evaluation separates retrieval from answer generation.
+The preserved full-RAG
+experiment uses the same 18 benchmark queries and keeps a fixed Top-5 retrieval result for each
+query. Generation-context depth is then varied from K = 1 to K = 5: the first one, two, three, four,
+or five retrieved chunks, respectively, are supplied to the generator. Thus, K in this experiment
+denotes generation-context depth rather than a change in the underlying retrieval depth.
+These archived generation runs are associated with an earlier index of the same 18-document
+corpus, using fixed 512-token chunks with a 102-token overlap and yielding 560 chunks. This differs
+from the subsequently selected 384-token/77-token configuration used for the retrieval segmentation
+and ablation experiments. All five generation-context conditions preserve the same ordered Top-5
+retrieval results and vary only the number of those chunks passed to answer generation.
+For each selected chunk, at most 3500 characters of chunk text are supplied, so the maximum
+chunk-text contribution is 3500, 7000, 10500, 14000, and 17500 characters for K1 through K5,
+respectively, before metadata and prompt overhead. These values are derived per-condition bounds
+rather than enforced global context limits. No tokenizer-based generation-context budget is applied.
+All K1–K5 runs use the recorded model ID qwen/qwen3.6-27b, temperature 0.3, maximum output
+length of 2048 tokens, and prompt version rag-evaluation-v1.
+Traditional answer evaluation metrics compare each generated answer with its reference_answer.
+BLEU is computed with SacreBLEU 2.6.0 using the 13a tokenizer, lowercasing, Unicode NFC nor-
+malization, exponential smoothing, and effective order; reported BLEU-1 through BLEU-4 val-
+ues are cumulative sentence BLEU-N scores averaged across queries. ROUGE is computed with
+rouge-score 0.1.2 using its standard tokenizer, stemming enabled, and F-measure for ROUGE-1,
+ROUGE-2, and ROUGE-L [15, 18].
+Model-based evaluation uses DeepEval 4.0.7 with the recorded judge model deepseek-v4-pro
+through an OpenAI-compatible DeepSeek endpoint, synchronous execution, and a threshold of
+0.5. The evaluated metrics are Contextual Precision, Contextual Recall, Contextual Relevancy,
+Faithfulness, and Answer Relevancy.
+3
+Results
+With 384-token chunks and 20% overlap, hybrid retrieval followed by cross-encoder reranking
+retrieved accepted evidence among the top three results for 17 of the 18 development queries
+(Recall@3 = 0.94). Ground-truth curation increased the number of accepted evidence spans from
+25 to 37 without changing retrieval rankings. Generation performance varied across context depths.
+3.1
+Segmentation
+Figure 2(A) compares chunk sizes from 128 to 1024 tokens at approximately 20% overlap. The
+384-token configuration achieved the highest overall retrieval performance (Recall@3 = 0.94, R-
+Precision = 0.77, MRR@3 = 0.89, and nDCG@3 = 0.90).
+9
+
+
+At a fixed chunk size of 384 tokens, Recall@3 remained at 0.94 for 0%, 10%, and 20% overlap
+(Figure 2(B)). The 20% setting (77 tokens) achieved the highest R-Precision (0.77), MRR@3 (0.89),
+and nDCG@3 (0.90) and was selected for subsequent retrieval evaluations.
+0.60
+0.70
+0.80
+0.90
+1.00
+Selected: 384
+128
+256
+384
+512
+768
+1024
+Recall@3
+R-Precision
+MRR@3
+nDCG@3
+Chunk size (tokens)
+Score
+(A) Chunk-size sweep
+0.60
+0.70
+0.80
+0.90
+1.00
+19
+38
+58
+77
+Recall@3
+R-Precision
+MRR@3
+nDCG@3
+Overlap (tokens)
+Score
+(B) Overlap sweep
+Figure 2: Retrieval performance under different segmentation configurations on the 18-query development
+benchmark. (A) Chunk-size sweep with approximately 20% overlap. (B) Overlap sweep at a fixed chunk
+size of 384 tokens.
+3.2
+Retrieval Ablation
+Table 4 compares four retrieval configurations against the curated ground truth. BM25 and
+semantic retrieval achieved Recall@3 values of 0.89 and 0.83, respectively. Hybrid RRF maintained
+Recall@3 at 0.89 while increasing R-Precision to 0.78. Adding the cross-encoder reranker increased
+Recall@3, R-Precision, MRR@3, and nDCG@3 to 0.94.
+Table 4: Retrieval ablation on the 18-query development set after ground-truth curation. →1 indicates
+that values closer to 1 are better; bold values indicate the best observed scores.
+Retriever
+Recall@3 →1
+R-Precision →1
+MRR@3 →1
+nDCG@3 →1
+BM25
+0.89
+0.61
+0.72
+0.76
+Semantic
+0.83
+0.56
+0.69
+0.73
+Hybrid RRF
+0.89
+0.78
+0.81
+0.83
+Hybrid RRF + Reranker
+0.94
+0.94
+0.94
+0.94
+3.3
+Effect of Ground-Truth Curation
+Ground-truth curation increased the number of evidence spans from 25 to 37 and accepted
+chunk targets from 36 to 51 without changing retrieval rankings. Against the curated annotations,
+Hybrid RRF + Reranker retrieved an accepted evidence target within the top three for 17 of 18
+queries (Recall@3 = 0.94). R-Precision, MRR@3, and nDCG@3 also reached 0.94.
+10
+
+
+3.4
+Generation Quality by Context Depth
+Table 5(A) presents the BLEU and ROUGE scores across generation-context depths from K = 1
+to K = 5. The highest BLEU-1 through BLEU-4, ROUGE-1, and ROUGE-2 scores occurred at
+K = 5, including BLEU-4 = 0.22, ROUGE-1 = 0.56, and ROUGE-2 = 0.37. ROUGE-L was highest
+at K = 1 (0.51).
+Table 5(B) presents the DeepEval metrics. Contextual Relevancy decreased from 0.72 at K = 1
+to 0.47 at K = 5, while Contextual Recall reached 0.94 at K = 2, K = 4, and K = 5. Contextual
+Precision was highest at K = 5 (0.91). Faithfulness remained between 0.96 and 1.00, and Answer
+Relevancy reached 0.94 at K = 2, K = 4, and K = 5.
+No single context depth consistently
+maximized all metrics.
+Table 5: Generation evaluation across context depths K1–K5. (A) Classical BLEU/ROUGE metrics. (B)
+DeepEval metrics. →1 indicates that values closer to 1 are better; bold values indicate the best observed
+scores before rounding.
+(A) Classical generation metrics
+Metric
+K1
+K2
+K3
+K4
+K5
+BLEU-1 →1
+0.44
+0.41
+0.43
+0.38
+0.44
+BLEU-2 →1
+0.33
+0.31
+0.32
+0.29
+0.34
+BLEU-3 →1
+0.26
+0.24
+0.25
+0.23
+0.27
+BLEU-4 →1
+0.22
+0.19
+0.20
+0.18
+0.22
+ROUGE-1 →1
+0.55
+0.54
+0.54
+0.50
+0.56
+ROUGE-2 →1
+0.36
+0.35
+0.34
+0.30
+0.37
+ROUGE-L →1
+0.51
+0.47
+0.47
+0.42
+0.50
+(B) DeepEval metrics
+Metric
+K1
+K2
+K3
+K4
+K5
+Contextual Precision →1
+0.89
+0.89
+0.88
+0.87
+0.91
+Contextual Recall →1
+0.83
+0.94
+0.89
+0.94
+0.94
+Contextual Relevancy →1
+0.72
+0.58
+0.55
+0.51
+0.47
+Faithfulness →1
+0.96
+1.00
+0.97
+1.00
+0.97
+Answer Relevancy →1
+0.87
+0.94
+0.93
+0.94
+0.94
+3.5
+Qualitative Retrieval Analysis
+The following cases compare the clinical information need with the retrieved evidence. Excerpts
+are taken from the ranked passages, rather than from the reference answers.
+Q01 — Flat epithelial atypia (successful; rank 1).
+Query:
+“Is diagnostic excision generally indicated for flat epithelial atypia alone when radiologic-
+pathologic concordance is confirmed?”
+Retrieved:
+“Provided radiologic-pathologic concordance is confirmed, diagnostic excision is generally not
+indicated after a diagnosis of FEA” (Nakhlis et al., 2026).
+11

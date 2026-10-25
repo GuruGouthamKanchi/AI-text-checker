@@ -1,0 +1,618 @@
+Preprint
+ACTION LEARNING FOR SCIENTIFIC SIMULATIONS
+Sarah Liaw1,2∗
+Yuanqi Du3
+Yilun Du1,2
+1Kempner Institute
+2Harvard University
+3Microsoft Research New England
+ Website
+§ Code
+ABSTRACT
+Understanding and controlling how systems evolve is central to science and
+engineering, where many problems require reasoning about complete trajectories.
+Existing approaches typically learn local dynamics or generate trajectories, but
+objectives constructed from individual transitions can miss dependencies across
+time, while generative models do not necessarily provide a tractable objective for
+evaluating and optimizing arbitrary paths. We study action learning, the problem
+of recovering a stochastic action from trajectory observations, yielding a common
+objective for reasoning about dynamical systems. We introduce LEAP (Learned
+Energy on Action Paths), which anchors the unknown action to a tractable refer-
+ence process and learns the remaining correction by comparing observed trajecto-
+ries with reference trajectories. This construction yields a differentiable objective
+on path space that can capture both local dynamical structure and nonadditive
+dependencies across time. Once learned, the same action can be flexibly reused
+for path ranking and inference, mechanism steering, constrained optimization
+and sampling. Across stochastic physical systems, many-body orbital dynamics
+and molecular simulations, LEAP recovers underlying dynamics, captures depen-
+dencies across time and enables transfer across inference objectives and physical
+conditions. We show that action learning is a promising framework for turning
+trajectory observations into reusable objectives for scientific inference and control.
+1
+FROM TRAJECTORY SAMPLES TO PATH INFERENCE
+(a) Local dynamics learning.
+One-step transition
+laws induce a likelihood over complete trajectories.
+(b) Action learning. LEAP learns relative path costs
+from complete trajectory comparisons.
+Figure 1: Local dynamics learning versus action learning. Local models learn short-range transition laws that
+induce a path likelihood, whereas LEAP learns an action from complete trajectories while retaining structured
+local dynamics when appropriate.
+Understanding how systems move between states requires reasoning about the trajectories that
+connect them. In molecular dynamics, two conformations may be connected by several transition
+routes that visit different intermediate configurations (Bolhuis et al., 2002; Shaw et al., 2010); in
+robotics, agents act through sequences of decisions (Kalakrishnan et al., 2011; Janner et al., 2022).
+In these settings, the object of interest is often the trajectory itself: which paths realize a transition,
+which mechanisms are plausible and which paths remain likely under perturbations or constraints.
+Answering these questions requires reasoning about complete paths. To infer representative tran-
+sitions or impose new preferences, we need an objective that assigns probabilities or costs to
+trajectories. When the dynamics are known, stochastic action functionals provide such an objective.
+∗Correspondence to sliaw@g.harvard.edu.
+1
+arXiv:2610.31585v1  [cs.LG]  22 Oct 2026
+
+
+Preprint
+In statistical physics and stochastic control, actions such as the Onsager–Machlup functional,
+Freidlin–Wentzell rate functional and path integral control costs define probabilities or costs on path
+space (Onsager & Machlup, 1953; Freidlin & Wentzell, 2012; Kappen, 2005; Adib, 2007). Once
+the action is available, we can use it for downstream tasks like constrained inference and sampling.
+In many applications, however, we do not know the action. Instead, we observe trajectories from
+simulations or experiments, such as molecular dynamics, sequences of state transitions, policy
+rollouts or logs of stochastic processes (Lindorff-Larsen et al., 2011; Shaw et al., 2010; Glielmo
+et al., 2021). Classical trajectory inference methods typically assume a known action, while learned
+methods predict local dynamics, learn representations or generate trajectories directly (Chen et al.,
+2019; Li et al., 2020; Song et al., 2021; Jing et al., 2024b). These objects are useful, but they do not
+directly give the reusable path objective needed for downstream trajectory inference. We therefore
+call the task of recovering an evaluable action from trajectory samples action learning.
+Existing learned methods often model dynamics locally by fitting one-step transition laws and using
+the resulting local model to evaluate complete trajectories (Chua et al., 2018). This requirement
+can become restrictive when trajectories are selected by global events, e.g., successful transitions or
+task-level constraints. A local predictor trained on such data estimates the one-step conditionals of
+the selected process, which can differ from the underlying dynamics. Errors in local transition log-
+likelihoods can also accumulate along a path and then distort the induced optimization landscape.
+Since path-level quantities do not have to decompose into independent local decisions, optimizing
+locally plausible segments can still produce a poor local minimum; Fig. 1 shows this distinction.
+We propose LEAP (Learned Energy on Action Paths), a framework for learning a stochastic action
+directly from trajectory samples. LEAP treats the action itself as the learning target, rather than a
+local predictor or trajectory generator. It anchors the unknown action to a tractable reference process
+and learns the remaining correction from complete trajectories, yielding an evaluable objective on
+path space. In structured settings, this correction recovers changes in the underlying dynamics; more
+generally, it can capture nonadditive interactions across transitions. Once learned, the action can be
+reused with preferences that were not specified during training. For example, a reward for visiting
+an intermediate basin can favor a different transition route, while a geometric penalty can discourage
+paths outside admissible regions, in both cases without retraining the learned action.
+Our approach applies broadly to trajectories from dynamical systems, including molecular simula-
+tions, stochastic physical systems and logged sequential processes (Shaw et al., 2010; Kalakrishnan
+et al., 2011; Janner et al., 2022). We evaluate LEAP across controlled physical systems, a 31-body
+orbital benchmark with 186-dimensional states and an alanine dipeptide molecular benchmarks.
+These experiments test physical recovery, nonadditive dependence across time and reuse across
+inference objectives, with the double well and orbital systems providing exact actions for evaluation.
+Our contributions are as follows: (i) we formulate action learning as learning a reusable objec-
+tive directly on complete trajectories; (ii) we introduce LEAP, which learns a stochastic action by
+comparing observed trajectories with samples from a tractable reference process; (iii) we establish
+theoretical guarantees for recovering the action and show that dependencies across time can result
+in trajectory objectives that cannot be represented by sums of local transition costs; and (iv) we
+demonstrate recovery of underlying physical dynamics from terminally selected trajectories, mod-
+eling of nonadditive dependencies in many-body systems, and reuse of a fixed learned action across
+molecular inference tasks and physical conditions.
+1.1
+RELATED WORK
+Sampling trajectories from known dynamics. Classical methods for sampling trajectories usually
+assume access to the dynamics, energy landscape or action. When trajectories of interest occur of-
+ten, it is sufficient to just do direct simulation. When relevant paths are rare, e.g., because an energy
+barrier separates metastable states, methods can use known physical models to identify or sam-
+ple transition pathways. The string method evolves discretized curves on an energy landscape (E
+et al., 2002), while minimum action methods optimize action functionals derived from stochastic
+dynamics (Freidlin & Wentzell, 2012). Stochastic control methods construct trajectory objectives
+from known dynamics and costs to sample rare transitions (Kappen, 2005; Todorov, 2009; Williams
+et al., 2017; Holdijk et al., 2023; Du et al., 2024). More recent methods use learned force fields or
+pretrained generative models to get energies or dynamics for transition inference (Yuan et al., 2024;
+2
+
+
+Preprint
+1. Reference Paths
+2. Contrastive Learning on Paths
+3. LEAP Action
+Sample tractable reference pref(Φ | c)
+Learn path log-ratio Gθ(Φ; c)
+Gθ(Φ; c)
+(NN)
+Data paths 
+(observed)
+Ref paths 
+(negatives)
+Contrastive 
+objective
+Action on complete paths supports 
+optimization, tilting, and sampling
+Sθ(Φ; c) = -log pref(Φ | c) -Gθ(Φ; c)
+Action on complete paths supports 
+optimization, tilting, and sampling
+Figure 2: LEAP. Given data trajectories and a tractable reference process, LEAP learns a centered path-space
+correction and combines it with the reference action to obtain Sθ(Φ; c).
+Raja et al., 2025; Amin et al., 2025). These methods typically rely on available physical models,
+learned dynamics or predefined objective to perform inference. LEAP targets the complementary
+setting of learning the trajectory action itself from observations, enabling subsequent inference with-
+out access to the underlying target dynamics at all.
+Learning from trajectories. Learned trajectory models usually target evolution or generation.
+Neural differential equation and latent dynamics models learn evolution from observations (Chen
+et al., 2019; Kidger et al., 2021; Hafner et al., 2019), while score-based, flow matching, diffusion
+and action matching methods learn vector fields or scores that transport or generate samples from
+state, trajectory or marginal distributions (Song et al., 2021; Jing et al., 2024b;a; Neklyudov et al.,
+2023). These methods model evolution or generation, but they do not generally return the stochas-
+tic action needed for path optimization, mechanism steering or Metropolis-Hastings correction.
+Energy-based models have also been used for planning by learning energies over individual state
+transitions and composing them along a trajectory (Du et al., 2020). Relatedly, reinforcement learn-
+ing and imitation learning learn rewards or policies from demonstrations, e.g., maximum-entropy
+inverse reinforcement learning and adversarial imitation learning (Ziebart et al., 2008; Ho & Ermon,
+2016; Fu et al., 2018; Nuti et al., 2023). LEAP also learns from trajectories, but targets a different
+object: a stochastic action on complete paths, i.e., the trajectory-level objective used directly for
+optimization, control and sampling, which can then be reused across new downstream objectives.
+2
+LEARNING ACTION FUNCTIONALS FROM TRAJECTORY SAMPLES
+LEAP learns a differentiable stochastic action Sθ(Φ; c) directly from trajectory samples, providing a
+reusable objective for evaluating and optimizing trajectories. The action assigns a scalar objective to
+each complete trajectory, with lower action corresponding to higher probability under the observed
+path distribution. LEAP requires trajectory observations but not the underlying drift, potential or
+simulator likelihood. We construct the action by introducing a tractable reference process and learn-
+ing a correction that describes how the observed path distribution differs from the reference. This
+formulation can represent both local dynamical structure and dependencies across time, yielding an
+objective that can be evaluated and reused for new inference tasks. See Alg. 1 for the algorithm.
+2.1
+TARGET ACTION AND TRAINING OBJECTIVE
+Let Φ = (x0, x1, . . . , xN) denote a discretized trajectory with tk = k∆t and horizon T = N∆t.
+Let c denote the conditioning variables, e.g., endpoints, terminal regions, horizon or diffusion level.
+We observe trajectory samples Φ ∼pdata(· | c) for each context.
+Target action. Following stochastic action formalisms such as Onsager–Machlup and Freidlin–
+Wentzell theory, we use the negative log path density as the trajectory objective (Onsager &
+Machlup, 1953; Freidlin & Wentzell, 2012):
+S∗(Φ; c) = −log pdata(Φ | c) + α(c),
+(1)
+where α(c) is constant across paths with the same context and therefore does not affect their relative
+action, including for path ranking, sampling or representative path optimization (§2.4).
+Reference-based decomposition. Directly evaluating pdata(Φ | c) is generally not possible from
+trajectory samples. LEAP therefore introduces a tractable reference process with density pref(Φ | c),
+3
+
+
+Preprint
+providing an evaluable baseline action against which the observed dynamics can be characterized.
+The unknown action can be expressed as the reference action plus a correction that captures how the
+observed path distribution differs from the reference. This correction admits a physical interpretation
+when the processes differ in drift, while more generally allowing dependencies across transitions that
+cannot be represented by additive local objectives.
+Specifically, the correction is the path log-density ratio
+G∗(Φ; c) = log pdata(Φ | c)
+pref(Φ | c) .
+(2)
+With Sref(Φ; c) = −log pref(Φ | c), the target action is
+S∗(Φ; c) = Sref(Φ; c)
+|
+{z
+}
+reference action
+−
+G∗(Φ; c)
+|
+{z
+}
+learned correction
++α(c).
+(3)
+We estimate G∗from comparisons between observed and reference trajectories and combine it with
+the reference action. The resulting Sθ is the learned stochastic action used for trajectory inference.
+Learning the action correction. To estimate G∗, we compare observed trajectories with those
+drawn from the reference process (Gutmann & Hyv¨arinen, 2010). For each context c, we draw
+one observed trajectory Φ+ ∼pdata(· | c) and K reference trajectories Φ−
+k ∼pref(· | c). We
+parameterize the correction by Gθ(Φ; c) and optimize the setwise comparison objective, which has
+the InfoNCE form (van den Oord et al., 2019)
+LK(θ) = −E
+"
+log
+exp Gθ(Φ+; c)
+exp Gθ(Φ+; c) + PK
+k=1 exp Gθ(Φ−
+k ; c)
+#
+.
+(4)
+This objective has the desired correction as its population solution. Under the conditions in §A.1,
+every population minimizer satisfies
+Gθ∗(Φ; c) = G∗(Φ; c) + a(c),
+(5)
+for every K ≥1. The context-dependent term cancels from each comparison, so the objective
+identifies the part of the correction that varies across trajectories.
+Because the comparison objective leaves this context-dependent constant undetermined, we fix the
+additive convention after training by centering the correction under the reference distribution,
+¯Gθ(c) = EΦ∼pref(·|c) [Gθ(Φ; c)] ,
+eGθ(Φ; c) = Gθ(Φ; c) −¯Gθ(c).
+(6)
+The learned action is then
+Sθ(Φ; c) = −log pref(Φ | c) −eGθ(Φ; c).
+(7)
+At the population solution, this recovers the data action up to a constant depending on the context,
+which does not affect path rankings or optimization within that context.
+2.2
+REFERENCE PROCESS
+The reference defines the baseline path measure and the inductive bias of the learned action. This
+means we need a tractable path density, efficient sampling and sufficient probability mass over the
+trajectories represented in the data. While its drift can include an available nominal drift or force
+model, LEAP does not necessarily require one. For rare-event trajectories, we condition the refer-
+ence on the same event as the data so that both contain trajectories selected by the same condition.
+We use a discrete-time Gaussian Markov reference because its transition law is analytic and param-
+eterized directly by drift and diffusion. Under shared diffusion, differences in drift induce an exact
+path log-likelihood ratio, giving the learned correction a direct dynamical interpretation. We define
+xk+1 = xk + bref(xk, tk; c)∆t +
+√
+2D∆t ξk,
+ξk ∼N(0, I),
+(8)
+where bref is the reference drift and D is the diffusion coefficient. This induces the path density
+pref(Φ | c) and reference action Sref(Φ; c). For endpoint or terminal-region conditioning, pref
+denotes the corresponding conditional density over the interior knots; its normalizer contributes
+only a context-dependent constant (see §A.3).
+4
+
+
+Preprint
+Representative Trajectory
+Mechanism Control (Tilting)
+Soft Constraints
+Trajectory Sampling
+Prefer upper route
+Prefer lower route
+minΦ Sθ(Φ; c)
+minΦ Sθ(Φ; c) - λM(Φ)
+minΦ Sθ(Φ; c) + λC(Φ)
+π(Φ|c) ∝ e-Sθ(Φ; c)
+Figure 3: Downstream trajectory inference with the learned action. Once Sθ(Φ; c) is learned, the same
+action supports representative path inference, mechanism steering (tilting), constrained inference and sampling.
+2.3
+LOCAL AND GLOBAL ACTION CORRECTIONS
+When the data and reference processes are Gaussian Markov processes with the same diffusion
+coefficient and differ only in drift, their exact path log-likelihood ratio decomposes over transitions.
+We use this structure when the drift difference is the quantity of interest. Let vk = (xk+1 −xk)/∆t
+and let uθ parameterize bdata −bref. The correction is
+Gθ(Φ; c) =
+N−1
+X
+k=0
+
+
+1
+2D uθ(xk, tk; c)⊤ vk −bref(xk, tk; c)
+
+|
+{z
+}
+velocity alignment
+−1
+4D ∥uθ(xk, tk; c)∥2
+|
+{z
+}
+normalization cost
+
+∆t.
+(9)
+When the data and reference processes also share the initial law and time grid, and differ only
+through their drift, Eq. (9) is the exact path log-likelihood ratio for bdata = bref + u∗; see §A.2. For
+stopped or padded trajectories, we sum only over active transitions as described in the appendix.
+More generally, LEAP does not require a Gaussian drift parameterization. When the log density
+ratio between the data and reference distributions decomposes across transitions, LEAP-Local learns
+a scalar correction gθ for each transition and sums these corrections along the trajectory,
+Glocal
+θ
+(Φ; c) =
+N−1
+X
+k=0
+gθ(xk, xk+1, tk; c).
+(10)
+This factorization can fail when information is shared across the trajectory. For example, marginal-
+izing a latent variable that remains fixed throughout a trajectory can couple multiple transitions.
+LEAP-Global therefore models the correction directly from the complete path,
+Gglobal
+θ
+(Φ; c) = rθ(Φ; c).
+(11)
+LEAP-Hybrid combines the two parameterizations,
+Ghybrid
+θ
+(Φ; c) = Glocal
+θ
+(Φ; c) + Gglobal
+θ
+(Φ; c).
+(12)
+The global term captures interactions across transitions that cannot be written as an additive transi-
+tion correction. When both terms are learned jointly, only their sum is identified, so interpreting the
+local term as a physical drift correction requires additional restrictions.
+For conservative systems, we optionally parameterize the total drift as the gradient of a potential,
+bref(x, t; c) + uθ(x, t; c) = −∇Uθ(x; c).
+(13)
+2.4
+DOWNSTREAM TRAJECTORY INFERENCE
+Because Sθ is an action on complete trajectories, we can reuse it after training. The same learned ob-
+ject can rank candidate paths, infer representative trajectories, incorporate mechanism preferences,
+impose soft constraints and define trajectory distributions. See §B.2 for details.
+Trajectory ranking and representative inference. Given feasible trajectories Γ(c), e.g., paths
+satisfying boundary conditions, we can rank candidate trajectories by their action or infer the lowest-
+action representative trajectory by solving
+Φ∗(c) = arg min
+Φ∈Γ(c) Sθ(Φ; c).
+(14)
+5
+
+
+Preprint
+Algorithm 1 LEAP training
+Require: dataset D = {(Φ+
+i , ci)}, reference process pref(Φ | c), reference count K
+1: while not converged do
+2:
+sample minibatch {(Φ+
+i , ci)}B
+i=1 ⊂D
+3:
+for i = 1 to B do
+4:
+sample {Φ−
+i,k}K
+k=1 ∼pref(· | ci)
+5:
+evaluate G+
+i ←Gθ(Φ+
+i ; ci) and G−
+i,k ←Gθ(Φ−
+i,k; ci)
+6:
+end for
+7:
+update θ by a gradient step on the minibatch estimate of Eq. (4)
+8: end while
+9: return learned action Sθ in Eq. (7)
+Mechanism steering and constraints. We steer the representative path by adding trajectory-level
+functionals. Given a desired mechanism preference M(Φ) and a constraint penalty C(Φ), we solve
+arg min
+Φ∈Γ(c)
+h
+Sθ(Φ; c) −λMM(Φ) + λCC(Φ)
+i
+.
+(15)
+Changing λM or λC changes the inference problem without retraining the model.
+Compositional trajectory distributions. The learned action defines an unnormalized trajectory
+distribution. Given mechanism preferences Mj with weights γj and penalties Cℓwith weights λℓ,
+π(Φ | c) ∝exp
+
+−Sθ(Φ; c) +
+X
+j
+γjMj(Φ) −
+X
+ℓ
+λℓCℓ(Φ)
+
+.
+(16)
+Sampling from π gives a family of plausible paths weighted by the specified preferences/penalties.
+Metropolis-Hastings (MH) sampling. At fixed context, Sθ defines an unnormalized distribution
+over paths. For a proposal kernel q(Φ′ | Φ) on Γ(c), the MH acceptance probability is
+A(Φ, Φ′) = min
+
+1, exp
+ −Sθ(Φ′; c) + Sθ(Φ; c)
+q(Φ | Φ′)
+q(Φ′ | Φ)
+
+.
+(17)
+For symmetric proposals, this reduces to A(Φ, Φ′) = min
+
+1, exp
+ −Sθ(Φ′; c) + Sθ(Φ; c)
+	
+. Any
+context-dependent additive constant in Sθ cancels in the acceptance ratio.
+3
+WHY LEAP RECOVERS AN ACTION
+We give three guarantees for action learning. The first recovers the data action from the comparison
+objective, the second identifies the drift correction under the structured model, and the third bounds
+downstream inference error from action error. Full assumptions and proofs are in §A.
+The comparison objective recovers the action. Fix a context c. Assume that the data and ref-
+erence distributions have positive densities on the same support, the candidates are conditionally
+independent and the score class contains G∗. Every population minimizer of Eq. (4) satisfies
+Gθ∗(Φ; c) = log pdata(Φ | c)
+pref(Φ | c) + a(c).
+(18)
+If Epref|G∗| < ∞, reference centering then gives
+Sθ∗(Φ; c) = S∗(Φ; c) + β(c).
+(19)
+The context-dependent constant keeps optimization solutions and MH ratios the same.
+The structured correction recovers drift differences. For Euler–Maruyama dynamics with the
+same diffusion, time step and initial distribution, changing the drift changes the path log-likelihood
+by the structured correction in Eq. (9). Matching the unconditioned path distribution identifies the
+drift at states and times visited by the process. If data and reference trajectories are selected using the
+6
+
+
+Preprint
+−1
+0
+1
+State x
+−2
+0
+2
+b(x)
+b
+0
+0.2
+U(x)
+ΔU=0.25
+A
+B
+a
+True b
+LEAP
+Cubic reg.
+Figure 5: Double well recovery.
+Drift MSE ↓
+True path cost ↓
+Method
+T = 4
+T = 16
+Kramers-Moyal
+0.813
+—
+—
+Cubic velocity reg.
+0.775
+0.319
+0.613
+Zero field
+0.0759
+0.264
+0.445
+Geometric path
+—
+0.264
+0.264
+Analytic drift
+0
+0.253
+0.250
+LEAP
+3.3 × 10−4
+0.253
+0.251
+Table 1: Physical recovery and path inference. Drift error and
+path cost under new endpoints and horizons.
+terminal event, this changes the path log-likelihood ratio by condition-dependent constants. Recov-
+ering the unconditioned drift from selected trajectories needs variation across terminal conditions
+and the structured drift parameterization. See §4.1 for the recovery; §A.2 and A.3 for derivations.
+Action error controls later inference. Fix a context c and an inference domain Γ(c). Suppose
+sup
+Φ∈Γ(c)
+|Sθ(Φ; c) −S∗(Φ; c) −β(c)| ≤ε.
+For the same added functional H, let Fθ = Sθ + H and F ∗= S∗+ H. If bΦ is δ-suboptimal for Fθ,
+F ∗(bΦ) −
+inf
+Φ∈Γ(c) F ∗(Φ) ≤2ε + δ.
+(20)
+If πθ ∝e−Fθ and π∗∝e−F ∗have finite, positive normalizing constants, then
+log πθ(Φ | c)
+π∗(Φ | c)
+ ≤2ε.
+(21)
+Thus the same action error bounds both the objective value of an inferred trajectory and the change
+in its normalized trajectory density.
+4
+EXPERIMENTS
+Our experiments evaluate four properties of action learning.
+We show that LEAP can recover
+physical dynamics from selected trajectories, capture dependencies across multiple transitions,
+improve as the reference moves closer to the data and reuse the learned action under new physical
+conditions and inference requests. See §B for the full experimental details.
+4.1
+RECOVERING DYNAMICS UNDER TERMINAL SELECTION
+We first show that LEAP recovers the underlying drift when training trajectories are selected by
+their final state. We use the overdamped diffusion dXt = b(Xt) dt +
+√
+2D dWt with b(x) = x −x3
+and U(x) = (x2 −1)2/4. In this double well setting, trajectories start at x0 = −1 and are kept
+when xT ∈[0.9, 1.1] at T = 3. We use 5,000 selected trajectories per seed with D = 0.20 and
+∆t = 0.01, and a Brownian reference conditioned on the same terminal window. Conditioning on
+the final state changes the distribution of one-step increments, so local regression does not directly
+estimate the original drift.
+LEAP instead compares complete selected paths with the matched
+reference and learns the drift through the structured action correction.
+Drift recovery. We compare LEAP with Kramers-Moyal, which estimates drift from binned one-
+step increments, and cubic velocity regression using {1, x, x2, x3}, which contains the exact drift x−
+x3. LEAP achieves drift MSE (3.3±2.7)×10−4, compared to 0.8132±0.0030 for Kramers-Moyal,
+0.7752±0.0043 for cubic regression and 0.0759 for the zero field (Fig. 5 and Table 1). Even though
+cubic regression can represent the exact drift, it fits the one-step dynamics of the terminally selected
+trajectories, which follow a Doob h-transformed drift that differs from the original drift (§A.3).
+Path inference under new endpoints.
+Next, we keep the learned potential fixed and change
+the endpoint from the training region to the saddle xT = 0, and vary the horizon. At T = 4,
+LEAP gives true path cost 0.2533 ± 0.0001 versus the analytic value 0.2532. At T = 16, LEAP
+gives 0.2506 ± 0.0006 versus 0.2500, while cubic velocity regression gives 0.6126 ± 0.0079 and
+7
+
+
+Preprint
+the geometric path gives 0.2637. The same learned action can still infer near-optimal paths after
+changing both the endpoint and the horizon.
+Reference choice. We retrain LEAP with different references on an unconditioned double well,
+where the exact path density is available. Changing the reference drift from 0 to 0.5b reduces the
+correction error NRMSE∆G from 0.66 to 0.223, where NRMSE∆G compares predicted and exact
+correction differences within each context and a constant prediction gives 1 (§B.1), showing that a
+closer reference leaves a smaller correction to learn. See §D for the full sweep.
+4.2
+RECOVERING A NONADDITIVE TRAJECTORY ACTION
+Next, we test whether LEAP can learn a correction that depends on several transitions. These
+settings may appear when an unobserved physical property is fixed during a trajectory, like an
+unknown mass in orbital dynamics, friction coefficient in Langevin dynamics or material parameter
+in a mechanical system, and its effect accumulates over the full path. We model this by sampling
+z ∈{−1, +1} once and changing the solar mass to m⊙(1+zη). The same unobserved z is fixed for
+the entire trajectory, so recovering the observed path likelihood needs combining information across
+time. We use a 31-body orbital system initialized from JPL HORIZONS, giving a 186-dimensional
+state space (Giorgini et al., 1997).
+Conditional on z, the path density factorizes over transitions. After marginalizing z, the exact data-
+to-reference correction becomes
+G∗(Φ; c) = log
+h
+1
+2eℓ+1(Φ;c) + 1
+2eℓ−1(Φ;c)i
+−ℓ0(Φ; c),
+(22)
+where ℓz = P
+k ℓz,k and ℓ0 uses the nominal solar mass. Defining dk = (ℓ+1,k −ℓ−1,k)/2 and
+mk = (ℓ+1,k + ℓ−1,k)/2 −ℓ0,k gives
+G∗(Φ; c) =
+X
+k
+mk + log cosh A,
+A =
+X
+k
+dk.
+(23)
+Its mixed derivatives satisfy ∂2G∗/(∂di∂dj) > 0 for i̸ = j, whereas a sum of separate transition
+corrections has zero mixed derivatives. Therefore no additive transition model can represent the
+exact correction; see §A.4.
+Local and complete-path models. We evaluate whether the correction can be recovered from
+individual transitions or needs information from the whole trajectory. LEAP-Local uses the local
+correction from Eq. (10). As a baseline with different supervision, Transition NCE applies noise-
+contrastive estimation (Gutmann & Hyv¨arinen, 2010) directly to data and reference transitions using
+the same transition inputs. LEAP-Global uses the full trajectory and features accumulated from the
+nominal gravitational dynamics and its sensitivity to the solar mass (Table 2). These inputs do not
+have the hidden variable z or the exact correction G∗.
+LEAP-Local and Transition NCE stay at the constant prediction level, with NRMSE 1.0013 and
+1.0008, while LEAP-Global reaches 0.228, i.e., it accounts for about 95% of the squared variation
+in the exact correction differences. This shows that the correction cannot be recovered from sep-
+arate transitions and requires information across the trajectory. Consistent with this result, Fig. 6
+shows that LEAP-Global follows the exact log cosh A dependence and recovers the hidden mass
+perturbation as 1.02 × 10−4, compared to the true 1.04 × 10−4. As a trajectory diffusion compari-
+son, GeoTDM (Han et al., 2024) is trained separately on the same data and reference paths, and the
+difference in its objectives gives AUROC 0.4999; see §E.5.
+Accumulated features.
+We ablate these features while keeping a complete-path model, using
+binary and categorical neural ratio estimation (NRE) objectives (Miller et al., 2024). Without them,
+binary NRE gives NRMSE 1.00000 ± 3 × 10−5. Adding them reduces error to 0.175 ± 0.011
+with binary NRE and 0.228 ± 0.015 with categorical NRE (Table 3). Both objectives improve,
+showing that the accumulated information from Eq. (23) drives the decrease. Because both are ratio
+estimators on complete paths, the binary result also shows that action learning is not tied exactly to
+the categorical objective in Eq. (4).
+Scaling. At 42 bodies and 256 transitions, each path has 64,764 coordinates. LEAP-Global reaches
+NRMSE 0.111, while LEAP-Local stays at 1.0015. Thus, even as the system grows to more bodies
+and longer trajectories, LEAP-Global can accumulate the small effect of the hidden mass perturba-
+tion across transitions, while models that treat each transition separately still stay near the constant
+prediction baseline. See §E.4 for the full sweep.
+8

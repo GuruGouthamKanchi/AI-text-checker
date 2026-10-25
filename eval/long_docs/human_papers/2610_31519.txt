@@ -1,0 +1,931 @@
+From Prompt Rules to Golden Data Model: Production-Scale Generation
+of Personalized, Compliant Pharmaceutical Claims
+Suyash Mishraa, Qiang Lib, Subhabrata Adakc,
+Upender Phogatc, Srikanth Patilc, Satyanarayan Patic,
+aRoche, bAccenture, cInvolead,
+Correspondence: suyash.mishra@roche.com, qiang.i.li@accenture.com, subhabrata.adak@involead.com
+upender.phogat@involead.com, srikanth.patil@involead.com, satyanarayan.pati@involead.com
+Abstract
+Large language models (LLMs) are increas-
+ingly used to generate domain-specific com-
+mercial & medical content (e.g., claims, state-
+ments, and promotional phrases) in regulated
+industries such as pharmaceuticals. However,
+ensuring its regulatory compliance, factual ac-
+curacy, and audience-specific personalization
+remains a major challenge. We report a produc-
+tion case study asking whether moving compli-
+ance and personalization signal from prompt-
+level rules into retrieval-time structured con-
+text improves pharmaceutical claims genera-
+tion, using Composer, a deployed internal tool
+built on a Golden Data Model (GDM) of 1,867
+pharmaceutical claims spanning four products.
+The GDM integrates claim metadata, refer-
+ences, audience labels, material type, usage
+history, Match Text Variant (MTV) links, and
+a six-dimension quality score (6C). Across
+six product-audience segments, the context
+pipeline improves intended indication (+29%),
+intended content type (+62%) and intended tar-
+get audience (+67%), 6C quality score (+86%),
+and claim reuse (+34%). Production log analy-
+sis over the deployment period shows a 29.5%
+reduction in weekly API cost. We report this as
+descriptive deployment evidence. This work is
+a systems and data-architecture contribution: it
+shows that in a regulated, high-stakes domain,
+restructuring claim data for retrieval-time fil-
+tering is a more scalable lever than expanding
+prompt-level rules, and documents the engi-
+neering path data cleaning, graph linking, and
+quality scoring Check our Composer Video.
+1
+Introduction
+AI-generated text has been detected increasingly in
+medical literature (Wolfrath et al., 2026). A 2025
+market forecast projected the AI in medical writing
+market to reach USD 1,760.02 million by 2030,
+with a CAGR of 12.52% from 2025 to 2030 (Grand
+View Research, 2025). However, their deployment
+in regulated domains such as healthcare and phar-
+maceuticals remains constrained by persistent con-
+cerns around hallucination, regulatory compliance,
+and limited controllability (Hager et al., 2024).
+Pharmacy content generation is particularly chal-
+lenging. Claims must be: (i) factually grounded
+in approved sources, (ii) compliant with regula-
+tory constraints, (iii) tailored to specific audiences
+such as healthcare professionals (HCPs) or patients
+(Barrias et al., 2024).
+Our baseline relies on rule-based prompting
+and strict templates. In our deployment, this base-
+line often failed to produce personalized and con-
+textually appropriate outputs. As observed in real-
+world systems, rule-based approaches can lead
+to mismatches in target audience, low relevance,
+and overuse of inactive or general claims.
+In contrast, context-rich approaches leverage
+structured data, usage history, and semantic rela-
+tionships to guide generation. However, the ef-
+fectiveness of such approaches has not been ex-
+perimentally studied. In this paper, we address
+following core research question:
+Does shifting compliance and personalization
+signals from prompt-level rules to structured
+retrieval-time data improve the quality and pro-
+duction efficiency of pharmaceutical claim gen-
+eration in a deployed system?
+To answer this, we propose a golden data
+model schema that transforms fragmented claim
+data into a structured, graph-based representation
+with quality-aware filtering. We further evaluate
+rule-based and context-based generation pipelines
+across multiple dimensions, including compliance
+(e.g., prohibited words / phrases, target indica-
+tion / type, MTV-Variant claims reuse), person-
+alization (e.g. target audience), and quality (6C
+scores). We note that the context pipeline does not
+eliminate rules outright, claim-level guardrails and
+prohibited-word constraints still persist, but relo-
+cates them from static, product-level prompt text
+arXiv:2610.31519v1  [cs.AI]  22 Oct 2026
+
+
+INPUT
+AUDIENCE CONTEXT
+QUERY GENERATION
+RETRIEVAL
+RERANKING
+COMPOSITION
+NURSE
+MS SPECIALIST
+Campaign brief
+• asset description
+• target audience
+• source documents
+Target
+Nurse
+Target
+MS 
+specialist
+LLM
+Query & 
+Composer
+ Agent
+LLM
+Search queries
+q₁ + claim category
+q₂ + claim category
+q₃ + claim category …
+Search queries
+q₁ + claim category
+q₂ + claim category
+q₃ + claim category …
+Golden Claims DB
+approved claims
+MT / MTV links
+audience • type
+usage • references
+6C quality score
+Hybrid retrieval
+semantic similarity
++ metadata filters
++ usage signals
+Claims MTV/
+Original/ attributes
+Hybrid retrieval
+semantic similarity
++ metadata filters
++ usage signals
+Claims MTV/
+Original/ attributes
+Top claims
+1. Approved + targeted
+2. MTV-linked
+3. High 6C score
+Top claims
+1. Approved + targeted
+2. MTV-linked
+3. High 6C score
+LLM
+audience-targeted
+approved claims
+LLM
+audience-targeted
+approved claims
+Shared retrieval core
+approved evidence, audience-specific selection
+MT = matched original claim · MTV = matched text variant · 6C = six-dimension claim quality score
+Query & 
+Composer
+ Agent
+LLM
+Composer (LLM):
+Generates diverse,
+context-aware search
+queries and composes
+final outputs.
+Golden Claims DB:
+DB of approved
+claims with usage
+metadata (MT, MTV).
+Hybrid Search:
+Combines semantic
+search and filters for
+precise retrieval.
+Re-ranking:
+Orders results by
+usage count & 6C  to
+prioritize high-impact
+claims.
+MT / MTV:
+Matched original claims
+/ its variant
+claim types.
+Figure 1: Business Solution Map for Composer Tool Compliant Claims Generation.
+to claim-level, retrieval-gated metadata.
+2
+Related Work
+Pharmaceutical content management:
+Veeva
+PromoMats supports promotional content and
+claims management,
+including substantiation
+and contextual claim variations (Veeva Systems,
+n.d.).
+IQVIA provides HCP engagement so-
+lutions (IQVIA, n.d.).
+These product descrip-
+tions do not establish the internal generation ar-
+chitectures of the platforms.
+Our contribution
+is a production evaluation of an explicit claim-
+centered schema and audience-conditioned genera-
+tion pipeline. Prior research has examined the in-
+formational and emotional content of prescription-
+drug advertising (Frosch et al., 2007) and the
+distinction between promotion and scientific ex-
+change (Kessler, 1991).
+Retrieval-augmented generation (RAG) in
+biomedical NLP: RAG (Gao et al., 2023; Asai
+et al., 2024) improves grounding by incorporat-
+ing external knowledge sources.
+RAG has im-
+proved factuality in knowledge-intensive genera-
+tion (Lewis et al., 2020), whereas chain-of-thought
+prompting has improved arithmetic, commonsense,
+and symbolic reasoning (Wei et al., 2022); the
+latter does not by itself establish reduced hallu-
+cination. However, standard RAG systems lack
+domain-specific constraints such as regulatory com-
+pliance and structured claim validation. RAG alone
+is insufficient for pharmaceutical claim generation
+because it does not enforce the audience-specific
+stylistic transformation that distinguishes a KOL-
+facing mechanism statement from a patient-facing
+aspirational statement derived from the same in-
+put. Prior work in biomedical NLP, has mostly
+focused on information extraction and summariza-
+tion, but less attention has been given to controlled,
+personalized generation under strict regulatory re-
+quirements. Our work differs in two key aspects:
+(1) we introduce a data-centric framework for con-
+trolling generation, and (2) we provide an empirical
+comparison between rule-based and context-based
+approaches in real-world setting.
+Verification and hallucination evaluation: Re-
+cent benchmarks such as SciVer (Wang et al., 2025)
+evaluate multimodal scientific claim verification
+with expert-annotated supporting evidence. Hon-
+estVQA (Tripathi et al., 2025) studies confidence
+calibration in document visual question answering,
+while Decomposed NLI (DNLI) (Yanuka et al.,
+2025) evaluates individual propositions in image
+captions. MLLMGuard (Gu et al., 2024) assesses
+multimodal safety across privacy, bias, toxicity,
+truthfulness, and legality. Industrial traffic-incident
+benchmarks also examine LLM hallucination (Li
+et al., 2025). These studies concern distinct tasks
+and do not directly validate pharmaceutical claim
+generation.
+
+
+Data Sources
+Veeva Vault
+(Now)
+Other Sources
+(Future)
+Data Sync
+Periodic Pipeline
+Getting Claims
+Metadata
+Accessing Materials
+Linked Text,
+Reference Linked
+Text and MTVs
+Semantic Integrity
+& Reconciliation
+Claims Cluster
+(Embeddings)
+Duplicates
+Near Dups
+Contradictions Flagged
+Reconciliation Collection
+Relation Building 
+Layer
+Claims Links
+Material Links
+Reference Links
+Unified Metadata
+MTV Links
+6C Engine
+Clarity
+Completeness
+Connectivity
+Context
+Compliance
+Consistency
+Quality Score (0.0 - 1.0)
+Consuming API 
+Layer
+Graph-Powered API
+REST / GraphQL
+Composer
+Reconciliation Action 
+Layer
+Merge Duplicates
+Canonicalize
+Flag Contradictions
+Status & Recency
+Golden Layer
+Graph DB (Neo4j)
+Golden Records Store
+Connectivity & Scoring
+Relationship Strength Scoring
+Audience Lens: HCP vs Patient
+Country / Locale Scoring
+Figure 2: Comprehensive Functional Layer for Compliant Claims Generation.
+3
+Methodology
+Given a target audience (e.g., HCP, Patient), con-
+tent type (e.g., Email, Banner), and a set of claims,
+the goal is to generate compliant and personalized
+text. The rule-based approach relies on predefined
+instructions, including: strict citation rules, verba-
+tim claim usage constraints, and template-based
+generation. While this ensures high compliance, it
+limits flexibility and personalization. We propose
+a golden data model schema that enhances claim
+usability via 4 key components as shown in Fig 2:
+1. Semantic Integrity Layer: periodic pipeline
+executing high-volume "upserts" from Veeva Vault
+and other sources into the central library. Claims
+are clustered using keywords and embeddings to
+identify duplicates, near-duplicates, contradictions.
+2. Graph-Based Representation: Claims are
+linked to: references, materials, audience metadata,
+forming a relational graph structure (as shown in
+Appendix Figure 6. This is the relationship build-
+ing layer. Establishes the structural links between
+Claims, References, and Materials. It aggregates
+metadata to provide a unified view of derivation
+and utilization, stored in Graph DB.
+3. 6C Quality Framework: Each claim is then
+scored along six dimensions: Clarity, Complete-
+ness, Consistency, Connectivity, Compliance, Con-
+text, as shown in Table 10 how weights differ, Table
+11 why each dimension is scored this way, Table 12
+what it evaluates. It translates relational evidence
+into a mathematical "Strength Score", quantifies
+how firmly a claim to its supporting scientific text.
+4. Alignment Annotation Protocol. Indication,
+content-type, and target audience alignment were
+then judged by internal US medical-content writers
+team not involved in system development, using
+binary match against the campaign brief’s stated
+indication/content-type/ audience fields. Judgment
+was BLINDED to pipeline (Pre vs. Post).
+5.
+Audience Lens: Claims are filtered and
+ranked based on target audience, region, and us-
+age patterns. This is the reconciliation action layer
+- the final decision gate. Based on 6C scores, sta-
+tus, and recency, it executes the "Golden Actions"
+(Merge/Suppress/Flag), publishing the final, high-
+integrity records to the Gold Layer Graph DB.
+In our context-based approach, the LLM then
+retrieves top-ranked claims, applies semantic filter-
+ing and ranking, generates outputs conditioned on
+high-quality, audience-specific claims.
+4
+Dataset and Experimental Settings
+We construct our dataset of more than 1,800 phar-
+maceutical claims across 4 products: Hemlibra,
+Ocrevus, Ocrevus Zunovo, and Vabysmo. The
+claims span 11 categories, including disease ed-
+ucation, efficacy, safety, dosing and administration,
+clinical practice guidelines, and patient access. All
+claims are retrieved from Veeva and are associated
+with metadata such as references, usage history,
+and audience annotations. We evaluate the two
+pipelines using Claude Sonnet 4.5, the production
+model for Composer; we additionally report per-
+token cost benchmarks for Gemini 2.5 Pro/Flash,
+the deployment comparison in §5 uses Sonnet 4.5
+throughout (Google Cloud, n.d.; Anthropic, 2025b)
+
+
+Table 1: Golden Data Model Schema for claim-level records. The schema integrates cleaned raw claim data with LLM-derived
+tagging layers and 6C quality scores. It also extracts tone signals and constraint-aware key phrases, enabling more controlled,
+compliant, and personalized downstream claim generation.
+Field
+Type
+Description
+Claim ID
+String
+Unique claim identifier, e.g., CL-US-000754.
+Create Date
+Datetime
+Timestamp when the claim record was created.
+Modified Date
+Datetime
+Timestamp when the claim record was last modified.
+Product
+String
+Product associated with the claim, e.g., Ocrevus.
+Country
+String
+Country or market where the claim is approved.
+Match Text
+Text
+Original approved claim text. e.g., OCREVUS is proven effective in
+reducing relapses in RMS, slowing disability progression in RMS.
+Claim Category
+Categorical
+Business or medical category of the claim, e.g., Disease Education,
+Efficacy, Safety, Dosing.
+Scientific Area
+String
+Scientific or therapeutic area, e.g., Neuroscience.
+Indication
+String
+Disease or indication linked to the claim, e.g., Multiple Sclerosis.
+Lifecycle State
+Categorical
+Approval or lifecycle status, e.g., Approved, Archived, Draft.
+Source Claim ID
+String
+Optional parent or source claim identifier.
+Reference IDs
+List[String]
+Linked reference identifiers supporting the claim.
+Reference Texts
+List[Text]
+Extracted reference snippets linked to the claim.
+Content Type
+Categorical
+Material or asset type, e.g., Slide Deck, Email, Website.
+Target Audience
+Categorical
+Intended audience, e.g., Patient, HCP, Nurse.
+AI Guardrails Hallucina-
+tion Prevention
+JSON/List
+Claim-specific rules derived from match text, reference text, audi-
+ence, material type, and claim category. Used to prevent unsupported
+modification or hallucination.
+Claim Specific Business
+Rule
+JSON
+Marketing vector store metadata, including tone signals and primary
+message type.
+Prohibited Words Nega-
+tive Constraints
+JSON
+Important anchor phrases, prohibited transformations, and phrases
+to avoid or not overstate.
+6C Score
+Float
+Quality score from 0.0 to 1.0 based on Clarity, Completeness, Consis-
+tency, Connectivity, Compliance, and Context.
+Figure 3: Failure modes in legacy Veeva claim data. We
+observe two primary problem areas: ambiguous provenance,
+where the source of a claim is not always uniquely grounded,
+and heterogeneous data quality issues, including contradictory,
+duplicate, malformed, and low-value claims. These failure
+modes introduce retrieval ambiguity and reduce the effective-
+ness of downstream claim personalization.
+across multi-dimensions: 1. Compliance Rate &
+Claim Utilization: The percentage of outputs that
+correctly use approved claims, the proportion of rel-
+evant claims used, and content-type alignment with
+intended format. 2. Personalization Accuracy &
+6C Score: Alignment with target audience and the
+average quality of selected claims measured by 6C
+scoring (A.2). 3. Deployment API Cost & La-
+tency: Request-level scalability metrics, including
+success rate, average latency, P50 latency, request
+tokens per week, total cost, and tokens per request.
+5
+Main Results
+Our results show that context-based generation out-
+performs rule-based pipeline, Fig. 7 Pre-pipeline
+legacy rule diagram.
+Compliance & Personalization: Context-based
+generation achieves near-perfect compliance across
+all segments, compared to lower compliance in rule-
+based setups. In the existing Pre-setup "rule-based
+pipeline" only 71% of the claims are aligned with
+the intended indication, only 38% of the claims
+are aligned with the intended content type, only
+33% of the claims are aligned with the intended
+target audience. However, as shown Table 3, post
+context pipeline 100% claims are matching with
+intended indication, intended content type and in-
+tended target audience. Furthermore, examining
+Table 6 shows that this improvement generalizes
+across product level, specifically for Vabysmo and
+Ocrevus, as well as across role types, including
+HCPs, nurses, and patients’ physicians.
+We distinguish two classes of metric in this eval-
+uation. Structurally guaranteed metrics — indica-
+tion, content-type, and target-audience alignment,
+and "approved claims used" — are enforced by
+
+
+Table 2: Overview of claims, references, materials, and MTV (Match Text Variation, i.e. variant claims) availability and
+utilization across products. A total of 1,867 claims are identified across (Hemlibra, Ocrevus, Ocrevus Zunovo, Vabysmo)
+products for the US market. 72% of claims are utilized in materials, indicating strong adoption in content. But, for Ocrevus
+Zunovo it is only 37%. 98% of claims are Sourced from references, while the remaining 2% do not have any linked reference.
+Product
+#Claims #Refs #Materials %Used %With Ref #MTV #MTV Used %MTV %MTV Used
+Hemlibra
+745
+721
+593
+80%
+97%
+297
+187
+39.87%
+25.10%
+Ocrevus
+357
+355
+215
+60%
+99%
+113
+31
+31.65%
+8.68%
+Ocrevus Zunovo
+122
+122
+45
+37%
+100%
+29
+8
+23.77%
+6.56%
+Vabysmo
+643
+640
+489
+76%
+100%
+358
+102
+55.68%
+15.86%
+Total
+1867
+1838
+1342
+72%
+98%
+797
+328
+42.69%
+17.57%
+the Post pipeline’s retrieval filters by construction:
+Composer only retrieves claims that already match
+the requested indication/content-type/audience, so
+100% alignment on these dimensions reflects the
+filter design.
+We report them because the Pre
+pipeline’s failure to enforce the same constraints
+(33–71%). Learned or judged metrics — MTV uti-
+lization, 6C quality score of selected claims are not
+guaranteed by construction and are the metrics that
+actually test whether structured context improves
+outcomes.
+Alignment with target audience rate improves
+substantially, with context-based pipeline, the con-
+tent generation (Post) achieved 100% compliance
+with approved claims, compared to 71% in previ-
+ously created content.
+Table 3: Performance comparison between rule-based (Pre)
+and context-based (Post) systems. Here, we reports MTV
+utilization within the Pre/Post evaluation sample specifically.
+Metric
+Pre
+Post
+∆
+Approved Claims
+71%
+100%
++29%
+MTV Utilization
+0%
+34%
++34%
+Indication Alignment
+71%
+100%
++29%
+Content-Type Alignment
+38%
+100%
++62%
+Target Audience Alignment
+33%
+100%
++67%
+Claim Utilization: as shown in Table 2 and Ta-
+ble 13, the use of high-quality claims increases,
+particularly for previously underutilized claim
+variants. Raw claim repositories are structurally
+rich but operationally underutilized without con-
+textual modeling, e.g., Ocrevus: 31.65% MTV
+(Variants of Claim) exists but only 8.68% used.
+High claims coverage but low MTV usage with
+avg only 17.68%. Vabysmo leads in MTV coverage
+(55.68%) with relatively higher linkage, Hemlibra
+has the highest absolute MTV usage (187 used in
+materials), Ocrevus & Ocrevus Zunovo show low
+utilization, indicating a higher reliance on direct
+claim text instead of MTVs (Only 6.56 % - 8.68%).
+Overall, MTV availability is 42.69%, while only
+17.68% are utilized in materials, highlighting a sig-
+nificant usage gap. Further shown in Table 3, after
+the context pipeline, the MTV claim utilization
+increased 34%, unlocking previously unused claim
+across all segments (see Table 6: MTV).
+Table 4: Comparison of API cost, latency, and token-usage.
+The context pipeline reduces weekly API cost by 29.5%, low-
+ers total weekly token usage, and substantially decreases
+response-token generation by 65.4%. It also improves re-
+quest success rate from 99.2% to 100%. Although the average
+cost per request increases from 0.0234 dollar to 0.0316 due to
+richer contextual retrieval, the overall weekly cost decreases
+because it improves first-pass usefulness, decreases response-
+token generation, and reduces the number of repeated requests.
+Metric
+Pre: Rule-heavy Pipeline Post: Context Pipeline Change
+Model configuration
+Model provider
+Anthropic
+Anthropic
+–
+Model
+Claude Sonnet 4.5
+Claude Sonnet 4.5
+–
+Request-level scalability
+Total requests per week
+5,485
+2,871
+↓47.7%
+Success rate
+99.2%
+100%
+↑0.8 %
+Average latency
+∼2.8k ms
+∼3.0k ms
+↑7.1%
+Latency (P50)
+2,100 ms
+1,956 ms
+↓6.9%
+Maximum latency
+2,909.07 ms
+3,819.86 ms
+↑31.3%
+Token and cost efficiency
+Total tokens / week
+∼31.4M
+∼26.2M
+↓16.6%
+Request tokens / week
+∼28.42M
+∼25.2M
+↓11.3%
+Response tokens / week
+∼2.92M
+∼1.01M
+↓65.4%
+Total cost / week
+$128.70
+$90.69
+↓29.5%
+Tokens / request
+∼5,714
+9,126
+↑59.7%
+Average cost / request
+∼$0.0234
+∼$0.0316
+↑35.0%
+Quality & 6C:
+As shown in Table 5, the Average
+6C scores are higher in the context-based approach,
+indicating improved clarity, consistency, and con-
+textual relevance. POST dominates PRE in almost
+all segments, especially: VAB DMe Patient: 0.0 →
+0.86, OCR MS Nurse: 0.83 →0.91, VAB-DME-
+Patient: 0 re-used claims to all re-used claims. This
+is clear evidence our golden data model improves
+quality. With the higher-scoring 6C claims are used
+in content generation, we also see the cost reduced,
+as shown in left side Table 4, the deployed context
+pipeline substantially reduces response-token
+generation by 65.4%, suggesting cleaner and
+more controlled outputs. It also improves the re-
+
+
+Table 5: Quality vs. usage comparison before/after the Golden
+Data Model. C number of claims, U number of re-used claims
+Segment
+Stage C U Avg 6C score Min Max
+OCR-MS-Nurse
+Pre
+5 2
+0.83
+0.83 0.83
+Post
+5 5
+0.91
+0.83 1.00
+OCR-MS-Patient
+Pre
+3 3
+0.91
+0.83 1.00
+Post
+6 6
+0.93
+0.83 1.00
+VAB-DME-Patient
+Pre
+2 0
+0.00
+0.00 0.00
+Post
+3 3
+0.86
+0.83 0.89
+VAB-RVO-HCP
+Pre
+5 4
+0.87
+0.83 0.90
+Post
+5 5
+0.87
+0.79 0.90
+VAB-nAMD-
+Physician
+Pre
+5 4
+0.88
+0.85 0.89
+Post
+6 6
+0.91
+0.88 0.95
+Table 6: Segment-level performance comparison. Metrics:
+Used = reused claims, MTV = variation usage, Ind = indica-
+tion, Type = content-type, Aud = audience.
+Input
+Used
+MTV
+Ind
+Type
+Aud
+Pre Post Pre Post Pre Post Pre Post Pre Post
+VAB-RVO-HCP
+80
+100
+0
+20
+20
+100
+40
+100
+60 100
+VAB-nAMD-Physician
+80
+100
+0
+17
+60
+100
+20
+100
+40 100
+VAB-ALL-Patient
+100 100
+0
+43
+100 100 100 100
+50 100
+VAB-DME-Patient
+0
+100
+0
+33
+50
+100
+0
+100
+0
+100
+OCR-MS-Nurse
+40
+100
+0
+40
+100 100
+20
+100
+0
+100
+OCR-MS-Patient
+100 100
+0
+50
+100 100
+33
+100
+33 100
+Total avg. in %
+71
+100
+0
+34
+71
+100
+38
+100
+33 100
+quest success rate from 99.2% to 100%. In practice,
+the total cost is not determined only by the cost of
+a single generation call, but also by user behav-
+ior and re-generation frequency. When generated
+outputs are better aligned with the user’s intent,
+target audience, and content constraints, users
+may need fewer repeated requests to obtain sat-
+isfactory results. Therefore, the cost profile is not
+a simple binary outcome. If the context pipeline
+were used at the same request volume as Pre, the
+total cost would increase by roughly 35%, consis-
+tent with the higher average cost per request. In
+the observed deployment, however, the number of
+requests decreased from 5,485 to 2,871, resulting
+in a lower total weekly cost.
+In addition, with Figure 5 and Appendix Ta-
+ble 11, it is suggested that rule-based constraints
+alone are insufficient for complex generation tasks.
+While they enforce correctness, they fail to cap-
+ture contextual nuances required for personaliza-
+tion. In contrast, structured contextual data enables
+the model to select more relevant claims, adapt to
+audience-specific needs, and maintain compliance
+via data filtering rather than prompt constraints.
+This also highlights the importance of data-centric
+approaches in controlling LLM behavior.
+VAB-RVO-HCP
+VAB-nAMD-Physician
+VAB-ALL-Patient
+VAB-DME-Patient
+OCR-MS-Nurse
+OCR-MS-Patient
+Total
+0
+20
+40
+60
+80
+100
+Improvement Rate (%)
+Claims Used
+MTV Ratio
+Indication
+Content Type
+Target Audience
+Figure 4: Improvement rates from the rule-based baseline to
+the Golden Data Model across customer segments. We report
+gains in claim usage, MTV utilization, indication alignment,
+content-type alignment, and target-audience alignment. The
+most pronounced improvements occur in audience and con-
+tent alignment, suggesting that structured contextual retrieval
+better supports personalized claim generation.
+Table 7: Issue Examples in Veeva Vault claims database.
+Issue
+Example
+Impact
+Contradicting
+Claims
+(CL-US-004230) >2M doses vs
+(CL-US-004673) >3M doses
+Confusion for LLM,
+increases hallucina-
+tion risk
+Duplicate
+Claims
+(CL-US-000855) vs (CL-US-
+004996) same T2 lesion claim
+Over-
+representation,
+suppresses
+diver-
+sity
+Malformed
+Claims
+(CL-US-006258) starts with in-
+complete sentence
+Violates
+brand
+rules,
+reduces
+usability
+Low-quality
+Claims
+(CL-US-007534) “Baseline Char-
+acteristics”
+Adds noise, no se-
+mantic value
+6
+Conclusion
+This work demonstrates that structured context
+moving compliance and personalization signal
+from prompt-level rules into retrieval-time claim
+metadata provides a more scalable and effective
+architecture for content generation in a regulated
+industry than expanding prompt-level rules alone.
+We evaluated across compliance, target-audience,
+indication, content-type alignment, MTV reuse,
+latency, token usage, request success rate, and
+API cost. We also formalized 6C Algorithm for
+evaluating claim quality across Clarity, Complete-
+ness, Consistency, Connectivity, Compliance, and
+Context Availability. Our results show that the
+context-based pipeline improves compliance while
+reducing total weekly cost. Although richer re-
+trieval increases the average cost per request, the
+overall system becomes more efficient - cleaner out-
+puts, and a higher success rate. This work demon-

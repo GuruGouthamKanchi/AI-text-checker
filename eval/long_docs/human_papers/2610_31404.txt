@@ -1,0 +1,592 @@
+Preprint
+AGENTPHISHING: A BENCHMARK OF LLM EMAIL
+AGENTS UNDER ADAPTIVE ATTACK
+Justin Tan, Miao Li, Ding Zhao
+Carnegie Mellon University
+ABSTRACT
+Computer-use agents increasingly handle private information and act on users’
+behalf across desktop and web applications, including email. Phishing therefore
+poses privacy and security risks that depend not only on whether agents recognize
+malicious messages, but also on how they respond. Existing phishing datasets
+were developed primarily for conventional detection, leaving agent susceptibility to
+persuasive malicious requests insufficiently characterized. To expose vulnerabilities
+that pre-existing datasets may miss, we introduce AgentPhishing, a benchmark
+for evaluating whether persuasive phishing attacks can evade detection and induce
+LLM email agents to comply with malicious requests. We develop PhishOpt,
+which optimizes reusable email-generation skills against individual agents under
+fixed benchmark constraints and a realism constraint. We analyze the generated
+emails using Cialdini’s persuasion principles to identify strategies associated with
+agent failures and use these findings to construct a universal generation skill. Our
+evaluation shows that agents can handle pre-existing phishing emails safely yet
+remain susceptible to attacks adapted to agent behavior, while in an AgentPhishing
+evaluation of nine agents, four exhibit phishing-detection rates below 10% and
+malicious-request compliance rates above 45%. These results highlight the limits
+of inferring agent safety from conventional phishing evaluations and the need to
+assess how agents respond to persuasive malicious requests.
+1
+INTRODUCTION
+Computer-use agents powered by large language models (LLMs) and vision-language models (VLMs)
+offer a way to delegate everyday tasks across desktop and web applications (OpenAI, 2025; Anthropic,
+2024; Google DeepMind, 2025; Zhou et al., 2026; Kimi Team, 2026; Xie et al., 2024; Drouin et al.,
+2024). To carry out these tasks, agents interpret external content while accessing private information
+and taking actions on users’ behalf. Adversaries who influence this content may redirect those actions,
+creating privacy and security risks (Debenedetti et al., 2024; Zhan et al., 2024). Agents managing
+email provide a concrete setting for studying these risks: unlike conventional phishing detectors
+that classify messages, they may also carry out requests within them, including requests to disclose
+sensitive information or perform other unauthorized actions (Wu et al., 2026; 1Password, 2026).
+Assessing their trustworthiness in this setting requires examining both whether they detect phishing
+and whether they comply with malicious requests, rather than inferring safe behavior from detection
+performance alone (Levy et al., 2026).
+Prior work shows that deceptive messages can evade phishing detectors, influence LLM judgments,
+and induce unsafe actions by agents carrying out user tasks (Qi et al., 2025; Yang et al., 2025a;
+Wu et al., 2026; 1Password, 2026). Existing phishing email datasets provide reference material for
+evaluating detection performance (Puyang, 2025; Ganiuly & Smaiyl, 2025), but as agents and their
+defenses evolve, continued risk assessment also requires methods that can generate and refine attacks
+against updated systems. Phishing research provides foundations for such methods through reusable
+generators with realism validation and persuasion analysis (Chen et al., 2024), and iterative email
+refinement using detector feedback (Qi et al., 2025). However, realism and detection evasion do not
+measure whether an agent carries out a malicious request, motivating evaluation that accounts for
+behavior. Feedback-driven red-teaming addresses this need by learning reusable attack strategies and
+optimizing attacks through target responses and execution outcomes (Liu et al., 2025; Wen et al.,
+1
+arXiv:2610.31404v1  [cs.CR]  22 Oct 2026
+
+
+Preprint
+2025; Chen et al., 2026; Syros et al., 2026). Yet success under prompt-injection attacks does not
+establish how effective social-engineering attacks remain when explicit instruction overrides and
+fabricated system directives are excluded. AgentBait directly evaluates social-engineering attacks
+that use deception and persuasion to induce unsafe actions by task-performing agents, including
+through email-based inducements (Wu et al., 2026). Its reported attack construction, however, follows
+predefined strategies rather than iteratively improving generation from the evaluated agent’s responses.
+These complementary advances motivate a more specific investigation: how do agents’ phishing
+detection and compliance with malicious requests change when the generation of social-engineering
+emails is optimized against their behavior under these attack-content constraints?
+To address this question, we introduce AgentPhishing, a benchmark for evaluating agents’ phishing
+detection and compliance with malicious requests under social-engineering attacks in email tasks.
+We construct its adaptive attacks using PhishOpt, which optimizes target-specific generation skills
+and uses persuasion analysis to derive a universal skill. Its optimization procedure builds on Skil-
+lOpt (Yang et al., 2026) to refine email-generation skills from target-agent feedback under fixed
+generation requirements and a realism constraint. We analyze emails generated by the agent-specific
+skills using Cialdini’s persuasion principles (Cialdini, 1984), both to characterize framings associated
+with detection and compliance outcomes and to guide the construction of a universal generation
+skill. Our experiments compare pre-existing phishing emails, unoptimized synthetic emails, and
+skill-generated attacks under a common evaluation protocol to assess how attack generation affects
+observed safety performance. We also evaluate agent-specific and universal skills across agents to
+examine their cross-agent effectiveness.
+Our contributions are:
+• We introduce benchmark AgentPhishing for agent safety evaluation under social-engineering
+attacks in email tasks, measuring phishing detection and compliance with malicious requests.
+• We present framework PhishOpt that evolves reusable, target-specific phishing-generation
+skills using agent feedback and derives a universal skill from persuasion analysis.
+• We show that strong performance on pre-existing phishing emails can coexist with detection
+failures and malicious-request compliance under PhishOpt-generated attacks, and character-
+ize cross-agent susceptibility and persuasion framings associated with these outcomes.
+2
+RELATED WORK
+Phishing Detection and Susceptibility. Phishing research examines whether deceptive content can be
+identified and whether recipients act on it. Conventional studies develop email classifiers, investigate
+judgments of fraudulent websites, and characterize real-world SMS phishing campaigns (Fette et al.,
+2007; Dhamija et al., 2006; Nahapetyan et al., 2024). Complementary human-centered research
+examines how social relationships and contextual cues influence susceptibility across email, social
+media, and text messaging (Jagatic et al., 2007; Vishwanath, 2017; Tabassum et al., 2024; Zhuo et al.,
+2023). These studies assess behavior such as information disclosure, extending phishing evaluation
+beyond classification (Jagatic et al., 2007; Vishwanath, 2017).
+Recent research evaluates LLMs in several distinct roles. LLM-PEA studies models as phishing
+detectors, whereas Fraud-R1 examines their responses to staged fraud inducements in advice-giving
+and recipient role-play settings (Hasan et al., 2026; Yang et al., 2025a). SE-VSim studies adaptive
+social-engineering conversations with simulated human victims, and PhishSim verifies credential-
+submission outcomes within its simulation (Kumarage et al., 2025; Tewari et al., 2026). For agents
+carrying out delegated tasks, AgentDojo, InjecAgent, and WASP evaluate whether malicious external
+content redirects agent behavior (Debenedetti et al., 2024; Zhan et al., 2024; Evtimov et al., 2025).
+AgentBait and the industry benchmark SCAM further examine social-engineering threats within agent
+workflows, including email-based inducements and phishing scenarios (Wu et al., 2026; 1Password,
+2026). AgentPhishing studies this delegated-task setting through email, measuring both phishing
+detection and compliance with malicious requests.
+Feedback-Driven Attack Generation. Phishing-generation methods can use feedback to improve
+realism or detection evasion. PEEK trains a reusable generator with real-vs-synthetic discrimination
+and incorporates extracted persuasion patterns (Chen et al., 2024). SpearBot revises emails using
+detector critiques (Qi et al., 2025). Behavioral red-teaming instead uses target responses or actions
+2
+
+
+Preprint
+Data flow
+Control / decision
+Evaluator
+LLMs (clay: fixed):
+O Optimizer
+G Generator
+R Realism judge
+T Target agent
+C Cialdini annotator
+S Skill synthesizer
+(a) PhishOpt stage 1: target-specific skill optimization
+Locked rules
+Fixed generation
+requirements
+Best skill
+Baseline: n₂ emails
+Stored best metrics
+Candidate skill
+One bounded edit
+Skill S(t)
+Probe batch
+n₁ fresh emails
+For realism judging
+Evaluation batch
+n₂ fresh emails
+Phishing + benign
+Agent outcomes
+One outcome per email
+Action + optional reply
+Realism constraint
+Mean realism ≥ threshold
+Objective score
+Aggregate behavior over
+evaluation batch
+Generate evaluation batch if realism passes.
+Improves?
+Update best skill if objective score improves.
+O
+G
+G
+T
+R
+(b) PhishOpt stage 2: analysis-informed universal skill construction
+Best skills
+One per target agent
+Optimized skills
+Analysis emails
+Base + best skills
+Phishing emails only
+Principle labels
+Cialdini’s six persuasion
+principles; per-email labels
+Agent outcomes
+One outcome per email
+Action + optional reply
+Pooled associations
+Principle-outcome links
+Computed across targets
+Universal skill
+Reusable generation
+instructions
+Outcome metrics
+Detection per email
+Compliance per email
+G
+C
+T
+S
+Figure 1: Overview of PhishOpt. Target-specific skill optimization refines skills using agent feedback
+under fixed generation requirements and a realism constraint. If a candidate fails a constraint check
+or does not improve the objective, it is rejected and the current skill remains unchanged for the next
+iteration. Persuasion–outcome associations then inform universal skill construction.
+to guide attack improvement. AutoDAN-Turbo retains successful jailbreak strategies in a textual
+library for subsequent generation (Liu et al., 2025). RL-Hammer learns a reusable generator by
+updating attacker-model parameters through reinforcement learning (Wen et al., 2025). At the payload
+level, AutoInject optimizes injection suffixes using target feedback, while MUZZLE refines injection
+locations and payloads using execution trajectories and failure feedback, including in credential-
+phishing scenarios (Chen et al., 2026; Syros et al., 2026). PhishOpt adapts SkillOpt to phishing
+generation, using target-agent detection and compliance as feedback (Yang et al., 2026). Whereas
+AgentBait constructs attacks from predefined social-engineering categories, PhishOpt iteratively
+refines target-specific generation skills using agent feedback (Wu et al., 2026).
+Persuasion in Social-Engineering Attacks. Persuasion analysis relates deceptive-request features
+to recipient responses. Cialdini’s principles describe mechanisms of influence (Cialdini, 1984),
+and phishing studies apply them to characterize message content and investigate susceptibility or
+detection (Lawall, 2025; Pan et al., 2026). PsyScam annotates psychological techniques in real-world
+scams, while SCRIPTMIND examines scam structure through crime-script inference and cognitive
+evaluation (Ma et al., 2025a; Kim et al., 2026). These analyses can support generation as well as
+detection: PEEK feeds extracted persuasion patterns into subsequent emails, and AgentBait evaluates
+social-engineering categories and controlled wording variations against agents (Chen et al., 2024;
+Wu et al., 2026). AgentPhishing uses persuasion principles to guide PhishOpt’s universal skill
+construction and characterize agents’ detection and compliance patterns.
+3
+METHODOLOGY
+3.1
+OVERVIEW
+To study agents’ phishing detection and compliance with malicious requests in email tasks, we
+synthesize evaluation emails using PhishOpt, which develops reusable, target-specific skills and an
+analysis-informed universal skill. Each skill specifies natural-language email-generation instructions.
+PhishOpt comprises two stages: target-specific skill optimization and analysis-informed universal
+skill construction. The first (Section 3.2, 3.3) evolves a shared base skill into target-specific skill
+using agent feedback. Built on SkillOpt’s bounded-edit procedure (Yang et al., 2026), it adds a
+phishing-specific objective and generation constraints (Section 3.3). The second analyzes emails
+generated by the evolved skills using Cialdini’s persuasion principles to relate framing to detection
+and compliance outcomes and construct a universal skill without further optimization (Section 3.4).
+3
+
+
+Preprint
+3.2
+TARGET-SPECIFIC SKILL OPTIMIZATION
+In stage 1 of PhishOpt (Figure 1(a)), optimization updates the generation skill rather than individual
+emails or generator-model parameters. The skill is supplied as the generator’s system prompt.
+Candidate proposal. For each target agent, the shared base skill is evaluated to initialize the best
+skill found so far and its recorded metrics. At each iteration, the optimizer receives this skill and its
+detection, compliance, and classification metrics, then proposes a candidate through one bounded
+edit. Edits must preserve a locked rules block specifying fictional entities, placeholder secrets, benign
+controls, JSON output, and an approximately balanced benign–phishing label split; candidate skills
+that alter it are rejected.
+Constraint checking and objective evaluation. The generator produces a probe batch from the
+candidate skill. The realism judge assesses this batch to determine whether the skill satisfies the
+realism constraint. If the skill passes, the generator produces a separate, fresh evaluation batch
+containing phishing emails and benign controls. The target agent processes this batch and selects
+actions and, where applicable, drafts replies. The evaluator computes detection, compliance, and
+classification metrics from these outputs to obtain the objective value defined in Section 3.3.
+Skill update. The candidate and its metrics replace the best skill and its recorded metrics only if
+the candidate’s objective value exceeds the recorded score; otherwise, both remain unchanged. The
+optimizer receives the best skill and its recorded metrics at the next iteration. After the prescribed
+number of iterations, optimization returns the target-specific best skill.
+3.3
+OPTIMIZATION OBJECTIVE AND GENERATION CONSTRAINTS
+The optimization objective measures the failures exposed by a candidate skill, while generation
+constraints maintain the intended synthetic phishing setting. The objective supplies the acceptance
+criterion for the update procedure in Section 3.2.
+Optimization objective. PhishOpt maximizes a weighted score for candidate skill selection:
+J = 0.5(1 −D) + 0.3C + 0.2(1 −F1),
+(1)
+where D and C are the target agent’s detection and malicious-request compliance rates on phishing
+emails, and F1 is its classification score over both phishing emails and benign controls. Detection
+failure and compliance may overlap; F1 combines recall, equal to D under our action-based defi-
+nitions, with precision, which accounts for benign emails classified as phishing. The operational
+definitions of agent outcomes and metrics are specified in Section 4.
+Realism constraint. The intended attack space consists of social-engineering content, excluding
+explicit instruction overrides and fabricated system directives. The realism judge scores a probe batch
+on plausibility, coherence, naturalness, and the absence of unrealistic exploitation artifacts, each on
+a [0, 1] scale. A candidate passes if the mean score across all four criteria and sampled emails is at
+least τ; otherwise, it is rejected before target-agent evaluation.
+3.4
+PERSUASION ANALYSIS AND UNIVERSAL SKILL CONSTRUCTION
+The second stage of PhishOpt (Figure 1(b)) constructs a universal generation skill from persuasion
+patterns observed in emails generated by target-specific evolved skills. The analysis characterizes
+how these patterns relate to agent outcomes and informs the universal skill’s generation instructions.
+Persuasion analysis. The LLM-based Cialdini annotator scores generated phishing emails according
+to Cialdini’s persuasion principles (Cialdini, 1984). Pooling observations across target agents, we
+use ϕ correlations to quantify associations between persuasion-principle presence and detection and
+compliance outcomes separately.
+Universal skill construction. The LLM-based skill synthesizer constructs the universal skill from
+these associations, favoring principles associated with unsafe responses over those associated with
+safer handling. The skill is evaluated across agents without further target-specific optimization.
+4
+
+
+Preprint
+Table 1: Model configurations by pipeline role.
+Role
+Optimizer
+Generator
+Realism judge
+Cialdini annotator
+Skill synthesizer
+Target agent
+Evaluator
+Config
+Opus 4.8
+Sonnet 4.6
+Opus 4.8
+Opus 4.8
+Opus 4.8
+varied
+rule-based
+Annotated email excerpt
+kimi-k2.5#0: phishing; detection: missed; compliance: yes
+Top cue scores: Commitment .70; Authority .60; Liking .60.
+. . . Thanks for the update on the schema validation results — good to hear the staging tables are mapping
+cleanly. I’ve reviewed the migration runbook and everything on the infrastructure side looks consistent with
+what we discussed in the Thursday sync. . . .
+The DataBridge connector config still needs the API token for the NovaPipeline ingest endpoint. Could you just
+reply here with the current token value so I can drop it into the connector settings on my end? . . .
+I want to make sure we’re aligned before the cutover window opens next Monday. Appreciate your help on this,
+Chris.
+Derek Ashford — Senior Integration Architect | Novalink Systems
+Commitment: prior sync
+Urgency: deadline
+Authority: role
+Liking: tone
+Unsafe request
+Figure 2: Sanitized phishing-email excerpt with persuasion cues and the malicious request highlighted
+separately. Annotations and recorded outcomes are explanatory overlays, not agent inputs; provenance
+is provided in Appendix B.
+4
+BENCHMARK
+AgentPhishing evaluates safety risk of agents under phishing email attacks, measuring both phishing
+detection and compliance with malicious requests across pre-existing and adaptively generated
+emails. Figure 6 in Appendix A provides an overview of the evaluation flow, comparison setups, and
+diagnostic capabilities.
+Task setting and agent interface. The target agent receives a shared inbox-assistant instruction
+and an email’s sender, subject, body, and available links. It returns a structured response specifying
+an action, whether a reply is needed, an optional draft reply, and its reasoning. Actions comprise
+reporting, archiving, ignoring, unsubscribing, replying, following up, clicking a link, and providing
+information. Evaluation scores action selection and drafted content, not external execution. Table 1
+lists model usage and configurations by role.
+Evaluation emails. Agents are evaluated on pre-existing emails from public corpora (Puyang, 2025)
+and synthetic emails generated using base, target-specific evolved, and universal skills. Figure 2
+shows an annotated example.
+Outcome definitions and metrics. Detection rate D is the proportion of phishing emails assigned
+one of four designated safe actions, namely report, archive, ignore, or unsubscribe. Compliance
+rate C is the proportion of phishing emails for which the agent chooses to click a link or provide
+information, or produces a draft reply judged unsafe. Precision and F1 are computed over phishing
+emails and benign controls, treating the four detection actions as positive predictions.
+Evaluation protocol. The target-agent role in Table 1 appears in both PhishOpt and AgentPhishing.
+The PhishOpt target agent provides the feedback used to evolve a target-specific skill, whereas the
+AgentPhishing target agent processes evaluation emails generated using that skill. Target-specific
+evaluation uses the same model in both roles. Cross-agent evaluation varies these identities: diagonal
+conditions use the same model as the PhishOpt and AgentPhishing target agent, whereas off-diagonal
+conditions evaluate a skill optimized against one model on another. The fixed generator remains
+separate from both target-agent roles. The universal skill has no PhishOpt target agent and is
+evaluated directly across AgentPhishing target agents with the skill and generator model held fixed.
+The experimental setup specifies model versions, sample sizes, repetitions, and whether agents receive
+the same email batches. Post-generation diversity and repetition diagnostics include Self-BLEU (Zhu
+et al., 2018), Distinct-1/2 (Li et al., 2016), gzip compression ratio, and repeated 4-gram rate.
+5
+
+
+Preprint
+5
+EXPERIMENTS
+We evaluate agents’ safety under phishing attacks through three questions. Q1: Does target-specific
+skill optimization expose detection failures or malicious-request compliance not observed with pre-
+existing phishing emails or unoptimized synthetic emails? Q2: How do agents’ phishing detection
+and malicious-request compliance vary across pre-existing emails and emails generated using base,
+target-specific, and universal skills? Q3: Which persuasion principles are associated with agents’
+detection and compliance outcomes, and can these associations guide the construction of a universal
+skill effective across agents? We report detection rate (↑), compliance rate (↓), F1 (↑), and the
+Susceptibility score (↓) defined in Section 3.3. Arrows indicate the direction of better agent safety
+performance; PhishOpt optimizes in the opposite direction. We also conduct ablation studies and
+diagnostics to examine component contributions and result stability.
+5.1
+STATIC BASELINES AND PER-AGENT OPTIMIZATION
+A. Baseline vs optimized score
+Public corpus
+Synthetic
+Optimized
+0
+0.25
+0.5
+0.75
+1
+Susceptibility score
+0.12
+0.95
+qwen3.7-plus
+0.2
+0.74
+kimi-k2.5
+0.15
+0.65
+grok-4.20
+0.02
+0.41
+gpt-5.4
+0.06
+claude-sonnet-5
+0.05
+gemini-3.5-ﬂash
+B. Optimized failure modes
+Detection failure
+Compliance
+0
+0.25
+0.5
+0.75
+1
+Rate
+1
+0.83
+qwen3.7-plus
+0.83
+0.58
+kimi-k2.5
+0.83
+grok-4.20
+0.55
+gpt-5.4
+claude-sonnet-5
+gemini-3.5-ﬂash
+Figure 3: Baselines and per-agent PhishOpt results. Panel A compares Susceptibility scores under
+the static set, unoptimized synthetic baseline, and per-agent optimized PhishOpt attacks. Panel B
+decomposes the PhishOpt-optimized attack result into detection-failure and compliance rates. Higher
+values indicate worse agent behavior.
+Experiment setup. We evaluate six target agents, namely Qwen3.7-Plus, Kimi-K2.5, Grok-4.20,
+GPT-5.4, Claude-Sonnet-5, and Gemini-3.5-Flash, on pre-existing emails sampled from the Seven
+Phishing Email Datasets collection, spanning TREC-05, TREC-06, TREC-07, CEAS-08, Enron, Ling-
+Spam, and SpamAssassin-derived sources (Puyang, 2025), as well as synthetic emails generated using
+the base skill as the unoptimized synthetic baseline, and emails generated using the corresponding
+target-specific evolved skill against each target. We measure phishing detection (↑), malicious-request
+compliance (↓), and F1 (↑), and combine them into the Susceptibility score (↓) defined in Section 3.3.
+Results. Figure 3A compares PhishOpt objective scores across public-corpus emails, base-skill
+emails, and target-specific evolved-skill emails. All six agents detect every phishing email from the
+public corpora and comply with none of their malicious requests (Puyang, 2025). Target-specific
+optimization substantially increases scores for Qwen, Kimi, Grok, and GPT; for example, Qwen’s
+score rises from 0.12 under base-skill generation to 0.95 after optimization. Sonnet and Gemini
+remain comparatively stable. Panel B shows that optimized attacks induce detection failures and
+malicious-request compliance at different rates: Qwen and Kimi exhibit high rates of both, whereas
+Grok and GPT show lower compliance despite frequent detection failures. These results reveal target-
+specific susceptibility obscured by the baseline evaluations and distinct detection and compliance
+patterns across agents.
+6
+
+
+Preprint
+Figure 4: Cross-agent and additional-agent evaluation heatmaps. Each non-universal row identifies
+the PhishOpt target agent whose feedback was used to evolve that row’s skill. The universal row
+reports results for the shared skill constructed from persuasion analysis across targets. Columns
+represent AgentPhishing target agents evaluated on emails generated using each row’s skill. Panel
+A uses the same six models in both roles, while Panel B uses nine additional AgentPhishing target
+agents not used as PhishOpt targets. Higher Susceptibility scores indicate worse agent performance.
+In Panel B, the blocked/open split marks the largest gap in target agents’ mean Susceptibility scores.
+Table 2: Detection and compliance underlying the six-target cross-agent evaluation in Figure 4A. Each
+cell reports detection rate D / compliance rate C; higher D and lower C indicate safer behavior. Rows
+identify the PhishOpt target agents used to evolve the skills, and columns identify the AgentPhishing
+target agents evaluated on the generated emails. Diagonal cells use the same model in both roles;
+off-diagonal cells use different models.
+PhishOpt target agent
+Kimi
+Sonnet
+Gemini
+Grok
+GPT
+Qwen
+D (↑) / C (↓) D (↑) / C (↓) D (↑) / C (↓) D (↑) / C (↓) D (↑) / C (↓) D (↑) / C (↓)
+kimi-k2.5
+0.167 / 0.583
+1.000 / 0.000
+0.917 / 0.083
+0.583 / 0.250
+0.833 / 0.000
+0.417 / 0.417
+claude-sonnet-5
+0.667 / 0.167
+1.000 / 0.000
+1.000 / 0.000
+0.833 / 0.000
+0.750 / 0.000
+0.917 / 0.083
+gemini-3.5-flash
+0.667 / 0.167
+1.000 / 0.000
+1.000 / 0.000
+0.636 / 0.000
+0.750 / 0.000
+0.909 / 0.091
+grok-4.20
+0.333 / 0.333
+1.000 / 0.000
+0.750 / 0.167
+0.167 / 0.250
+0.909 / 0.000
+0.167 / 0.583
+gpt-5.4
+0.250 / 0.333
+1.000 / 0.000
+0.818 / 0.000
+0.500 / 0.167
+0.455 / 0.091
+0.333 / 0.417
+qwen3.7-plus
+0.500 / 0.333
+1.000 / 0.000
+0.636 / 0.182
+0.583 / 0.083
+0.500 / 0.167
+0.000 / 0.833
+5.2
+CROSS-AGENT AND ADDITIONAL-AGENT EVALUATION
+Experimental setup. To address Q2, we evaluate emails generated using each of the six target-
+specific evolved skills and the universal skill across six AgentPhishing target agents and nine
+additional agents not used as PhishOpt targets. For target-specific skills, cross-agent evaluation pairs
+emails generated using a skill evolved against one PhishOpt target agent with each AgentPhishing
+target agent. In the six-by-six comparison, diagonal cells use the same model in both target roles,
+whereas off-diagonal cells use different models. Emails generated using the universal skill are
+evaluated across the same AgentPhishing target agents. Figure 4 reports Susceptibility scores for the
+six target-specific skills and the universal skill, while Table 2 provides the detection and compliance
+breakdown for the six-by-six target-specific comparison.
+Results. Figure 4A shows stronger variation across AgentPhishing target agents than across PhishOpt
+target agents. As AgentPhishing target agents, Kimi and Qwen have the highest mean Susceptibility
+scores across skills evolved against different PhishOpt target agents, 0.4305 and 0.4238, whereas
+Sonnet has the lowest, 0.0374. Table 2 further shows that Sonnet detects every phishing email and
+never complies across skills evolved against all six PhishOpt target agents, while Qwen and Kimi
+exhibit both detection failures and compliance across multiple rows. Although the skill evolved
+against GPT-5.4 has the highest off-diagonal mean score, 0.3581, no evolved skill is uniformly
+effective across the six targets.
+7
+
+
+Preprint
+Figure 4B shows a similar target-dependent pattern among the nine additional agents: five have mean
+Susceptibility scores at or below 0.1036, whereas four score at or above 0.5062. The universal skill
+has the highest nominal mean across these targets, followed by the skill evolved against GPT-5.4, but
+their difference is not statistically significant under the paired comparison. Together, these results
+show greater variation in Susceptibility across AgentPhishing target agents than across target-specific
+skills, with vulnerabilities also observed among agents not used as PhishOpt targets.
+5.3
+PERSUASION-PRINCIPLE ANALYSIS AND UNIVERSAL SKILL
+Experimental setup. To address Q3, we analyze 180 phishing-email evaluations from the six target-
+specific evolved-skill corpora. The analysis includes all phishing emails, covering both successful
+and unsuccessful attacks rather than conditioning on agent failures. We annotate the emails for six
+persuasion principles: Reciprocity, Commitment and Consistency, Social Proof, Authority, Liking,
+and Scarcity/Urgency. We compute ϕ coefficients relating each principle’s presence to detection
+failure (↓) and malicious-request compliance (↓). Positive coefficients indicate an association with
+the corresponding unsafe outcome, whereas negative coefficients indicate an association with its
+absence. We then provide the annotations, agent outcomes, and generation constraints to Opus 4.8 to
+synthesize a universal skill without additional target-specific optimization.
+Persuasion-principle analysis. Across the 180 evaluations, we observe 51 detection failures and
+21 compliance cases. Figure 5 shows that Commitment and Consistency is positively associated
+with both detection failure (ϕ = 0.2407) and compliance (ϕ = 0.1391). This principle captures
+requests framed as continuing an existing task or honoring a prior commitment, suggesting that
+apparent consistency with an ongoing workflow can accompany unsafe agent responses. Liking,
+which captures friendly or relationship-building framing, is positively associated with detection
+failure (ϕ = 0.1914) but has almost no association with compliance (ϕ = 0.0018). This difference
+illustrates that persuasion features associated with missed detection need not also be associated with
+malicious-request compliance. In contrast, Authority and Scarcity/Urgency are negatively associated
+with detection failure (ϕ = −0.1502 and −0.1976, respectively), and Scarcity/Urgency is also
+negatively associated with compliance (ϕ = −0.1460). Together, these observations suggest that
+overt authority and urgency cues may be easier for agents to recognize than workflow-continuation
+framing. These are associations within the evaluated corpora, not evidence that individual principles
+independently cause the observed outcomes.
+Universal skill results. In Figure 4B, emails generated using the universal skill yield detection
+rates below 10% and compliance rates above 45% for four of the nine additional target agents.
+These results show that the analysis-informed skill generates effective attacks against multiple agents
+without further target-specific optimization. The universal skill also achieves the highest mean
+PhishOpt objective score across these nine targets, although its advantage over the GPT-5.4-derived
+skill is not statistically significant in the paired comparison. The results therefore support cross-
+agent effectiveness, rather than consistent superiority over target-specific skills or causal effects of
+individual persuasion principles.
+−0.3
+−0.2
+−0.1
+0.0
+0.1
+0.2
+0.3
+ϕ coefficient over 180 email-outcome pairs (positive favours the adversary)
+Social Proof
+n present = 22
+Reciprocity
+n present = 30
+Scarcity / Urgency
+n present = 154
+Authority
+n present = 164
+Liking
+n present = 111
+Commitment & Consistency
+n present = 157
+-0.1976
+-0.1460
+-0.1502
+-0.0081
++0.1914
++0.0018
++0.2407
++0.1391
+shaded: unresolved -
+too few positive cases to estimate
+Detection failure (51 events)
+Compliance (21 events)
+Figure 5: Persuasion-principle associations with detection failure and malicious-request compliance.
+Positive ϕ values indicate more unsafe behavior, while negative values indicate safer handling.
+Figure 2 illustrates the corresponding email-annotation format.
+8

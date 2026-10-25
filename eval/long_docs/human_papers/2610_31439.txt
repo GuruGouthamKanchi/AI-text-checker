@@ -1,0 +1,367 @@
+MULTI-TOKEN PREDICTION AND ALTERNATIVE
+TOKENIZATION IMPROVE LEARNING LATENT
+MULTI-HOP GRAPH SEARCH AT SCALE
+Arvid Frydenlund
+University of Toronto, Vector Institute,
+Manulife Applied AI Research,
+arvie@cs.toronto.edu
+FuTe Wong
+University of Toronto, Vector Institute,
+fute@cs.toronto.edu
+Katherine Lambert
+University of Toronto,
+katherine.lambert@mail.utoronto.ca
+Frank Rudzicz
+Dalhousie University, Vector Institute,
+frank@dal.ca
+ABSTRACT
+Given an unseen graph, a start node, s, and an end node, t, can a language model
+generate the shortest path from s to t? Prior work has found that models fail
+to learn this task as the graphs scale. We show that this failure has two causes:
+the supervision signal and the tokenization. First, we theoretically establish and
+empirically demonstrate the effectiveness of multi-token prediction (MTP), and
+show that the benefits of MTP are topologically agnostic. Second, we introduce
+alternative tokenizations and show that the two causes are orthogonal. Using these
+methods, we break through the scaling wall observed by prior work, consistently
+and stably learning to solve the task at scales far beyond previous limits.
+1
+INTRODUCTION
+Can a language model learn to search? A direct way to answer this is to test whether the model can
+recover a shortest path in an unseen graph from a symbolic description alone. Here, success would
+not measure world knowledge or memorization, but whether the model can carry out a multihop
+computation over structure it has not seen before. Our purpose is not to benchmark models but to
+understand why the task is hard to learn despite being within the capacity of small transformers. Prior
+work has studied learnable search in controlled settings as a model for general planning and multihop
+reasoning (Bachmann & Nagarajan, 2024; Saparov et al., 2025; Cohen et al., 2025), outlined below.
+A multihop reasoning task is a tuple (W, q, a) where W is a world model (a set of facts, axioms,
+etc.), q is a query, and a is a target answer. The task is solved by a sequence of k ≥1 inferential
+steps that connect q to a, each licensed by some relation or rule derivable from W. Importantly, W
+induces a latent reasoning graph, G = (N, E), where nodes are reasoning states and edges are viable
+inference steps. The task solution is a path π = qu1 . . . uk−1a. When k > 1, a cannot be directly
+inferred from q in a single step, but must be found by discovering a path π in G which connects q to a.
+This is graph search; the difficulty of which is characterized by the topology of G, with the branching
+factor and the path length k determining the size of the search space. As the reasoning graph is latent,
+its topology is unknown, and we can not make topological assumptions. Crucially, search as a process
+requires no prior knowledge of G’s topology: it discovers π by traversal alone. This makes graph
+search a natural theoretical model for multihop reasoning as it captures the essential structural and
+compositional difficulty without presupposing topological properties (unstated in prior work;
+C).
+Studying multihop reasoning using natural language data with LLMs introduces confounds that
+obscure whether a model is genuinely traversing a reasoning graph, as it may produce the ‘answer’
+via memorized semantic shortcuts rather than structural inference; shortcuts which come from co-
+occurrences in the inaccessible training data (Ju et al., 2024; Balesni et al., 2024; Yang et al., 2025b).
+1
+arXiv:2610.31439v1  [cs.LG]  22 Oct 2026
+
+
+Indeed, LLMs often ignore relational structure necessary for multihop reasoning in favour of semantic
+shortcuts, even when it is explicitly given (Huang et al., 2024; Xu et al., 2025; Guan et al., 2025).
+These confounds motivate the use of a highly controlled environment to study multihop reasoning via
+graph search, which we inherit (Bachmann & Nagarajan, 2024; Saparov et al., 2025, §1.1). Graph
+search in this environment is not easy for an LM to learn. Bachmann & Nagarajan (2024) found
+the existence of a structural shortcut that can prevent learning the task on a specific graph topology
+with next-token prediction (NTP), which can be ameliorated via certain training conditions (§1.2).
+However, even with better training conditions, prior work has found the models fail to learn this task
+as graphs scale in size and path length, hitting a scaling wall at ≈50 nodes, where learning becomes
+increasingly unstable (Frydenlund, 2025; Saparov et al., 2025, especially their Fig. 6).
+We investigate and break through this scaling wall. As prior work has identified an issue with
+NTP, and suggested MTP as a potential solution, we begin by considering if NTP is the cause of poor
+scaling. To do this, we extend the results of Bachmann & Nagarajan (2024) to general topologies (§2),
+and then elucidate how MTP overcomes the issues of NTP in a (nearly) topological-agnostic manner,
+and the various benefits this has for learnability (§2.1). We then hypothesize two other suspects: the
+causal constraint and lack of permutation-invariance. These motivate the development of alternative
+tokenization methods (§3 and 4). Together, these methods allow us to stably learn the task at scale.
+Prior work has eliminated obvious alternative suspects: model size and scratchpads (Saparov et al.,
+2025). Larger models do not improve training as the graph scales. This aligns with our strong
+empirical results with small models (implying larger models are unnecessary), and theoretical results
+that transformers with O(log k) layers can express the task (Sanford et al., 2024b;a; Frydenlund, 2024;
+Merrill & Sabharwal, 2025).1 Test-time compute via scratchpads/CoT is not a viable solution. We
+show that a BFS scratchpad, while learnable, introduces its own tokenization difficulties. Critically, it
+also reduces the latent reasoning graph to a linear chain, breaking the theoretical model (
+L.4).
+1.1
+THE SHORTEST-PATH TASK
+Let G = (N, E) be an unweighted graph, directed or not, with |N| nodes and |E| edges. Let s, t ∈N
+be the start and end nodes of the shortest path, π = u0u1 . . . uk of length k + 1 nodes. Then, given
+some tokenization of G and a query, Q = ‘( s t )’ s.t. s = u0, t = uk, the task is to generate the
+shortest path from s to t, node-by-node; thus modelling p(πb | sb, tb, Gb) for the bth sample (Gb, πb).
+Each graph is tokenized as a list of edges, E = [ ‘ui uj |’ : ∀(ui, uj) ∈E ] where ‘|’ is the end-
+of-edge marker. The list is shuffled before concatenation to avoid providing structural information
+(Bachmann & Nagarajan, 2024), e.g. ordered by BFS from s (Ge et al., 2025). The source-side
+prefix is the concatenation [Q, E] (Frydenlund, 2024). The target-side is π tokenized with start- and
+end-of-task tokens. As the source-side must be supplied, we restrict prediction to the target-side
+(
+O). Thus, the task must be learned from the supervision provided by the single path, π.
+The graphs are synthetically generated; nodes are sampled from a global node vocabulary, Nb ⊆V,
+and the edges are sampled via some topology-specific process. Nodes are represented by their one-hot
+IDs and are thus semanticless in that there is no relationship between nodes, i.e. ‘atomic facts’. This
+prevents homophily shortcuts (Huang et al., 2024; McPherson et al., 2001; Xu et al., 2025; Guan et al.,
+2025). Thus, the model must learn to solve the task via the structural information provided by
+the prefix alone. We generate unique instances during training (Saparov et al., 2025; Frydenlund,
+2025). This is critical to avoid spurious correlations (Frydenlund, 2024; Wang et al., 2023).
+This is an implicit latent multihop reasoning task, excluding inference-time procedures such as beam
+search or explicit intermediate token generations via scratchpads or CoT (Pan et al., 2026; Li et al.,
+2025; Nye et al., 2022; Wei et al., 2022,
+L.4). As we train on many different graphs and evaluate
+on unseen graphs, this is the in-context setting of the task (Noroozizadeh et al., 2026,
+C.4). This
+contrasts with the in-weights setting, which trains on a single graph and evaluates on unseen paths.
+Altogether, this setting allows us to isolate the defining challenge of multihop reasoning: the
+ability to compose and chain individual inference steps into a coherent solution path (
+C).
+1This fact immediately rules out the possibility of true path-length generalization OOD performance under a
+statically sized transformer. As prior work has found the task unlearnable at scale in-domain, we focus on
+solving the problem in-domain, as that is a prerequisite to OOD performance. See limitations in
+B.
+2
+
+
+1.2
+THE SEQUENTIAL SUPERVISION PROBLEM WITH NEXT-TOKEN PREDICTION
+Figure 1: A path from 14 to 8, s.t. 14, 61, 33, and 47 are choice nodes. The CHC absorbs supervision
+from non-choice nodes (zigzag red) under NTP. Whereas MTP induces a dense quadratic latent
+multihop supervision supergraph (dashed rainbow). The rainbow displays the hop-length mixture.
+This supergraph is agnostic to the underlying topology (See Fig. 10 in
+E for the full example).
+Given a single training instance, (G, π), where |π| = k+1, NTP results in learning a joint distribution
+of p(π | s, t, E) = p(s | s, t) p(u1 | s, t) . . . p(ui | π<ui, t) . . . p(t | π<t, t) with k + 1 terms. The
+model learns positional shortcuts to trivially predict the first and last terms since s and t start and end
+π (Frydenlund, 2025). This leaves k −1 intra-sample terms, giving a sequential sample efficiency
+(SSE) of k −1 input-target supervision pairs or loss terms. However, another topology-induced
+shortcut exists that can also absorb the supervision provided by these terms, further reducing the SSE.
+Bachmann & Nagarajan (2024) introduced the adversarially designed path-star task to undermine
+the SSE under NTP with star-shaped graphs (Fig. 8). Each graph has a centre node, s, with d arms
+of length k. The query is (s, t), where t ends an arm, making π the arm containing t. Let d(ui) be
+the degree of node ui. Then d(s) = d and all other nodes have degree 2 or 1. This topology creates
+an unsympathetic interaction with NTP due to teacher-forcing, which conditions each prediction
+on the prior ground-truth sequence (Williams & Zipser, 1989). Consider p(ui | π<ui, t, E) when
+1 < i ≤k −1. By conditioning on the subpath, π<ui, the model can trivially predict that ui follows
+ui−1 via the single edge (ui−1, ui) ∈E as d(ui−1) = 2. Such a prediction does not support learning
+multihop reasoning and, this shortcut, called the Clever Hans Cheat (CHC), will absorb all terms
+except p(u1 | s, t), reducing the SSE from k −1 to 1 supervision pair on path-star graphs under NTP.
+This leads to very unfavourable learning conditions, where LMs using NTP fail to learn the task on
+graphs with only 9 nodes (d = 2 and k = 4). Bachmann & Nagarajan (2024) showed that a type of
+multi-token prediction (MTP) can ameliorate this complete failure, seemingly by restoring the SSE.
+However, the CHC not only reduces the amount of supervision, but also the type. Consider the
+remaining term, p(u1 | s, t). This requires k hops to solve, as the model needs to reconstruct the
+subpath, π(u1, t) = u1 . . . t, to predict u1 (done backwards). Now consider the terms the CHC
+absorbed. Each term requires reconstruction of a subpath, each one hop shorter than the last, e.g.
+p(u2 | su1, t) requires |π(u2, t)| = k −1, etc. Thus, if not for the CHC, these terms would have
+provided a mixture of supervision at k′ = 2, . . . , k −1 hops, as each term is a decomposed subtask,
+inducing a curriculum-like range of difficulties (Bengio et al., 2009). As the original path-star task
+was trained on graphs of the same size, the model is only provided supervision at exactly k hops.
+The complete failure to learn on path-star graphs can be ameliorated by training on a mixture of hop
+lengths, i.e. mixed multihop training (MMHT;
+A.1). Frydenlund (2025) showed that this can
+be achieved in multiple ways: by sampling graphs of k′ ≤k or sampling an arm-interior node to be
+the target, t′. These methods explicitly mix values of k′ ≤k at the population level or inner-sample.
+This can also be achieved implicitly intra-sample via MTP, which is equivalent to token masking and
+discrete diffusion (
+D.7), or by training on different topologies (§2). Thus, both the density and
+the type of supervision matter. The importance of MMHT for efficient multihop learning has been
+established for other tasks (Sanford et al., 2024b; Wang et al., 2025; Yao et al., 2025).2
+Frydenlund (2025) considered MTP as it induces MMHT; while insufficient alone to break the scaling
+wall, this motivates a analysis of when the CHC induces topological shortcuts and prevents MMHT
+2Sanford et al. (2024b) introduced a simple in-context trace-back task called Khops. They used an inner-
+sample mixture of k but did not experimentally validate its importance. We perform such an experiment in
+L.1.3, which shows that the training requires an exponential number of steps as k grows without MMHT.
+3
+
+
+under NTP (§2).3 We then show MTP overcomes this by simultaneously increasing supervision
+density and inducing implicit MMHT, with both benefits nearly topology-independent (§2.1).
+We then hypothesize two further suspects for the scaling wall: the causal constraint of causal LMs
+and permutation sensitivity. These motivate the development of alternative tokenization schemes
+which prove highly effective, breaking the scaling wall (§3 and §4). However, we find evidence that
+their success is not fully explained by their motivating hypotheses (§6).
+2
+CHARACTERIZING SAMPLE EFFICIENCY WITH GENERAL TOPOLOGIES
+We now formalize when and how sequential supervision supports learning beyond star-graphs to
+general topologies by characterizing the SSE under NTP. We will then extend this to MTP in §2.1.
+Let A be the adjacency matrix of G s.t. A(u, v) = 1 if (u, v) ∈E, else 0. We say a node, ui−1 at
+step i −1, is a choice node for a path, π, if there is more than one possible continuation from ui−1,
+given the subpath π≤ui−1 = π(s, ui−1). We define c(ui−1, π≤ui−1) as the choice set of node ui−1,
+containing the unseen neighbours of ui−1 which may continue the prior path s.t. c(ui−1, π≤ui−1) =
+{v ∈N : v /∈π≤ui−1 and A(ui−1, v) = 1}. The choice degree is |c(ui−1, π≤ui−1)| = d(ui−1) −
+P
+v∈π≤ui−1 A(ui−1, v), thus |c(s, {s})| = d(s) and |c(ui−1, π≤ui−1)| < d(ui−1), otherwise. A
+node is a choice node when |c(ui−1, π≤ui−1)| > 1, since if |c(ui−1, π≤ui−1)| = 1, there is only a
+single node that can continue the path and the CHC is sufficient for predicting it via the only viable
+edge (ui−1, v ∈c(ui−1, π≤ui−1)). Only choice nodes support learning under NTP, as they
+require the model to perform a latent multihop traversal of the graph to predict the succeeding
+node from the choice set. The CHC absorbs all other nodes. Thus, the SSE for general topologies
+depends on both G and π and is just the number of choice nodes in π, c(π).
+For undirected graphs, any interior node ui−1 with d(ui−1) ≥3 is a choice node. Proof: ui−1 is
+adjacent to only one observed node (ui−2), as an edge to any earlier uj (j < i −2) would yield a
+shorter path to ui−1, contradicting it being a shortest path; thus |c(ui−1, π≤ui−1)| = d(ui−1)−1 ≥2.
+Multiple choice nodes induce a subtask decomposition, implicitly providing MMHT. Proof sketch:
+assume s and u′ = ui−1 are choice nodes in π = s . . . ui−1 . . . t. Then multiple nodes could follow
+u′. To determine which node in the choice set is correct, the model needs to reconstruct the subpath
+π(ui−1, t), which requires k′ = k −i + 1 < k hops. Hence, the subtask is simpler, with the position
+of the choice nodes controlling the sub-sample difficulty in terms of hop size. As a consequence, SSE
+and hop difficulty under NTP depend on both the graph topology and the sampled path. We could
+maximize SSE and the mixture distribution by training on a topology that branches at each step in the
+path, i.e. d-ary trees. This is not a scalable strategy when considering larger – more difficult – k, as it
+requires graphs of size |N| = dk. However, MTP strongly reduces this dependency on topology.
+2.1
+THE SEQUENTIAL SAMPLE EFFICIENCY OF MULTI-TOKEN PREDICTION
+MTP generalizes NTP to predict up to n future tokens from a given position. Consider conditioning
+on the prior-path, π≤ui−1, i.e. up to position i −1. Predicting one step into the future, j = i,
+recovers NTP. Predicting two steps, j = i + 1, results in a skip in the conditioning information
+since the prior node is unobserved, i.e. implicitly masked out. Let D be the distance matrix of G,
+s.t. D(u, v) is the distance between u and v. We extend the definition of a choice set to MTP as
+c(uj−1, π≤ui−1) = {v ∈N : v /∈π≤ui−1 and D(ui−1, v) = j −i + 1} for uj, when conditioning
+on π≤ui−1. Thus, the choice set for node uj contains all unseen nodes j −i + 1 hops from ui−1.
+Under NTP, when j = i, non-choice nodes with |c(ui−1, π≤ui−1)| = 1 do not contribute to
+supervision as they do not require multihop reasoning to predict the following node. This is not true
+under MTP when j −i > 0, which introduces a skip of length j −i. This is because uj is j −i + 1
+edges from ui−1, so any prediction must traverse j −i + 1 edges and no single edge lookup suffices.
+This multihop mechanism is different than when |c(ui−1, π≤ui−1)| > 1. For either NTP or MTP,
+when we have a choice node, multihop reasoning must be used to predict the following token from
+3This is significant for a secondary reason; Bachmann & Nagarajan (2024) proved the existence of an
+adversarial topology for learning under NTP, and speculated that it will affect a broader set of tasks. This has
+had a large impact, with many follow-ups proposing novel methods designed to overcome this problem (
+D.4).
+4
+
+
+the choice set. However, for NTP, construction of the choice set is trivial, whereas it is not for MTP
+with a j −i > 0 skip. Thus, MTP forces the model to perform an additional multihop computation,
+thereby increasing the SSE despite using the same sampled π with the same c(π).
+To calculate the increase in SSE, we consider Ranking-into-the-Future (RITF) for our MTP method
+(Frydenlund, 2025). RITF allows for a dynamic future window n s.t. n = k maximally, which, as
+we will see, makes it optimal for this task.4 It requires no model modification (allowing for a fair
+comparison with NTP), except for an optional additional prediction head. Unlike Frydenlund (2025),
+who implemented RITF with a pairwise loss, we use the Plackett-Luce loss, which is probabilistic
+and is an ordered multi-label generalization of softmax-CE (Luce et al., 1959; Plackett, 1975; Xia
+et al., 2008; Frydenlund et al., 2022). This defines the preference probability
+p(ui ≻· · · ≻uk) =
+k
+Y
+j=i
+p(uj | π<ui, s, t, E) =
+k
+Y
+j=i
+σ
+ ui
+j; Zj
+
+,
+(1)
+where ≻denotes preference order, ui
+j is the logit for node uj produced from the hidden state hi, and
+σ(· ; Zj) is softmax over the candidate set Zj = N \ {uℓ: i ≤ℓ< j}. Each succeeding softmax
+removes previously ranked nodes from Zj, so the first step is standard softmax-CE (
+D.6 and
+H).
+We define NTP with positional shortcuts removed (Eq. 2); MTP uses a superset of k(k+1)/2−1 terms
+(Eq. 3). Correcting for the k−1−c(π) terms the CHC absorbs gives an SSE of k(k+1)/2−(k−c(π)).
+This residual topological dependency is linear, thus dominated by the quadratic MTP terms as k
+grows, making MTP nearly topology-independent while NTP remains strongly topology-dependent.
+LNTP = −
+k−1
+X
+i=1
+log p(ui | π<ui, s, t, E). (2)
+LMTP = −
+k−1
+X
+i=1
+k
+X
+j=i
+log p(uj | π<ui, s, t, E).
+(3)
+Eq. 3 has an optimal SSE and hop mixture. Proof sketch: There are k(k + 1)/2 non-trivial sub-paths
+in π, and each of these matches a term in the full version of Eq. 3. As no other sub-paths exist to
+support more terms, it must have optimal SSE (same for an optimal hop mixture, proof in
+I).
+As we have shown, multiple choice nodes induce implicit MMHT, but this is topology-dependent
+for NTP. Thus, MTP has multiple advantages over NTP for this task: (1) It has optimal SSE
+with respect to the sampled path, (2) it induces implicit MMHT, and, importantly, (3) these
+advantages are nearly topologically independent. We empirically verify that MTP outperforms
+NTP on shortest path search and other symbolic multihop tasks (§6,
+L.1,
+L.2, and
+L.3).
+We motivated the study of graph search as a theoretical model for multihop reasoning because the
+latent reasoning graph has unknown topology, thus making topological assumptions impermissible
+(§1). Given that our theoretical model was constructed to be agnostic to topology, and our finding
+that the theoretical advantages of MTP share this agnosticism, we conjecture that the advantages of
+MTP uncovered here apply to any multihop reasoning task. This would make MTP a principled
+objective for any multihop reasoning task in general. Evaluating this is non-trivial, as our results rest
+on each target token corresponding to exactly one hop, which is untrue for natural language (
+B).
+A preliminary glance at Fig. 2 shows that MTP improves learnability at scale. However, the results
+remain noisy with high variance across seeds. This motivates investigating two further hypotheses.
+3
+THE CAUSAL CONSTRAINT, SPARSITY, AND FRAGMENTED ROUTING
+Causal LMs derive expressive power from sequential computation, but are restricted to prior tokens
+only (Vaswani et al., 2017). Frydenlund (2024); Saparov et al. (2025) identified that the causal
+constraint hinders information routing. We show this problem is severely compounded with
+fragmented routing due to an interaction between the causal constraint, graph sparsity, and
+tokenization. The model must route information across edges, which can only occur after an edge is
+observed. Since our graphs are sparse and E is shuffled (to prevent structural shortcuts), the edge
+4Whereas static-n methods only support n ≪k hops, with n ≈4 (Gloeckle et al., 2024; Cai et al., 2024).
+5
+
+
+stream forms many disconnected components until most of E is seen.5 As a result, routing is deferred
+until most of E has been processed, exhausting the model’s sequential computation (Fig. 11 in
+F).
+The causal constraint can be bypassed via repeating inputs (Xu et al., 2024; Springer et al., 2025;
+Kuki´c et al., 2026). Thus, if we tokenized the input as [Q, E, E], then the second edge list can
+fully observe the first. However, E provides an inconsistent scaffold, so we consider the node list,
+N, as [Q, E, N] for a consistent means of accumulating edge information. N is sorted by order of
+appearance of each node in the shuffled E, i.e. E is shuffled, but N is ordered relative to E.
+To test the hypothesis that the node list bypasses issues relating to routing, we consider both causal
+LMs and prefix LMs without causal masking on the source-side prefix (Raffel et al., 2020; Saparov
+et al., 2025). Thus, if the only benefit to using the edge list is that it avoids routing issues, then we
+would expect to see performance gains with the causal LM over a baseline, but not the prefix LM. We
+refer to experiments that include the node list as ‘+ N’ compared to the baseline of only [Q, E].
+4
+POSITIONAL EMBEDDINGS AND PERMUTATION SENSITIVITY
+Non-causal models like prefix LMs have been explored both to remove the attention restriction (as
+per above) and for their perceived permutation invariance (Frydenlund, 2024; Saparov et al., 2025).
+Permutation invariance is important; it reduces the space of possible tokenization orderings and
+spurious correlations. Since permutation invariance of E is inherent to the task, this inductive bias is
+well-motivated. However, prior work failed to adequately address this, as a more clandestine issue
+breaks permutation invariance: positional embeddings (Chen et al., 2023b). This is clandestine
+as positional embeddings are ubiquitous in LMs given their necessity for serial tokenization.
+Standard transformers take a T-length sequence of content token IDs x alongside positional IDs ϕ.
+Tokenizing an edge as ‘u v |’ means any node ID recurring at multiple positions is only distinguishable
+through ϕ. Positional embeddings are thus necessary because tokens are not unique, but they break
+the desired permutation invariance, so we make every ‘token’ unique without ϕ.
+Note how the edge-marker creates sequential annotations of the edges. We follow Saparov et al.
+(2025) in concatenating and projecting the content and positional embeddings for the baseline models.
+Thus, the input to the model is really z = [x, ϕ] ∈ZT ×2
++
+. We now do a simple trick, where
+we make each edge a unique super-token by treating it as a structured column input, ˆz ∈ZT ×3
++
+s.t. ˆzˆi = [xi, xi+1, xi+2 = ‘|’], where the edge-marker annotation replaces ϕi. As no positional
+information leaks into the edge tokenization, this supports permutation invariance (Fig. 12 in
+G).
+Thus, we have moved from sequential annotation (SEAN) to structural annotation (STAN). However,
+only edges contain 3 tokens of information. For other tokens, we replicate content tokens as padding.
+For node list tokens, where xi = u, we use ˆzi = [xi, xi, ‘/’], where ‘/’ is the node-marker, making
+N permutation-invariant. We retain sequential positional embeddings for the query and target
+tokens, necessary for output generation. As we were already concatenating content and positional
+embeddings, the primary change is how the input sequence is presented, not the model itself.
+We use ‘STAN’ instead of ‘permutation invariance’ to separate the method from the motivating
+hypothesis, since STAN can apply to causal LMs, which are incapable of permutation invariance.
+STAN has the practical benefit of reducing the sequential tokenization of E to 1/3 the original length.
+5
+METHODOLOGY
+We consider three topologies: Erd˝os-Rényi graphs (ERG), Euclidean graphs (EG), and path-star
+graphs (PSG) (Erd˝os & Rényi, 1959; Penrose, 2003; Bachmann & Nagarajan, 2024). We use NTP
+during inference. We consider the per-token accuracy (ACC) and the per-sequence accuracy (SACC),
+which is correct if all tokens are correct. Both depend on a ground-truth sequence. As the shortest
+path is not unique, the task accuracy is whether a valid shortest path was generated (TACC) (
+N).
+Each experiment is performed with 5 trial seeds and evaluated on b = 10k (Gb, πb) instances.
+Unless stated, we consider small LMs with L = 11 layers and learned positional embeddings. We
+sample k′ ∈{3, . . . , k} and |N|′ ∈{k+1, . . . , N} for various max k and |N| via a true curriculum.
+5Non-sparse graphs only support tiny shortest paths, and thus do not support investigating scalability with k.
+6

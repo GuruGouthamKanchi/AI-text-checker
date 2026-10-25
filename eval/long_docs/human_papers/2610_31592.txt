@@ -1,0 +1,527 @@
+Preprint
+BEYOND BEST-OF-k: PRIOR-CONSISTENT DAPS FOR
+AMBIGUOUS NONLINEAR INVERSE PROBLEMS
+Merve Kocabas1,2,3*
+Benjamin A. Burns4*
+Andreas Geiger1,5,6,7
+Kent Gauen4
+Sara Fridovich-Keil4
+1University of T¨ubingen
+2Zuse School ELIZA
+3Max Planck Institute for Intelligent Systems
+4Georgia Institute of Technology
+5T¨ubingen AI Center
+6ELLIS Institute
+7KE:SAI
+*Equal contribution
+merve.kocabas@student.uni-tuebingen.de
+a.geiger@uni-tuebingen.de
+{bburns46,gauenk,sfk}@gatech.edu
+ABSTRACT
+Diffusion models have become strong priors for solving inverse problems. How-
+ever, nonlinear inverse problems such as phase retrieval remain challenging when
+multiple measurement-consistent solutions are distinguishable only by the prior;
+we call such measurements ambiguous. Existing diffusion-based samplers rely
+on local approximations during reconstruction. For an ambiguous measurement,
+these approximations can allow measurement guidance to favor a measurement-
+consistent mode that is close to a prior-supported mode but is itself not supported
+by the prior. Evaluation often masks this type of failure by reporting the best-of-k
+runs, where the best is selected by comparison to the ground truth. We introduce
+Prior-Consistent DAPS (PC-DAPS), a variant of Decoupled Annealing Posterior
+Sampling (DAPS) designed to address this failure case by maintaining multiple
+candidate solutions within a single sampling run. As annealing noise decreases,
+PC-DAPS prunes and replaces weaker candidates according to their prior consis-
+tency, without any ground-truth access. PC-DAPS reduces the incidence of prior-
+inconsistent samples and improves sample quality on nonlinear inverse problems
+while preserving sample quality and diversity on linear inverse problems.†
+1
+INTRODUCTION
+Reference
+Measurement
+DPS
+DPnP
+DAPS
+PC-DAPS
+Reference
+Measurement
+DPS
+DPnP
+DAPS
+PC-DAPS
+Figure 1: Measurement consistency is not sufficient for reconstruction. A single Fourier mag-
+nitude measurement is shared by rotations, translations, and color-channel inversions of an image.
+Existing solvers may return these prior-inconsistent modes, while PC-DAPS selects reconstructions
+supported by the learned image prior. Each sample was selected randomly, either from four inde-
+pendent runs for other methods or from the four particles generated in a single PC-DAPS run.
+Inverse problems arise across science and engineering whenever an unknown signal must be recov-
+ered from indirect measurements, including image restoration (Bertero et al., 2021), medical imag-
+ing (Song et al., 2022), and astronomical imaging (Event Horizon Telescope Collaboration, 2019).
+Given an observed measurement y generated through a known but potentially noisy measurement
+†Code: https://github.com/voilalab/PC-DAPS; project website: PC-DAPS.
+1
+arXiv:2610.31592v1  [cs.CV]  22 Oct 2026
+
+
+Preprint
+process, the goal of the inverse problem is to recover the original signal x. For underdetermined
+problems, in which many different signals x may give rise to the same measurement y, Bayesian
+imaging defines the posterior distribution as p(x | y) ∝p(y | x)p(x), where the likelihood p(y | x)
+captures measurement consistency of a candidate image x and the prior p(x) captures which candi-
+date reconstructions are plausible natural signals. The goal of posterior sampling is thus to generate
+candidate reconstructions that are simultaneously consistent with the measurement and the prior.
+In Fourier phase retrieval, for example, multiple images can produce identical Fourier magnitude
+measurements (Fienup, 1982). These measurement-equivalent solutions therefore have the same
+likelihood, but can have very different posterior probabilities depending on their consistency with
+the image prior. In particular, we observe that existing phase-retrieval solvers applied to face images
+sometimes return a rotated or color-inverted face that is consistent with the measurement but im-
+plausible under a natural-image prior concentrated on upright faces. The challenge is therefore not
+simply to find measurement-consistent reconstructions, but to sample the measurement-consistent
+solutions supported by the prior.
+Diffusion models provide strong image priors for posterior sampling (Ho et al., 2020; Song et al.,
+2021). At each noise level, a diffusion model implicitly defines a denoiser that maps a noisy sample
+xt to an estimate of the corresponding clean image; this diffusion denoiser can be used to incor-
+porate the prior p(x) during posterior sampling. Diffusion-based inverse solvers apply this prior
+information along a sampling trajectory, i.e., the sequence of intermediate states that evolves from
+a noisy sample toward a reconstruction. Existing methods primarily either tilt the unconditional
+reverse diffusion process using an approximate likelihood gradient (Zhang et al., 2025; Chung et al.,
+2023; Song et al., 2023; Boys et al., 2024) or alternate prior and measurement updates across noise
+levels (Wu et al., 2024; Xu & Chi, 2024; Chen et al., 2026; Ahmed & Makin, 2026). In these
+methods, the prior information available at each noise level is represented through a local denoising
+approximation centered on a single clean-image estimate, rather than explicitly maintaining multiple
+competing prior modes at intermediate timesteps.
+When the measurement is ambiguous, as in the case of phase retrieval and other underdetermined
+inverse problems, following a sampling trajectory can lead to premature mode selection. At high
+noise levels, multiple prior modes may remain plausible, but the trajectory can only move towards
+one of them. Once a trajectory selects a particular prior mode, subsequent refinement primarily
+improves measurement consistency in the local neighborhood of that mode rather than considering
+more distant alternatives. This becomes problematic when (i) the selected prior mode is not con-
+sistent with the measurement, and (ii) its nearest measurement-consistent mode is not supported by
+the prior. Trajectory-based samplers can prematurely commit to this pair of modes, ultimately re-
+sulting in hallucinatory sampled reconstructions that are not supported by the true posterior or even
+the true prior. Best-of-k evaluation partially masks this issue by generating multiple independent
+reconstructions and selecting the one closest to the ground truth (Chung et al., 2023; Zhang et al.,
+2025). However, this selection uses information unavailable at test time and does not ensure that the
+produced samples are prior-consistent. Particle-based approaches maintain multiple candidates at
+intermediate timesteps (Cardoso et al., 2024; Dou & Song, 2024; Wu et al., 2023), but have primar-
+ily focused on linear inverse problems and particle diversity rather than prior-consistent sampling.
+To address this issue, we introduce Prior-Consistent DAPS (PC-DAPS), which moves sample selec-
+tion inside the sampler and removes the need for ground-truth-based best-of-k evaluation. PC-DAPS
+maintains a bag of K particles annealed under the same measurement, and models the denoiser pos-
+terior p(x0 | xt) with a K-component Gaussian mixture rather than a unimodal estimate. Early in
+sampling, multiple candidates are kept while the noise level is high and the prior is still weakly in-
+formative. As the noise decreases during annealing, particles with low prior consistency are pruned
+and replaced by surviving candidates that are more prior-consistent. PC-DAPS thus delays mode
+selection until the prior becomes more informative, performing within a single sampling run (and
+without ground-truth access) what best-of-k does only after k independent sampling runs.
+We evaluate PC-DAPS on FFHQ (Karras et al., 2019) and ImageNet (Deng et al., 2009) across three
+nonlinear and seven linear tasks, including the eight tasks reported in DAPS (Zhang et al., 2025) as
+well as high-pass filtering (Thaker et al., 2025) and 16× super-resolution. We report PSNR, SSIM
+(Wang et al., 2004), and LPIPS (Zhang et al., 2018) under both single-sample and best-of-k eval-
+uation. We additionally compare the rate of prior-inconsistent hallucinations against independent
+DAPS runs. PC-DAPS reduces the incidence of prior-inconsistent samples and improves perfor-
+2
+
+
+Preprint
+mance on ambiguous nonlinear problems while maintaining image quality and diversity on linear
+inverse problems. Our contributions are as follows:
+• We propose PC-DAPS, which maintains a bag of particles, models the denoiser posterior with a
+Gaussian mixture, and performs prior-based pruning without access to ground truth.
+• We evaluate PC-DAPS across seven linear and three nonlinear inverse problems on FFHQ and
+ImageNet, showing fewer prior-inconsistent reconstructions and improved nonlinear reconstruc-
+tion quality while preserving performance on linear tasks.
+2
+RELATED WORK
+Likelihood-guided diffusion sampling. Given a diffusion prior that has learned the unconditional
+score ∇xt log p(xt), we can decompose the conditional score (after observing measurement y) as
+∇xt log p(xt | y) = ∇xt log p(xt) + ∇xt log p(y | xt). The likelihood term ∇xt log p(y | xt)
+is intractable, so a family of methods approximates it to steer the reverse diffusion process.
+In particular, DPS (Chung et al., 2023) evaluates the likelihood at the one-step posterior mean
+p(y | xt) ≈p(y | E[x0 | xt]) and backpropagates to compute the score. For linear measurement
+operators, ΠGDM (Song et al., 2023) and TMPD (Boys et al., 2024) instead propagate Gaussian ap-
+proximations of p(x0 | xt), while DDRM (Kawar et al., 2022) utilizes a diagonalization approach.
+MCG (Chung et al., 2022) adds a manifold-correction term to keep the guided iterate close to the
+data manifold. Jin et al. (2026) target hallucination inside this family of approaches by stabilizing
+the prior update, but remain committed to a single trajectory.
+Split and annealed posterior sampling. In contrast, variable-splitting methods alternate between
+prior-only and measurement-only steps. Among methods using a diffusion model for the prior step,
+PnP-DM (Wu et al., 2024) uses a split Gibbs sampler for the likelihood, while DPnP (Xu & Chi,
+2024) uses Metropolis-Hastings and DiffPIR (Zhu et al., 2023) utilizes a proximal step. Finally,
+DAPS (Zhang et al., 2025) utilizes a repeated denoising-renoising scheme (Section 3.2). RePS
+(Ahmed & Makin, 2026) adds restarts to that schedule, and DAPS++ (Chen et al., 2026) reports
+that the DAPS reconstruction is largely driven by measurement consistency. We therefore design
+PC-DAPS as a modification of DAPS that retains its variable-splitting structure but introduces prior-
+based selection to discriminate between measurement-consistent reconstructions.
+Particle-based posterior sampling.
+Another group of approaches maintains many particles
+throughout sampling, and uses sequential Monte Carlo to propagate, reweight, and resample par-
+ticles to progressively improve measurement consistency (Cardoso et al., 2024; Janati et al., 2025).
+FPS-SMC (Dou & Song, 2024) casts the reverse sampling process as a state-space model and ap-
+plies a particle filter. TDS (Wu et al., 2023) uses twisting functions to obtain asymptotic exactness
+for general measurement models. While particle-based methods are typically concerned with the
+fidelity of the ensemble in the limit of many particles, we are concerned instead with the probabil-
+ity that a single returned reconstruction is prior-inconsistent, and use particles for the purpose of
+exploring the posterior landscape.
+Diagnosing hallucination and prior misfit. Hallucination has been studied as a property of recon-
+struction algorithms in inverse problems since before diffusion priors were adopted (Bhadra et al.,
+2021), and refers to any reconstruction that is inconsistent with either the measurement or the prior.
+Recent work has sought to quantify hallucination specifically for diffusion-based solvers (Jin et al.,
+2026). At the level of the model rather than the individual sample, DiME (Wang & Bouman, 2026)
+estimates the evidence of a diffusion prior by integrating over the time-marginals of a posterior
+sampler, and can be run alongside DAPS to detect prior misfit. Closest to our framing, Burns &
+Fridovich-Keil (2026) adopt a finite-sample perspective on reverse diffusion dynamics and show
+that widely used guidance approximations misestimate posterior spread at intermediate noise lev-
+els. This misestimation produces both prior modes absent from the true posterior and likelihood
+(measurement-consistent) modes unsupported by the prior, which is the specific failure that our
+PC-DAPS method aims to address. Benchmarks whose posteriors are analytically tractable pro-
+vide a complementary check on the uncertainty a solver reports (Crafts & Villa, 2025; Zach et al.,
+2026; Zheng et al., 2025). All of these existing hallucination diagnostics are applied after sampling;
+PC-DAPS utilizes prior support during sampling to decide which reconstructions survive, thereby
+reducing the incidence of prior-inconsistent hallucinations.
+3
+
+
+Preprint
+3
+PRELIMINARIES
+3.1
+BAYESIAN INVERSE PROBLEMS
+We consider Bayesian inverse problems of the form:
+y = A(x) + n,
+n ∼N(0, β2
+yI),
+(1)
+where x ∈Rd is the unknown signal of interest, A : Rd →Rm is a known measurement operator
+that is deterministic but may be linear or nonlinear, n ∈Rm is unknown additive Gaussian noise,
+and y ∈Rm is the observed measurement. Given a prior distribution p(x), Bayes’ rule gives the
+posterior distribution over likely signals x consistent with a provided measurement y:
+p(x | y) ∝p(y | x) p(x),
+p(y | x) = N
+ y; A(x), β2
+yI
+
+.
+(2)
+We are particularly interested in forward models where the set of measurement-consistent signals
+M(y) =
+
+x ∈Rd : ∥A(x) −y∥≤δ
+	
+(3)
+contains multiple candidate reconstructions which are well-separated in signal space. In this con-
+text, two distinct signals in M(y) can be assigned equal likelihoods p(y | x) but have drastically
+different posterior probabilities p(x | y), as one image might be unrealistic (i.e., significantly lower
+prior probability p(x)). A common failure case of existing reconstruction methods is to sample
+both signals with roughly equal frequency, thereby misrepresenting their posterior probabilities as
+relatively equal.
+For example, in Fourier phase retrieval, two images which are identical up to rotation, translation,
+and/or color channel sign appear visually quite distinct but produce identical Fourier magnitude
+measurements (Fienup, 1982). On structured face images, a solver can return a 180◦-rotated or
+color-inverted (e.g., blue) face that fits the observed Fourier measurement despite being inconsistent
+with a prior distribution supported only on the set of upright faces. We refer to such reconstructions
+as prior-inconsistent. Prior-inconsistent reconstructions commonly appear across classical phase-
+retrieval methods (Fienup, 1982), deep-learning approaches (Metzler et al., 2018; Is¸il & Oktem,
+2025), and diffusion-based inverse-problem solvers (Xu & Chi, 2024; Zhang et al., 2025). Our goal
+is to reduce the frequency of prior-inconsistent solutions while retaining quality and diversity of
+measurement- and prior-consistent samples.
+3.2
+DECOUPLED ANNEALING POSTERIOR SAMPLING (DAPS)
+To develop a sampler which produces fewer prior-inconsistent samples, we build on existing ap-
+proaches by (i) identifying the root causes that produce the inconsistent samples and (ii) making
+adjustments to reduce the incidence of these samples. Specifically, we build on DAPS (Zhang et al.,
+2025), a diffusion-based variable-splitting approach which repeatedly (i) denoises to a clean image
+via the reverse diffusion process, (ii) improves the clean image’s likelihood consistency via MCMC
+(e.g., Langevin dynamics (Roberts & Tweedie, 1996)), and (iii) renoises the MCMC output via the
+forward diffusion process. By adding less noise back than was originally present, DAPS aims to
+iteratively denoise towards a measurement-consistent clean sample.
+Mathematically, DAPS utilizes the fact that given an intermediate image xt ∼p(xt | y), drawing:
+x0 ∼p(x0 | xt, y),
+xt−1 ∼N
+ x0, σ2
+t−1I
+
+,
+(4)
+produces xt−1 ∼p(xt−1 | y). To sample from the guided denoising distribution p(x0 | xt, y),
+observe that y and xt are independent conditioned on x0; thus, by Bayes’ rule we can factorize:
+p(x0 | xt, y) ∝p(y | x0)p(x0 | xt).
+(5)
+While p(y | x0) is induced by Equation (1), the denoising distribution p(x0 | xt) is unknown and
+intractable to estimate via sampling. DAPS utilizes a Gaussian approximation for this distribution:
+p(x0 | xt) ≈N
+ x0; ˆx0(xt), r2
+t I
+
+,
+(6)
+4
+
+
+Preprint
+10
+1
+0.1
+Ground truth
+10
+1
+0.1
+DAPS
+10
+1
+0.1
+0.3
+PC-DAPS
+10
+1
+0.1
+DAPS, zoom
+0
+1
+probability density
+noise level σ (sampling →)
+majority posterior mode x1
+minority posterior mode x2
+DAPS-hallucinated mode x3
+Figure 2: Premature mode selection. We consider a nonlinear inverse problem with quadratic
+A and a two-atom prior; details are provided in Appendix A.2. We select y such that one atom
+is likelihood-consistent while the other is likelihood-inconsistent but neighboring a likelihood-
+consistent prior-inconsistent mode. The exact posterior, DAPS, and PC-DAPS are shown as dis-
+tributions across noise levels σ. The exact posterior assigns positive weight to both atoms, with
+majority weight on the likelihood-consistent atom. However, DAPS assigns majority mass to the
+prior-inconsistent likelihood mode, as highlighted in the last panel, which is not present in the true
+posterior. PC-DAPS’s selection algorithm prunes this mode, sampling only from the posterior-
+consistent atom. While neither DAPS nor PC-DAPS samples from the likelihood-inconsistent atom
+with adequate probability, PC-DAPS eliminates the hallucinated prior-inconsistent mode produced
+by DAPS.
+where ˆx0(xt) is an estimate of E[x0 | xt] and rt is set heuristically. Observe that the (Stein) score
+w.r.t. x0 of the approximated right-hand side of Equation (5) is available in closed form, allowing
+for sampling via the unadjusted Langevin algorithm with step size ηt from initialization ˆx0(xt):
+ˆx(j+1)
+0
+←ˆx(j)
+0 +ηt
+ ∇ˆx0 log p(ˆx(j)
+0
+| xt)+∇ˆx0 log p(y | ˆx(j)
+0 )
+
++
+p
+2ηtϵ(j),
+ϵ(j) ∼N(0, I). (7)
+Once the Langevin algorithm terminates (after a user-prescribed number of iterations N), the result
+is renoised using the EDM parameterization (Karras et al., 2022) of the forward diffusion process
+xt−1 = ˆx(N)
+0
++ σt−1ϵ with ϵ ∼N(0, I). Renoising in DAPS is introduced to counteract the locality
+of Langevin refinement: because consecutive Langevin updates are local, the samples may fail to
+explore alternative prior modes distant from ˆx0(xt). The renoising-denoising update intends to
+allow particles to make larger moves per iteration and to investigate alternative prior modes.
+However, the DAPS update rule still produces the prior-inconsistent samples described in Sec-
+tion 3.1, as shown in Figure 1. Observe that the DAPS procedure for approximately sampling
+from p(x0 | xt, y) in effect produces a prior-consistent sample near E[x0 | xt] and samples from
+likelihood-consistent regions of its neighborhood. In contexts where xt selects a prior-consistent
+sample that is likelihood-inconsistent, yet there exists a nearby region of signal space consistent
+with y, Equation (7) may sample from that region even if it is prior-inconsistent, as the Gaussian
+approximation to p(x0 | xt) merely discourages the samples from deviating far in signal space from
+ˆx0(xt). We observe that x0 renoises to an xt that subsequently denoises to the same region with
+high probability, causing the particle to become trapped in a prior-inconsistent but measurement-
+consistent mode. We refer to this phenomenon as premature mode selection because the sample
+xt prematurely commits to only sampling x0 from a particular prior mode, without being able to
+adequately decommit even if that prior mode is not present in the posterior.
+Figure 2 illustrates this phenomenon. Here, the prior places mass on two candidate solutions, x1 and
+x2, while the measurement y is explained by x1 and a third point x3 unsupported by the prior. In
+analogy to Fourier phase retrieval, one can think of x1 as the desired reconstruction, e.g., an upright,
+non-blue face that is both consistent with the measurement and supported by the image prior, x2 as
+a realistic face inconsistent with the particular measurement, and x3 as a structurally implausible
+transformation of the desired image x1, such as a rotated or blue face. The exact posterior should
+favor the x1 mode while assigning zero mass to the prior-inconsistent x3. However, DAPS samples
+from x3’s neighborhood by (i) sampling x2 from the prior and (ii) sampling x3 from x2’s local
+likelihood. Once a particle enters this locally attractive likelihood-consistent region, subsequent
+renoising and Langevin updates become trapped, resulting in premature mode selection.
+5
+
+
+Preprint
+This toy example motivates the design of PC-DAPS, which maintains multiple candidate
+measurement-consistent modes to identify and correct trapped prior-inconsistent samples. As shown
+in Figure 2, PC-DAPS places its mass only on the prior-supported and measurement-consistent mode
+at x1 and avoids sampling from the prior-inconsistent, measurement-consistent region near x3. We
+describe how PC-DAPS identifies and removes such prior-inconsistent particles in the next section.
+4
+METHOD
+To address the presence of prior-inconsistent samples, a first approach might be to produce multiple
+samples via DAPS and discard any which are prior-inconsistent. There are two main shortcomings
+of this approach: (i) the effective sample size of this sampling method is suboptimal, as substantial
+computational resources are used to produce samples that are then thrown out, and (ii) it is unclear
+how to select which samples to discard without having access to the ground truth signal or posterior.
+To address these issues, we introduce PC-DAPS, a procedure for correcting prematurely committed
+particles during the sampling process without requiring access to the ground truth image or to any
+pre-trained prior-inconsistency classifier. PC-DAPS maintains a bag of K particles, each of which
+is denoised using the same annealing schedule and pretrained denoiser, but uses different initializa-
+tions and random noise in its Langevin and renoising updates. If no additional modifications are
+made to DAPS, the K particles will denoise independently, and can be partitioned into (nonempty)
+sets of “bad” prematurely committed particles and “good” particles that are posterior-consistent.
+The core idea of PC-DAPS is to improve DAPS’s existing renoising strategy by identifying prema-
+turely committed particles during sampling and moving them to more promising modes discovered
+by other particles in the bag. Additionally, PC-DAPS utilizes the particles to refine additional design
+decisions made by DAPS, such as by replacing the unimodal Gaussian approximation to the denois-
+ing distribution with an adaptive Gaussian mixture model (GMM) approximation. A toy example
+illustrating the benefit of this Gaussian mixture approximation is shown in Appendix A.3.
+What remains is to describe how PC-DAPS (i) identifies when particles commit prematurely, (ii)
+identifies which particles are problematic, (iii) corrects the identified particles, and (iv) constructs
+the multimodal denoising distribution approximation from the bag. PC-DAPS makes two core
+changes to DAPS, utilizing K particles annealed in parallel: a pruning technique to correct parti-
+cles trapped in prior-inconsistent likelihood modes in tasks with likelihood ambiguity (Section 4.1),
+and a multimodal denoising distribution approximation estimated from the diversity of the particles
+(Section 4.2). Additional implementation details and ablations are provided in Appendix A.4, such
+as omitting the final Langevin refinement and adaptive ODE stepping from high to low noise to im-
+prove reconstruction quality while reducing computational cost (Appendix A.5). The full algorithm
+(Algorithm 1) can be found in Appendix A.1.
+4.1
+PRUNING SCHEME
+PC-DAPS begins by initializing a bag of K particles B = {x(k)
+tmax}K
+k=1 from the initial distribution
+of the reverse diffusion process, and denoises the particles as prescribed by DAPS. On tasks where
+M(y) (Equation (3)) contains multiple clearly separated candidates (e.g., for a nonlinear A), the
+particles will begin to denoise to genuinely different candidate reconstructions. At the annealing
+time of the DAPS denoising process where the prior first becomes discriminative, PC-DAPS invokes
+a one-shot consensus check to identify prior-inconsistent particles.
+To determine when the check should occur, we test the diversity of the bag at each iteration. Define:
+¯r = 1
+K
+K
+X
+k=1
+A(x(k)) −y
+
+2
+,
+r⋆=
+A(¯x) −y
+2,
+¯x = 1
+K
+K
+X
+k=1
+x(k).
+(8)
+Observe that, for linear A, Jensen’s inequality forces ¯r ≥r⋆by convexity of the squared norm.
+Using this convexity intuition, for nonlinear A the condition that ¯r < r⋆indicates that the bag
+occupies multiple wells of the likelihood potential, indicating that mode-level pruning is meaningful.
+6
+
+
+Preprint
+To identify which particles require correcting, we partition the bag into clusters Cm and evaluate
+each by its average prior consistency (obtained via Tweedie’s formula) over several noise scales S:
+s(Cm) = −
+1
+|Cm||S|
+X
+x∈Cm
+X
+σ∈S
+x −Dθ(x + σϵ; σ)
+2,
+ϵ ∼N(0, I).
+(9)
+The premise of this criterion is that a sample lying near the (prior) data manifold denoises with small
+(Stein) score at every noise scale. If a cluster’s prior-consistency score s(Cm) exceeds a threshold,
+its particles are unaltered. Otherwise, its particles are replaced randomly by copies of particles
+from clusters scoring above the threshold. Implementation choices including the clustering method,
+choice of noise scales S, and determination of threshold are discussed in Appendix A.4.
+4.2
+GAUSSIAN MIXTURE APPROXIMATION OF THE DENOISER POSTERIOR
+An additional benefit of maintaining a bag of particles is that we can improve upon DAPS’s unimodal
+approximation in Equation (6) by selecting a multimodal distribution informed by the bag’s diversity.
+We propose replacing the DAPS Gaussian approximation with a Gaussian mixture. Denote the
+clean-signal estimate of the k-th particle by ˜x(k)
+0
+= Dθ
+ x(k)
+t
+; σt
+
+. Before the pruning described
+in Section 4.1 activates, we use a uniformly-weighted mixture of Gaussians centered at the clean
+estimates:
+q(x0 | xt) = 1
+K
+K
+X
+k=1
+N
+
+x0; ˜x(k)
+0 , diag
+
+VarB
+ ˜x(k)
+0
+
+.
+(10)
+After pruning, we maintain a mode for each unpruned cluster, where the corresponding component
+parameters are given by the cluster’s empirical weight, mean, and diagonal covariance:
+q(x0 | xt) =
+M
+X
+m=1
+πm N
+ x0; µm, Σm
+
+,
+(11)
+πm = |Cm|
+K ,
+µm =
+1
+|Cm|
+X
+x(k)∈Cm
+˜x(k)
+0 ,
+Σm = diag
+
+VarCm
+ ˜x(k)
+0
+
+.
+(12)
+When a cluster contains only a single particle, its component uses the full bag’s diagonal covariance.
+Unlike DAPS, which centers the denoising approximation at the point estimate ˆx0(xt), PC-DAPS
+shares the bag-mean center across all particles in a mode, giving a variance-reduced prior estimate
+that we find improves reconstruction quality on linear reconstruction tasks. Furthermore, when the
+full bag lies in a single cluster, the mixture reduces to a single Gaussian centered on the bag’s aver-
+age Tweedie estimate with data-dependent covariance. This contrasts with the heuristic, geometry-
+independent covariance utilized by DAPS.
+Observe that the score of the GMM denoising approximation q(x0 | xt) is accessible in closed form:
+∇x0 log q(x0 | xt) =
+M
+X
+m=1
+qm(x0)Σ−1
+m
+ µm −x0
+
+,
+(13)
+with weights qm(x0) = πmN(x0; µm, Σm)/ P
+m′ πm′N(x0; µm′, Σm′), and thus can be utilized
+in the DAPS Langevin update introduced in Equation (7). Observe that when the weights qm are
+approximately one-hot, this update approximately reduces to a data-dependent Gaussian. Recalling
+that the DAPS Gaussian approximation disincentivizes the Langevin dynamics from deviating far
+from the point estimate ˆx0(xt), the PC-DAPS Gaussian approximation discourages the Langevin
+dynamics from deviating far from the prior mode identified by a collective cluster of the bag, as
+demonstrated in Figure 4 in Appendix A.3.
+5
+RESULTS
+Main results.
+Table 1 shows that while PC-DAPS is not uniformly superior to all baselines, it
+performs competitively across all experiments and often achieves the highest sample quality, with
+the most substantial improvements in phase retrieval. In particular, the phase-retrieval results for
+7

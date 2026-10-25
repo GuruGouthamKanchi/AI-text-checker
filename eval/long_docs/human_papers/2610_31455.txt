@@ -1,0 +1,679 @@
+Preprint
+MIXPT: POINT TRANSFORMER WITH
+INTERLEAVED WINDOW AND GLOBAL ATTENTION
+Minkyun Seo1
+Hyungtae Lim2
+Jaesik Park1
+{minkyunseo00,hyungtaelim.us}@gmail.com
+jaesik.park@snu.ac.kr
+1Seoul National University
+2Massachusetts Institute of Technology
+Fixed-order serialization
+Within-window interaction
+Scene-wide interaction
+Grid token
+Query token
+Serialization order
+Serialization
+Window attn.
+Global attn.
+Proposed attention schedule:
+S
+W
+W
+G
+W
+W
+G
+W
+W
+S
+W
+G
+S
+W
+G
+Figure 1: Serialize once, mix window and global attention. MixPT-S serializes tokens once (S) and
+reuses that order throughout its WWGWWGWW attention schedule. For the same query, window attention
+restricts interaction to its fixed window, whereas global attention enables scene-wide interaction. For
+clarity, the left panel provides a 2D schematic of 3D serialization around the query token.
+ABSTRACT
+Point cloud transformers aim to capture detailed local geometry and relationships
+across a scene at a manageable computational cost. Two common approaches are
+window attention and global attention. They differ in how they enable scene-wide
+interaction, which refers to information exchange among tokens across a scene.
+Window attention reduces computational cost by restricting self-attention to groups
+of tokens called windows; in serialized designs, each window contains a fixed
+number of consecutive tokens from a spatially ordered sequence. Because each
+block only directly connects tokens within the same window, information exchange
+across windows relies on changes in window membership across blocks and hierar-
+chical pooling. Global attention, in contrast, directly connects all tokens within a
+scene, but computing attention over all token pairs can be costly when the number
+of tokens is large. To balance computational cost and scene-wide interaction, we
+introduce MixPT, a point transformer that uses a mix of window and global atten-
+tion blocks in an interleaved schedule, while retaining a single fixed serialization
+pattern for its window blocks. For scenes with a large number of tokens, MixPT
+applies global attention to spatially pooled tokens and returns residual updates to
+the original-resolution stream. Across indoor and outdoor benchmarks, MixPT
+achieves competitive accuracy with lower latency than representative window and
+global attention baselines. We further demonstrate the feasibility of scaling the
+attention stage in depth by repeating the interleaved pattern of window and global
+attention blocks.
+1
+INTRODUCTION
+Deep learning for point clouds has advanced through architectures that learn geometric representations
+from point sets or sparse spatial grids (Qi et al., 2017a;b; Wang et al., 2019; Wu et al., 2019;
+1
+arXiv:2610.31455v1  [cs.CV]  22 Oct 2026
+
+
+Preprint
+Thomas et al., 2019; Graham et al., 2018; Choy et al., 2019; Hu et al., 2020). More recently, point
+transformers (Zhao et al., 2021; Wu et al., 2022; 2024) use attention to exchange information among
+tokens at different spatial locations. At a fixed spatial resolution (i.e., after voxel sampling with the
+same voxel size), larger 3D scenes typically retain more points and therefore require more input
+tokens, increasing the computational cost of attention.
+Two common approaches make different choices in the trade-off between attention cost and scene-
+wide interaction: window attention and global attention. Window attention reduces computational
+cost by restricting self-attention to groups of tokens called windows, so each block only directly
+connects tokens within the same window (Wu et al., 2024; Yue et al., 2026). Global attention, in
+contrast, directly connects all tokens within a scene, but computing attention over all token pairs can
+be costly when the number of tokens is large (Yilmaz et al., 2026). This contrast motivates using a
+mix of window and global attention blocks: can window attention retain its computational efficiency
+while selected global blocks directly exchange information across windows?
+Introducing global blocks also provides an opportunity to simplify how window blocks exchange
+information across windows. Serialized window attention spatially orders tokens and groups con-
+secutive tokens into fixed-size windows. To indirectly exchange information across windows, these
+designs change serialization patterns across blocks to alter window membership and use hierarchical
+pooling to aggregate features at coarser resolutions (Wu et al., 2024; Yue et al., 2026). Keeping a
+single serialization pattern instead allows token ordering and window grouping to be reused across
+blocks, reducing processing overhead, but removes the interaction paths created by changing window
+membership. Interleaving global attention blocks allows tokens in different windows to directly
+exchange information while keeping window membership fixed across window attention blocks.
+We therefore introduce MixPT, a point transformer that uses a mix of window and global attention
+blocks in an interleaved schedule. Its window blocks reuse a single fixed serialization pattern, while
+global blocks periodically enable direct information exchange across windows. For scenes with a
+large number of tokens, MixPT applies global attention to spatially pooled tokens and returns only
+the resulting residual updates to the original-resolution stream. This design retains window attention
+at the original stage resolution while controlling the cost of global attention through the frequency of
+global blocks and the number of pooled tokens.
+MixPT-S, which is our smallest model variant, uses the WWGWWGWW attention schedule illustrated in
+Fig. 1, where W and G denote window and global attention blocks, respectively. Across indoor and
+outdoor 3D scene understanding benchmarks, MixPT-S achieves competitive accuracy with lower
+latency per forward pass than representative window and global attention baselines. Our ablations
+show accuracy gains from periodically introducing global blocks compared with using fixed windows
+alone. We further demonstrate the feasibility of increasing the attention stage’s depth by repeating
+the interleaved pattern of window and global attention blocks.
+In sum, our contributions are threefold. First, we analyze how cross-window communication develops
+in serialized window attention and how the use of scene-wide support varies across global attention
+blocks. Second, we propose MixPT, which interleaves fixed-order window and global attention, with
+pooled global attention for large token sets. Finally, we demonstrate a favorable accuracy-latency
+trade-off across indoor and outdoor benchmarks and analyze the effects of block arrangement, pooling
+resolution, and model scaling.
+2
+RELATED WORK
+Point Cloud Backbones.
+Early point-based backbones learned permutation-invariant features
+directly from unordered point sets and introduced hierarchical neighborhood aggregation to capture
+local geometry (Qi et al., 2017a;b). Subsequent methods developed richer local point operators, scal-
+able sampling strategies, and efficient model scaling (Wang et al., 2019; Wu et al., 2019; Thomas et al.,
+2019; Hu et al., 2020; Thomas et al., 2024; Qian et al., 2022), while sparse voxel approaches (Gra-
+ham et al., 2018; Choy et al., 2019; Zhu et al., 2021) and an octree-based approach (Riegler et al.,
+2017) restricted feature storage and computation to occupied regions. These approaches established
+local aggregation and hierarchical processing as effective foundations for large-scale point cloud
+understanding, which later point transformers build upon.
+2
+
+
+Preprint
+Point Cloud Transformers.
+Scaling point cloud transformers to large scenes requires controlling
+the number of point interactions and the cost of organizing them. Early point transformers restrict
+attention to local neighborhoods, using nearest neighbors or spatial partitions to capture local geometry
+at manageable cost (Zhao et al., 2021; Wu et al., 2022; Park et al., 2022). Later methods improve
+scalability by sharing spatial groups across queries (Fan et al., 2022; Lai et al., 2022; Yang et al.,
+2023), adapting window geometry (Lai et al., 2023; Duan et al., 2023), and forming fixed-size token
+groups for efficient batched attention (Liu et al., 2023; Wang, 2023; Wang et al., 2023). PTv3 (Wu
+et al., 2024) adopts serialized windows and changes serialization patterns across blocks to facilitate
+communication between groups. We refer to its attention patches as windows throughout this paper.
+Efficiency also depends on the spatial resolution at which attention operates. LitePT (Yue et al., 2026)
+uses sparse convolution at high resolution and retains serialized window attention in later stages.
+Volt (Yilmaz et al., 2026) instead applies global attention to volumetric patch tokens, controlling
+attention cost through token count rather than restricting the interaction range.
+Interleaving Window and Global Attention.
+Interleaving local and global attention provides a
+way to preserve efficient local processing while introducing broader communication only at selected
+layers. Global context can be introduced through compact representations that interact with local
+features (Chu et al., 2021; Hatamizadeh et al., 2024; 2023), or through sparse connections between
+distant tokens (Tu et al., 2022). These designs reduce the cost of global communication while
+preserving detailed features within each window. A complementary strategy retains full global
+attention but reserves it for selected layers, using window attention elsewhere, as adopted in vision
+backbones (Li et al., 2022; Kirillov et al., 2023; Ravi et al., 2025; Carion et al., 2026; Bai et al., 2025).
+This principle also extends to language modeling, where sliding window attention is interleaved
+with causal attention over the full context (Gemma Team et al., 2024; 2025). However, the studies
+discussed above primarily explore this design principle in image and language models. Thus, in
+this paper, we study its application to serialized point cloud backbones, focusing on fixed window
+grouping and the spatial resolution of global attention.
+Rotary Positional Encoding for 3D Points.
+Rotary positional embedding (RoPE) (Su et al., 2024)
+has been extended to 3D points using axial formulations (Li & Harada, 2022). Recent point cloud
+transformers use both symmetric (Yue et al., 2026; Choy et al., 2026; Zhang et al., 2026) and
+asymmetric (Yilmaz et al., 2026) channel allocations across the three spatial axes. We adopt an
+asymmetric allocation in MixPT and examine its effect in our ablations.
+3
+METHODOLOGY
+3.1
+PRELIMINARIES: REVISITING WINDOW AND GLOBAL ATTENTION
+20 m
+Attention block 1: Z
+Attention block 2: TZ
+Attention block 3: H
+Attention block 4: TH
+Attention block 5: Z
+Figure 2: Information propagation through the first five blocks of encoder stage 3 of LitePT on the
+Waymo validation set (Sun et al., 2020) (stages indexed from zero; blocks indexed from one; random
+order shuffling disabled). Green marks tokens reachable from the red-star token through attention
+connections within this stage; gray marks those not yet reached.
+Revisiting Window Attention.
+Given N tokens, window attention partitions them into windows
+of Nw tokens each and computes self-attention only within each window, reducing the number of
+pairwise interactions from O(N 2) to O(NNw). Because tokens in different windows cannot interact
+directly, serialized window transformers rely on changes in serialization pattern and hierarchical
+pooling for cross-window communication (Wu et al., 2024; Yue et al., 2026). Alternating the serial-
+ization pattern changes window membership across blocks, while hierarchical pooling aggregates
+information at coarser resolutions. PTv3 (Wu et al., 2024, Table 2) reports lower segmentation
+accuracy with a single fixed serialization pattern than with multiple patterns, suggesting that varying
+serialization patterns can be beneficial in practice.
+3
+
+
+Preprint
+1
+2
+3
+4
+5
+6
+7
+8
+Attention block index
+0
+25
+50
+75
+100
+Reachable tokens [%]
+LitePT-S
+Volt-S
+MixPT-S
+Figure 3: Structural reachabil-
+ity across blocks on the Waymo
+validation set (Sun et al., 2020).
+Lines show scene-level means;
+shading indicates the 10th to 90th
+percentiles.
+To assess these mechanisms, we examine how token reachability
+expands across successive blocks. Here, a token is considered
+reachable if it can be connected to the selected token through pre-
+ceding attention blocks and hierarchical pooling transitions. We
+measure this structural reachability from the attention stage input
+tokens, excluding receptive fields accumulated in the preceding
+convolutional stages. As shown in Fig. 2 and Fig. 3, LitePT-
+S (Yue et al., 2026), a representative window attention backbone,
+did not achieve 100% mean token reachability on the Waymo val-
+idation set (Sun et al., 2020) even in its deepest attention blocks,
+despite hierarchical pooling and changes in serialization pattern.
+In contrast, Volt-S (Yilmaz et al., 2026), a representative global
+attention backbone, has full structural reachability from its first
+block. These observations motivate introducing global attention
+early in the stage to establish full structural reachability without
+relying solely on gradual propagation through window attention
+and hierarchical transitions. MixPT-S therefore places its first
+global block after two window blocks, while retaining a fixed serialization for its window blocks.
+1
+2
+3
+4
+5
+6
+7
+8
+9 10 11 12
+Attention block index
+0.4
+0.6
+0.8
+1.0
+Normalized entropy
+LitePT-S
+Volt-S
+MixPT-S
+Figure 4:
+Normalized attention entropy
+within each block’s available support on the
+Waymo validation set (Sun et al., 2020).
+Lines show scene-level means; shading in-
+dicates the 10th to 90th percentiles.
+Revisiting Global Attention.
+As shown in Fig. 3,
+global attention achieves full structural reachability,
+but we ask whether its weights are also broadly dis-
+tributed across tokens in every block. To this end,
+we analyze a) how concentrated attention is within
+each block and b) where a selected query assigns its
+attention within the scene. First, normalized attention
+entropy measures how evenly a query distributes at-
+tention over the keys it can attend to (Oh & Schuler,
+2022; Zhai et al., 2023): a value of one indicates uni-
+form attention over the available keys, while lower
+values indicate greater concentration on a subset. For
+each block, we compute this quantity for every query
+and head, average over queries and heads within each
+scene, and then average the scene-level values equally
+across scenes. Fig. 4 shows higher entropy in the early
+Volt-S blocks and lower entropy in several later blocks, indicating that the concentration of attention
+varies across depth.
+Second, we visualize the relative attention weights for a selected Volt query to show where attention
+concentrates within each block (Fig. 5). Although each block allowed global interactions, attention
+for this query tended to concentrate on localized regions in later blocks. Together, these observations
+suggest that attention can become more concentrated at some depths despite having scene-wide
+support at every block. These two key observations motivate the periodic use of global attention in
+MixPT-S for direct cross-window information exchange without computing attention between all
+token pairs in every block.
+20 m
+Attention block 1
+Attention block 2
+Attention block 3
+p p p
+Attention block 11
+Attention block 12
+0.1
+1
+10
+Rel. attn.
+Figure 5: Attention patterns across Volt (Yilmaz et al., 2026) blocks on the Waymo validation set (Sun
+et al., 2020). For a selected query, each token is colored by its relative attention weight (“Rel. attn.”),
+the ratio of its head-averaged attention weight to the uniform weight over the available keys. Values
+of 1 and 10 indicate weights equal to and ten times the uniform weight, respectively. Attention is
+broadly distributed in the first block and more concentrated in several later blocks, particularly in the
+central regions of the visualized scene.
+4
+
+
+Preprint
+3.2
+MIXPT: INTERLEAVED WINDOW AND GLOBAL ATTENTION
+Architecture Overview.
+Panels (a)–(c) of Fig. 6 illustrate the overall architecture of MixPT. We
+retain the high-resolution sparse convolutional stages (Fig. 6(a)) and remaining decoder structure
+(Fig. 6(c)) of LitePT (Yue et al., 2026). Our main architectural change centers on the attention
+stage (Fig. 6(b)). We consolidate LitePT’s multiple attention stages (Fig. 6(d)) into a single stage by
+removing the intermediate pooling transition and the corresponding decoder upsampling. We denote
+window and global attention blocks by W and G, respectively. Within this stage, all window blocks
+reuse a single fixed serialization pattern, while global attention blocks are periodically interleaved
+following the WWGWWGWW schedule. Both block types use the same number of heads and the same
+per-head dimension. We next describe the fixed-order window and global attention blocks that form
+this stage.
+Stem 
+Window attn.
+Window attn.
+Global attn.
+Window attn.
+Window attn.
+Global attn.
+Unpooling
+Unpooling
+Unpooling
+Window attn.
+Window attn.
+Sparse conv.
+Pooling
+Serialization
+(a) Convolution stages
+(b) Attention stage
+(c) Decoder stages
+Pooling
+Sparse conv.
+Pooling
+Sparse conv.
+Window attn.
+Pooling
+Serialization
+Window attn.
+Pooling
+Serialization
+(d) LitePT’s attention stages
+Fixed, single serialization 
+Serialization orders vary across blocks
+Figure 6: Block-level overview of MixPT: (a) sparse convolution stages, (b) attention stage, and
+(c) decoder stages. Our attention stage follows the WWGWWGWW schedule, where W and G denote
+window and global attention blocks, respectively. (d) LitePT’s attention stages (Yue et al., 2026).
+Unlike LitePT’s varying serialization patterns, MixPT uses one fixed serialization within a single
+attention stage and directly connects tokens across windows through global attention blocks.
+LayerNorm
+Self-attention
+LayerNorm
+MLP
+Internal structure of 
+the attention blocks 
+in Fig. 6(b)
+LayerNorm
+Self-attention
+LayerNorm
+MLP
+Pooling
+Unpooling
+Figure 7: Window attention (left) and
+pooled global attention (right) blocks
+in MixPT.
+Fixed-Order Window Attention.
+We follow LitePT (Yue
+et al., 2026) in applying self-attention within serialized win-
+dows containing a fixed number of tokens, followed by an
+MLP. We omit its additional block-entry LayerNorm on the
+residual stream and use a standard pre-norm design with Lay-
+erNorm only before the attention and MLP sublayers (Fig. 7).
+Formally, let xl ∈RN×C denote the input features to block l,
+where N is the number of tokens in the current attention stage
+for a scene and C is the feature dimension. Let Nw denote
+the fixed number of tokens per window, and let Al(X; m)
+denote self-attention applied independently within groups of
+m consecutive serialized tokens. Let MLPl denote the MLP
+in block l. For window attention, we set m = Nw and apply
+the attention residual followed by the MLP residual:
+exl = xl + Al
+ LN(xl); Nw
+
+,
+(1)
+xl+1 = xl + Al
+ LN(xl); Nw
+
++ MLPl
+ LN(exl)
+
+.
+(2)
+Unlike PTv3 (Wu et al., 2024) and LitePT (Yue et al., 2026),
+which vary serialization patterns across blocks, we use a
+single fixed pattern throughout the attention stage. This allows the serialization and window-index
+mappings to be reused across window attention blocks. Our default is Trans Z-order (TZ); we discuss
+sensitivity to this choice in Appendix C.
+Interleaved Global Attention with Pooling.
+A global block enables scene-wide communication
+across fixed windows. When the number of stage tokens is manageable, we apply global attention
+directly at the original stage resolution. Prior work has reduced the cost of long-range attention by
+representing distant or global context at a coarser spatial resolution (Chu et al., 2021; Yang et al.,
+2021; Fan et al., 2021). For large token sets, we apply global attention to spatially pooled tokens and
+return only the resulting residual updates to the original-resolution stream, as illustrated in Fig. 7. We
+use s to denote the global pooling stride on the current attention-stage grid, with s = 1 indicating
+5
+
+
+Preprint
+the unpooled case and s > 1 the pooled case. Let Ng denote the number of tokens used by global
+attention, with Ng = N when s = 1. For s > 1, Ps(·) pools tokens within each stride-s grid cell,
+while Us(·) maps coarse residual updates back to the corresponding original tokens. These operators
+include the learned projections and pooling normalization omitted from the diagram.
+Formally, the pooled global attention block is defined as
+cxl = Ps(xl),
+cexl = cxl + Al
+ LN(cxl); Ng
+
+,
+(3)
+xl+1 = xl + Us
+
+Al
+ LN(cxl); Ng
+
++ MLPl
+ LN(cexl)
+
+.
+(4)
+Here, the left superscript c denotes features at the coarse resolution after pooling. Only the attention
+and MLP residual updates are mapped back to the original tokens, preserving xl as the outer residual
+stream. We examine how the pooling stride affects segmentation accuracy and latency in Sec. 4.3.
+Rotary Positional Encoding for 3D Points.
+We follow the axial PointROPE formulation used
+in LitePT (Yue et al., 2026), while using an asymmetric allocation of RoPE dimensions across
+the three spatial axes in our default configurations. Specifically, one-dimensional RoPE is applied
+independently to the x-, y-, and z-axis subspaces of each attention head’s query and key vectors. Let
+dh denote the per-head dimension, which is partitioned into axis-specific dimensions dx, dy, and dz,
+such that dx + dy + dz = dh. Allocations with dx = dy = dz are considered symmetric; all others
+are asymmetric. Each axis dimension is even to support the pairwise rotations in RoPE. We examine
+the effect of the allocation in Sec. 4.3.
+4
+EXPERIMENTS
+4.1
+SEMANTIC SEGMENTATION
+Table 1: Median latency for a single model forward pass over voxelized validation scenes (ms),
+measured with batch size one and FP16 autocast on an RTX A6000. For MixPT, -S, -B, and -L
+denote the small, base, and large variants, respectively.
+Method
+Attention
+#Params Sem.KITTI Waymo nuScenes ScanNet
+PTv3 (Wu et al., 2024)
+Window
+46.1M
+63.6
+87.8
+38.3
+48.1
+LitePT-S (Yue et al., 2026)
+Window
+12.7M
+36.4
+53.0
+27.8
+25.7
+Volt-S (Yilmaz et al., 2026) Global
+23.7M
+140.3
+295.5
+40.0
+23.0
+MixPT-S (Ours)
+Window + Global 14.1M
+28.2
+42.8
+19.2
+17.5
+MixPT-B (Ours)
+Window + Global 51.8M
+56.4
+90.3
+33.8
+30.2
+MixPT-L (Ours)
+Window + Global 89.4M
+72.4
+120.1
+45.7
+33.4
+Table 2: Semantic segmentation w/o TTA (mIoU/ mAcc, %). Bold and underline indicate the best
+and second-best results, respectively, among the baselines and MixPT-S.
+Sem.KITTI
+Waymo
+nuScenes
+ScanNet
+Method
+#Params
+mIoU
+mAcc
+mIoU
+mAcc
+mIoU
+mAcc
+mIoU
+mAcc
+PTv3 (Wu et al., 2024)
+46.1M
+69.6
+77.2
+70.7
+81.3
+79.6
+86.6
+76.5
+85.3
+LitePT-S (Yue et al., 2026)
+12.7M
+69.8
+76.8
+71.7
+82.8
+80.3
+87.1
+75.5
+83.4
+Volt-S (Yilmaz et al., 2026)
+23.7M
+69.4
+77.0
+70.5
+80.3
+80.5
+87.5
+76.4
+84.9
+MixPT-S (Ours)
+14.1M
+70.0
+77.3
+72.1
+83.0
+80.6
+87.4
+76.0
+84.3
+MixPT-B (Ours)
+51.8M
+70.4
+77.2
+72.1
+84.1
+81.1
+87.3
+76.4
+84.9
+MixPT-L (Ours)
+89.4M
+70.6
+77.4
+72.4
+83.7
+81.5
+87.9
+76.7
+85.1
+Setup.
+We evaluated semantic segmentation on the validation sets of SemanticKITTI (Behley et al.,
+2019), Waymo (Sun et al., 2020), nuScenes (Caesar et al., 2020), and ScanNet (Dai et al., 2017),
+covering both outdoor LiDAR scans and indoor RGB-D scenes. We abbreviate SemanticKITTI as
+6
+
+
+Preprint
+Sem.KITTI in all tables for brevity. The comparison includes PTv3 (Wu et al., 2024) and LitePT-
+S (Yue et al., 2026) as representative window attention baselines, and Volt-S (Yilmaz et al., 2026)
+as a global attention baseline. The main comparison reports results without test-time augmentation
+(TTA), using mean intersection over union (mIoU) and mean class accuracy (mAcc). For semantic
+segmentation, we followed Volt (Yilmaz et al., 2026) in using an exponential moving average (EMA)
+of model weights and applied the same protocol to MixPT and all reproduced baselines. Training,
+evaluation, and baseline reproduction details are provided in Appendix B. Full semantic segmentation
+results with TTA are reported in Table A4.
+6.63
+11.60
+0.93
+Conv. stages
+Attn. stage
+Dec. stages
+(a) Overall stage breakdown [ms]
+1.32
+5.45
+3.82
+1.01
+Total: 11.60 ms
+Pooling
+Serialization
+Window
+Global
+(b) Attention stage breakdown [ms]
+Figure 8: MixPT-S latency breakdown on nuScenes: (a) across model stages and (b) across individual
+components within the attention stage.
+Accuracy and Efficiency.
+First, we demonstrate how MixPT balances semantic segmentation
+accuracy and inference latency relative to window and global attention baselines. As shown in
+Table 1, MixPT-S achieved the lowest latency across all four datasets, reducing latency by 19% to
+32% relative to LitePT-S. The gap was larger relative to Volt-S, the global attention baseline, on
+outdoor datasets where MixPT-S was 2.1 to 6.9× faster. A key source of efficiency is that MixPT
+constructs the serialization order and stage layout once and reuses them across window attention
+blocks. Token reorganization therefore occurs only at stage entry and exit, whereas LitePT repeatedly
+gathers and scatters tokens across blocks. On nuScenes, these serialization-related operations took
+1.01 ms in MixPT-S (Fig. 8), compared with 10.61 ms in LitePT-S; further analysis is provided
+in Appendix C. Since the semantic segmentation head contributes only 0.04–0.25% of the full
+forward latency, the measured latency primarily reflects backbone computation. Despite these latency
+reductions, MixPT-S matched or improved upon LitePT-S in mIoU across all four datasets when
+evaluated without TTA (Table 2). Together, these results demonstrate a favorable accuracy-latency
+trade-off across both indoor and outdoor scenes.
+Scaling the Model.
+We scaled MixPT by increasing model depth and per-head dimension while
+retaining 16 attention heads. MixPT-B and MixPT-L generally improved performance across the eval-
+uated benchmarks (Table 2). Detailed model configurations are provided in Table A1 in Appendix A.
+4.2
+INSTANCE SEGMENTATION
+Table 3: Indoor instance segmentation on ScanNet and ScanNet200 (%).
+We evaluate different backbones using PointGroup (Jiang et al., 2020).
+ScanNet
+ScanNet200
+Backbone
+#Params
+mAP25
+mAP50
+mAP
+mAP25
+mAP50
+mAP
+PTv3 (Wu et al., 2024)
+46.2M
+77.5
+61.7
+40.9
+40.1
+33.2
+23.1
+LitePT-S* (Yue et al., 2026)
+16.0M
+78.5
+64.9
+41.7
+40.3
+33.1
+22.2
+Volt-S (Yilmaz et al., 2026)
+23.7M
+77.4
+62.7
+40.2
+38.2
+32.1
+21.1
+MixPT-S* (Ours)
+18.4M
+78.9
+65.1
+41.1
+38.5
+32.5
+22.4
+Setup and Results.
+We evaluated MixPT on the validation sets of ScanNet and ScanNet200 using
+a common PointGroup (Jiang et al., 2020) head (Table 3) to focus the comparison on backbone
+representations. For Volt (Yilmaz et al., 2026), we replaced its original SPFormer (Sun et al., 2023)
+task decoder with PointGroup. Following the instance segmentation setup of LitePT (Yue et al., 2026),
+we used MixPT-S*, which extends MixPT-S with additional attention and convolution blocks, without
+applying EMA during instance segmentation training. Overall, MixPT-S* remained competitive with
+the baselines across both datasets, suggesting that the interleaved window-global design extends
+7

@@ -1,0 +1,808 @@
+SyRA-CS: Synthetic-to-Real Adaptation for Code-Switched ASR with
+Meta-Learning
+Fadel Thior, Ahmer Tabassum, Haania Siddiqui, Hanan Aldarmaki, Thamar Solorio
+Mohamed bin Zayed University of Artificially Intelligence
+fadel.thior@mbzuai.ac.ae
+Abstract
+Code-switched (CS) automatic speech recogni-
+tion (ASR) remains difficult because real CS
+speech is scarce and synthetic speech does
+not fully match it.
+We investigate whether
+synthetic CS speech is more useful for learn-
+ing an adaptation-friendly initialization than
+for ordinary continual fine-tuning. We pro-
+pose SyRA-CS, a pair-specific synthetic-to-
+real adaptation framework based on Reptile
+meta-learning.
+For each language pair and
+pretrained model, we meta-train on the cor-
+responding synthetic CS-FLEURS subset and
+then adapt using one hour of labeled real target
+speech. We evaluate four architectural settings:
+Encoder–CTC, FastConformer–RNN-T, Atten-
+tion Encoder–Decoder (AED) and Speech-
+LLM. Experiments cover on Arabic-, French-,
+German-, and Hindi-English, against synthetic-
+only transfer, real-only fine-tuning, and con-
+tinual fine-tuning. SyRA-CS improves over
+continual fine-tuning on WER in all 16 model–
+pair comparisons and on CER in 15 of 16, with
+relative macro WER reductions of 17.7% for
+XLS-R and 5.3–5.8% for the other three mod-
+els. The gains hold across the tested models
+but vary in size across architectures, language
+pairs and metrics.
+1
+Introduction
+Code-switching (CS)—the alternation of two or
+more languages within a conversation or utterance—
+is a common phenomenon in multilingual commu-
+nities, but presents additional challenges for Au-
+tomatic Speech Recognition (ASR) systems. The
+challenge is both linguistic and data-centric: real
+CS corpora are expensive to collect and transcribe,
+and switching patterns vary with speaker commu-
+nity, accent, discourse function, topic, and ortho-
+graphic convention.
+As a result, ASR models
+trained for one CS condition often degrade under
+another (Sitaram et al., 2019; Lyu et al., 2010; Li
+and Fung, 2012).
+Synthetic CS speech offers an attractive way to
+cheaply expand supervision data (Yan et al., 2025;
+Dhawan et al., 2023), but synthetic speech does not
+perfectly match real speech. Synthetic utterances
+may have cleaner acoustics, less speaker and ac-
+cent variability. Therefore, simply fine-tuning on
+synthetic CS speech may overfit to synthetic regu-
+larities instead of generalizing to real CS recogni-
+tion. An alternative approach is meta-learning: a
+method that trains a model to become adaptable,
+by repeatedly simulating small adaptation episodes
+and updating the parameters so that a few gradi-
+ent steps on a new, data-scarce task lead to good
+performance (Finn et al., 2017). The output is not
+a final recognizer but an initialization from which
+fine-tuning on a small labeled set is fast and sta-
+ble. This paper asks a focused question: under a
+limited real data budget, can a meta-learned ini-
+tialization from synthetic CS speech adapt better
+to real CS speech compared to standard training
+strategies? We use Reptile (Nichol et al., 2018)
+because it is a first-order meta-learning algorithm
+that repeatedly simulates adaptation episodes and
+moves the initialization toward parameters that are
+easy to reach after a few gradient steps: our con-
+tribution is not a new meta-learning optimizer or
+a benchmark of all meta-learning algorithms (Sec-
+tion 4.1). Instead, we test whether a lightweight
+meta-initializer is useful for synthetic-to-real CS
+ASR under severe target scarcity. We train one Rep-
+tile initialization for each combination of language
+pair and pretrained model. Our experiments cover
+four architectural settings: XLS-R 300M with a
+CTC prediction head (Babu et al., 2021), Nemotron
+3.5 with a FastConformer–RNN-T architecture
+(NVIDIA, 2026a), Whisper-small with an atten-
+tion encoder–decoder architecture (OpenAI, 2026),
+and Nemotron-Labs-Audex-2B as a Speech-LLM
+(NVIDIA, 2026b). Within each model–pair combi-
+nation, the training regimes start from the same pre-
+1
+arXiv:2610.31415v1  [cs.CL]  22 Oct 2026
+
+
+trained checkpoint and use the corresponding syn-
+thetic CS-FLEURS subset. Methods requiring real-
+domain adaptation use the same one-hour labeled
+target subset. Hindi-English is evaluated on MUCS
+2021 (Diwan et al., 2021), while Arabic-English,
+French-English, and German-English are evaluated
+on SwitchLingua (Xie et al., 2025). This design
+evaluates within-pair synthetic-to-real adaptation
+across different pretrained ASR systems; it does
+not learn a shared multilingual meta-initialization.
+Our contributions are:
+• We formulate pair-specific synthetic-to-real code-
+switched ASR as a data-efficient meta-learning
+problem, using synthetic speech to learn an ini-
+tialization for adaptation with one hour of labeled
+real target speech
+• We investigate Reptile across four architectural
+settings: Encoder–CTC, FastConformer–RNN-T,
+attention encoder–decoder, and Speech-LLM, us-
+ing comparisons against synthetic-only transfer,
+real-only fine-tuning, and continual fine-tuning
+within each pretrained model.
+• We characterize the code-switching profile of
+each real target set (switching ratio) and assess
+the robustness of the gains to the two smallest
+evaluation sets.
+2
+Related Work
+2.1
+Multilingual self-supervised
+Self-supervised speech learning has become the
+dominant paradigm for low-resource ASR. Baevski
+et al. (2020) introduced wav2vec 2.0, which learns
+contextualized acoustic representations from raw
+unlabeled audio and can then be fine-tuned with
+limited transcribed speech. HuBERT improved
+masked prediction with cluster-based targets (Hsu
+et al., 2021), and XLS-R scaled the wav2vec 2.0
+recipe to nearly half a million hours of multi-
+lingual audio across 128 languages (Babu et al.,
+2021). Large multilingual speech resources such
+as FLEURS (Conneau et al., 2022), Common
+Voice (Ardila et al., 2020), VoxPopuli (Wang et al.,
+2021), and MMS (Pratap et al., 2023) have further
+strengthened multilingual transfer.
+2.2
+Code-switched ASR and synthetic data
+A recent systematic review of end-to-end CS-ASR
+studies notes that, although data augmentation is
+widely used, it remains less explored than many
+model-centric approaches (Agro et al., 2025). In
+response, recent studies have used synthetic text
+and speech to improve low-resource code-switched
+ASR. Several works explore how synthetic code-
+switched data can be created or leveraged when
+real code-switched speech is scarce. Nguyen and
+Tran (2025b) show that ASR systems can be trained
+with synthetic phrase-level code-switching derived
+from monolingual resources, while Nguyen and
+Tran (2025a) propose AsyncSwitch, which adapts
+models on large amounts of code-switched text be-
+fore aligning this knowledge with limited paired
+speech. More broadly, Hamed et al. (2025) find that
+the value of synthetic code-switched data depends
+strongly on its quality and the downstream task. At
+the same time, recent work has introduced stronger
+benchmarks and architectures for code-switched
+ASR. Yan et al. (2025) present CS-FLEURS, a
+multilingual benchmark covering 113 unique code-
+switched language pairs, and show that synthetic
+training data improves performance on both seen
+and unseen pairs. Ugan et al. (2024) show that
+bilingual ASR systems still struggle on realistic
+code-switching benchmarks, while Ye et al. (2024)
+propose a mixture-of-experts architecture to bet-
+ter handle language switching in streaming and
+non-streaming settings. Earlier work also explored
+semi-supervised and unified approaches (Tazakka
+et al., 2024; Dhawan et al., 2023). Overall, these
+works show that synthetic data is becoming an
+important tool for code-switched ASR, especially
+in low-resource settings where real code-switched
+speech is scarce. They also suggest that the main
+challenge is not only generating more data, but gen-
+erating data that is linguistically and acoustically
+useful for adaptation.
+2.3
+Meta-learning for ASR
+Meta-learning is well suited to low-resource ASR
+because it explicitly learns parameters that can
+adapt quickly to new conditions with limited su-
+pervision. Early work applied MAML-style meta-
+learning to end-to-end ASR, learning initializations
+from high-resource languages that adapt quickly to
+low-resource targets (Hsu et al., 2020), and Winata
+et al. (2020) extended this idea to code-switched
+speech with meta-transfer learning, which draws
+episodes from monolingual corpora so that the ini-
+tialization transfers to limited real CS data. Our
+work differs in that episodes are sampled from syn-
+thetic CS speech of the same language pair and
+the meta-learner is first-order Reptile rather than
+MAML. Recent ASR work has strengthened this di-
+2
+
+
+Figure 1: Overview of the Pair-Specific Synthetic-to-Real Reptile Adaptation Framework for Code-Switched ASR.
+rection: Meta-Adapter shows that meta-initialized
+adapters improve self-supervised speech adapta-
+tion for low-resource languages (Chen et al., 2024),
+SMILE extends meta-learning to few-shot multilin-
+gual ASR through speech meta in-context learn-
+ing (Hsu and Lee, 2024), and MetaMixSpeech
+shows that task augmentation can improve gener-
+alization in multilingual low-resource ASR (Chen
+et al., 2025). Together, these studies motivate meta-
+learning as an effective framework for fast speech
+adaptation under severe data scarcity.
+Related
+ideas also appear in multilingual NLP, where tar-
+geted adaptation has been shown to improve trans-
+fer to low-resource language families (Downey
+et al., 2024). In code-switched ASR, recent work
+such as AsyncSwitch emphasizes adaptation to lim-
+ited paired code-switched speech after prior expo-
+sure to code-switched resources (Nguyen and Tran,
+2025a).
+3
+Data, Model, and Evaluation
+3.1
+Backbones and architecture scope
+We evaluate SyRA-CS with four pretrained models
+spanning different ASR architectures:
+• XLS-R
+300M
+(Encoder-CTC):
+wav2vec2-xls-r-300m,
+with a linear CTC
+prediction head (Babu et al., 2021).
+• Nemotron 3.5 (FastConformer–RNN-T): a
+FastConformer encoder with an RNN-T decoder
+(NVIDIA, 2026a).
+• Whisper-small (AED): an attention-based Trans-
+former encoder–decoder (OpenAI, 2026).
+• Nemotron-Labs-Audex-2B (Speech-LLM): an
+audio-text language model used for speech tran-
+scription (NVIDIA, 2026b).
+The synthetic CS-FLEURS data and real target
+data provide supervised training and adaptation
+examples. They are not used for additional self-
+supervised pretraining.
+Let a index the pretrained model and let θ denote
+its trainable parameters. Reptile operates on these
+parameters using the model-specific transcription
+objective:
+La =
+
+
+
+
+
+LCTC,
+a = XLS-R,
+LRNNT,
+a = Nemotron,
+LAR,
+a ∈{Whisper, Audex},
+(1)
+CTC marginalizes over frame-level alignments
+compatible with the transcript (Graves et al., 2006),
+whereas RNN-T uses a transducer alignment objec-
+tive. For the autoregressive models, the transcrip-
+tion objective is
+LAR(θ; x, y) = −
+|y|
+X
+u=1
+log pθ(yu | y<u, x, ca),
+(2)
+where ca denotes any model-specific task tokens
+or transcription prompt. For the Speech-LLM, this
+expression describes loss on the target transcription
+tokens. Across models, parameter counts, pretrain-
+ing histories, tokenization, and decoding mecha-
+nisms differ. The cross-model experiments there-
+fore examine whether the benefit of Reptile extends
+across architectural settings; absolute differences
+between models cannot be attributed to architecture
+alone.
+3
+
+
+3.2
+Source tasks: CS-FLEURS data
+Our synthetic source data are drawn from CS-
+FLEURS (Yan et al., 2025), a corpus of syn-
+thetic code-switched speech spanning multiple lan-
+guage pairs. We use four code-switched subsets
+from XTTS version as it contains training data for
+our meta learning experiments: Hindi-English (6
+hours), French-English (10.28h), Arabic-English
+(4.51 hours) and German-English (9.37 hours),
+where each subset corresponds to one language
+pair and the reported durations denote the total
+amount of synthetic training audio available for
+that pair. For a model a and target pair p, synthetic
+episodes are sampled only from the corresponding
+source subset Sp. Thus, each meta-training run
+learns a model-specific, pair-specific initialization
+rather than an initialization trained jointly across
+language pairs.
+3.3
+Target tasks: MUCS and Switchlingua
+data
+We evaluate adaptation under real-world code-
+switched conditions using all four pairs as target
+tasks. Real-world Hindi-English speech data is
+from MUCS (Diwan et al., 2021), French-English
+(2.64 hours), Arabic-English (1.43 hours) and
+German-English (1.40 hours) are from the Switch-
+Lingua dataset (Xie et al., 2025).
+SwitchLin-
+gua provides real audio recordings from bilingual
+speakers, but the spoken prompts are generated
+code-switched text samples. Thus, the target au-
+dio is human speech, while the linguistic content
+follows a synthetic-script collection protocol. Un-
+like SwitchLingua, MUCS Hindi-English is ex-
+tracted from human spoken tutorials. The speech
+is therefore real instructional audio, and the code-
+switching primarily arises from technical lecture
+content rather than from generated code-switched
+text. For each target pair, we randomly select a
+1-hour labeled subset for adaptation and evaluate
+final performance on the corresponding real code-
+switched test set. As CS speech data is scarce, this
+setup is intentionally low-resource and is designed
+to measure how effectively a model trained on syn-
+thetic code-switched speech can transfer to real
+speech with only a small amount of target-domain
+supervision.
+3.4
+Metrics and Text normalization
+We report Word Error Rate (WER) and Character
+Error Rate (CER) using Levenshtein edit distance
+(Levenshtein, 1966):
+WER = S + D + I
+Nw
+,
+CER = Sc + Dc + Ic
+Nc
+.
+(3)
+The same normalization is applied to references
+and hypotheses for all systems before scoring: uni-
+code normalization, removal of markup artifacts,
+punctuation stripping, whitespace normalization,
+and case normalization for Latin-script text. We
+do not introduce system-specific post-processing.
+For Arabic-English, the evaluation uses the same
+common normalization pipeline and does not apply
+additional Arabic-specific orthographic collapsing
+unless explicitly configured in the released scoring
+script. WER and CER are standard and compa-
+rable across all four pairs; we complement them
+with a description of the code-switching profile
+of each test set. Multi-reference WER (Ali et al.,
+2015) and PolyWER (Kadaoui et al., 2024) are not
+used here because MUCS and SwitchLingua pro-
+vide a single reference per utterance; constructing
+alternative references manually would introduce
+subjective normalization choices.
+4
+Meta Learning Adaptation
+Let P = {ara-eng, fra-eng, deu-eng, hin-eng} and
+A = {XLSR, Nemotron, Whisper, Audex}. For
+each pair p ∈P, let Sp denote its synthetic CS-
+FLEURS source set, Ap its one-hour real adapta-
+tion set, and Ep its held-out real evaluation set.
+For each model a ∈A, we learn a separate ini-
+tialization θmeta
+a,p
+starting from that model’s pre-
+trained initialization θa,0. The symbol θ denotes
+the parameters updated during training. At meta-
+iteration t, each synthetic episode i starts from
+θ(0)
+a,p,i = θa,p,t. It performs ka inner updates us-
+ing the model-specific loss from Section 3.1:
+θ(j+1)
+a,p,i
+= θ(j)
+a,p,i −αa∇θLa
+ θ(j)
+a,p,i; B(j)
+p,i
+
+,
+(4)
+where B(j)
+p,i ⊂Sp is a synthetic minibatch and j =
+0, . . . , ka −1. This notation expresses a gradient
+step; the optimizer used in each implementation is
+reported with the experimental configuration.
+Let eθa,p,i = θ(ka)
+a,p,i. For a meta-batch of ma
+episodes, the Reptile update is
+θa,p,t+1 = θa,p,t
++ βa,t
+ma
+ma
+X
+i=1
+ eθa,p,i −θa,p,t
+
+,
+(5)
+4
+
+
+where βa,t is the outer step size. The update uses
+parameter displacements without differentiating
+through the inner optimization trajectory.
+After meta-training, the initialization is adapted
+to the one-hour real subset:
+ϕ(0)
+a,p = θmeta
+a,p ,
+ϕ(u+1)
+a,p
+= ϕ(u)
+a,p −ηa∇ϕLa
+ ϕ(u)
+a,p; B(u)
+p
+
+,
+(6)
+where B(u)
+p
+⊂Ap. The resulting model ϕ⋆
+a,p is
+evaluated on Ep. Neither meta-training nor target
+adaptation uses evaluation examples.
+4.1
+Why First-Order Meta-Learning?
+Reptile is particularly suitable for our setting be-
+cause it avoids differentiating through the inner
+optimization trajectory (Nichol et al., 2018). In
+MAML, after k inner updates θ′
+τ = Uk
+τ (θ), the
+meta-update requires
+θ ←θ −β∇θLout
+τ
+
+Uk
+τ (θ)
+
+,
+and therefore backpropagates through the sequence
+of inner-loop optimization steps. In its standard
+form, this introduces second-order derivatives and
+substantial memory and computational overhead.
+This overhead is particularly relevant when repeat-
+edly adapting large pretrained speech models, in-
+cluding CTC, transducer, encoder–decoder, and
+Speech-LLM systems. Reptile instead uses the
+parameter displacement
+θ ←θ + β(θ′
+τ −θ),
+without differentiating through the trajectory that
+produced θ′
+τ. The outer update can therefore be
+applied across our four architectural settings while
+the inner loop uses each model’s transcription ob-
+jective. Our hypothesis is that repeated adaptation
+on synthetic CS episodes produces an initializa-
+tion that transfers more effectively to limited real
+target speech than ordinary synthetic-domain fine-
+tuning. This hypothesis is tested through within-
+model comparisons against CFT. Reptile’s first-
+order formulation reduces the derivative overhead
+associated with standard second-order MAML, but
+does not remove the cost of repeated inner-loop
+training.
+5
+Experiments and Results
+5.1
+Baselines and Reproducibility
+For each model a and language pair p, we compare
+four training regimes:
+Setting
+XLS-R 300M
+Nemotron 3.5 /
+Whisper-small / Audex-2B
+Architecture
+Encoder–CTC
+FastConformer–RNN-T /
+AED / Speech-LLM
+Trainable parameters
+Full model
+Full model
+Meta-iterations
+500
+500
+Inner steps ka
+50
+50
+Inner learning rate αa
+3 × 10−4
+2 × 10−5
+Outer step size βa
+0.1
+0.1
+Batch size
+2
+2
+Target fine-tuning epochs 50
+50
+GPU
+1× RTX 4090 RTX A4500
+Setting: model-specific, pair-specific Reptile
+Pairs: ara-eng, fra-eng, deu-eng, hin-eng
+Source: corresponding CS-FLEURS subset
+Target: 1h per pair; MUCS and SwitchLingua
+Table 1: Reptile configurations. The grouped column
+reports shared settings; architectures follow the model
+order.
+• Synthetic-only transfer: train from the model’s
+pretrained checkpoint on Sp and evaluate directly
+on Ep, without real adaptation.
+• Real-only fine-tuning: fine-tunes the pretrained
+model on Ap only.
+• Continual fine-tuning (CFT): train first on Sp
+and then adapt on Ap.
+• SyRA-CS: learn a Reptile initialization from
+episodes sampled from Sp, then adapt on Ap.
+Within each model–pair combination, all regimes
+start from the same pretrained checkpoint. Methods
+using real adaptation share the same one-hour sub-
+set, and all methods are evaluated on the same held-
+out set. Trainable parameter scope, tokenization,
+transcript normalization, and inference settings are
+fixed across regimes within each model. CFT is the
+closest baseline because it uses the same synthetic
+source set and real target subset as SyRA-CS. Their
+comparison tests the value of episodic Reptile train-
+ing relative to ordinary sequential training. Table 1
+reports the Reptile configuration for each model.
+5.2
+Main results
+Table 2 compares the four training regimes within
+each pretrained model, and SyRA-CS improves
+over CFT in all 16 model–pair WER comparisons
+and in 15 of the 16 CER comparisons, and attains
+the lowest error among the four regimes in 31 of
+the 32 model–pair–metric cells. Macro averages
+over the four pairs are computed from the rounded
+scores in Table 2; relative macro reductions are
+computed from the macro error rates rather than by
+averaging the pair-level reductions in Figure 2.
+5
+
+
+Training regime
+Real data
+Hindi-English
+French-English
+Arabic-English
+German-English
+WER ↓
+CER ↓
+WER ↓
+CER ↓
+WER ↓
+CER ↓
+WER ↓
+CER ↓
+XLS-R 300M (Encoder–CTC)
+Synthetic-only transfer
+0h
+0.770
+0.590
+0.814
+0.364
+0.976
+0.527
+0.830
+0.333
+Real-only fine-tuning
+1h
+0.980
+0.960
+0.531
+0.182
+0.827
+0.367
+0.784
+0.219
+CFT from synthetic
+1h
+0.479
+0.288
+0.370
+0.117
+0.615
+0.212
+0.432
+0.137
+SyRA-CS (ours)
+1h
+0.416
+0.257
+0.350
+0.112
+0.461
+0.163
+0.333
+0.104
+Nemotron 3.5 (FastConformer–RNN-T)
+Synthetic-only transfer
+0h
+0.554
+0.490
+0.277
+0.160
+0.538
+0.319
+0.337
+0.145
+Real-only fine-tuning
+1h
+0.531
+0.472
+0.233
+0.130
+0.504
+0.320
+0.309
+0.147
+CFT from synthetic
+1h
+0.488
+0.426
+0.219
+0.118
+0.454
+0.269
+0.267
+0.113
+SyRA-CS (ours)
+1h
+0.480
+0.417
+0.202
+0.106
+0.429
+0.258
+0.241
+0.104
+Whisper-small (AED)
+Synthetic-only transfer
+0h
+0.831
+0.675
+0.278
+0.133
+0.613
+0.321
+0.305
+0.124
+Real-only fine-tuning
+1h
+0.614
+0.494
+0.172
+0.082
+0.374
+0.188
+0.189
+0.080
+CFT from synthetic
+1h
+0.533
+0.418
+0.163
+0.073
+0.352
+0.162
+0.191
+0.080
+SyRA-CS (ours)
+1h
+0.499
+0.349
+0.153
+0.071
+0.348
+0.181
+0.171
+0.071
+Nemotron-Labs-Audex-2B (Speech-LLM)
+Synthetic-only transfer
+0h
+0.766
+0.640
+0.194
+0.110
+0.721
+0.496
+0.324
+0.147
+Real-only fine-tuning
+1h
+0.525
+0.460
+0.136
+0.074
+0.607
+0.427
+0.199
+0.107
+CFT from synthetic
+1h
+0.520
+0.431
+0.121
+0.064
+0.577
+0.443
+0.193
+0.102
+SyRA-CS (ours)
+1h
+0.490
+0.391
+0.117
+0.061
+0.539
+0.409
+0.183
+0.101
+Table 2: Synthetic-to-real CS ASR performance across four pretrained models. WER and CER are reported as
+fractions. Real data denotes labeled target speech used for adaptation.
+Largest gains for XLS-R.
+The encoder–CTC
+model benefits most: macro WER falls from 0.4740
+to 0.3900 (17.7%) and macro CER from 0.1885
+to 0.1590 (15.6%). The largest pair-level gains
+are on Arabic-English (WER 0.615 →0.461) and
+German-English (0.432 →0.333). XLS-R also
+has the weakest CFT baseline of the four models,
+leaving the most room for improvement.
+Smaller but consistent gains for the other mod-
+els.
+Nemotron 3.5 and Audex-2B improve both
+metrics on every pair, with macro WER/CER reduc-
+tions of 5.3%/4.4% and 5.8%/7.5%, respectively.
+Audex gains most on Arabic-English (WER 0.577
+→0.539) and Hindi-English (0.520 →0.490).
+Whisper-small improves WER on every pair (5.5%
+macro) and macro CER by 8.3%, driven mainly by
+Hindi-English (CER 0.418 →0.349). Its Arabic-
+English result is the only regression: WER de-
+creases slightly (0.352 →0.348) while CER in-
+creases (0.162 →0.181), so pair-level conclusions
+can depend on the metric.
+Variation across models and language pairs.
+Figure 2 shows pair-level relative reductions
+against CFT. WER reductions range from 5.4% to
+25.0% for XLS-R, 1.6% to 9.7% for Nemotron,
+1.1% to 10.5% for Whisper, and 3.3% to 6.6%
+for Audex. All four models improve both WER
+and CER on Hindi-English, French-English, and
+German-English.
+On Hindi-English, WER im-
+proves by 13.2%, 1.6%, 6.4%, and 5.8% for XLS-
+R, Nemotron, Whisper, and Audex, respectively.
+Because Hindi-English differs from the SwitchLin-
+gua pairs in corpus, domain, and switching density
+(Section 5.3) simultaneously, these results cannot
+isolate switching density as a driver of the gains.
+Other baselines.
+Synthetic-only transfer yields
+the highest error in 28 of 32 cells, confirming
+a substantial synthetic-to-real gap. CFT outper-
+forms real-only fine-tuning in 29 of 32 cells (ex-
+ceptions: Whisper German-English WER, a tie on
+Whisper German-English CER, and Audex Arabic-
+English CER), making it a strong baseline. Real-
+only XLS-R nearly fails on Hindi-English (WER
+0.980), which inflates its macro score, so we treat
+CFT as the primary comparison. Because CFT and
+SyRA-CS use the same synthetic subset and the
+same one-hour real subset, their gap reflects the
+training strategy rather than additional data.
+5.3
+Code-switching profile and Robustness
+checks
+Figure 5 shows that code-switched utterances ac-
+count for 88.5% of Arabic-English, 88.4% of
+French-English, 76.9% of German-English, and
+80.8% of Hindi-English test utterances. Hindi-
+English has the highest reported switching den-
+sity, at 2.996 switches per utterance. These statis-
+tics establish substantial mixed-language coverage,
+but do not identify which linguistic phenomena
+account for a model’s improvements.
+Robustness to small evaluation sets.
+German-
+English and Arabic-English contain only 1.40 and
+6

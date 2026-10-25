@@ -1,0 +1,645 @@
+CRANE: Post-Hoc Counterfactual Retrieval for
+Multimodal Classifiers
+1st Franco Rugolon
+Dept. of Computer and Systems Sciences
+Stockholm University
+Stockholm, Sweden
+franco.rugolon@dsv.su.se
+2nd Ioanna Miliou
+Dept. of Computer and Systems Sciences
+Stockholm University
+Stockholm, Sweden
+ioanna.miliou@dsv.su.se
+3rd Panagiotis Papapetrou
+Dept. of Computer and Systems Sciences
+Stockholm University
+Stockholm, Sweden
+panagiotis@dsv.su.se
+Abstract—Counterfactual explanation methods have been in-
+troduced for unimodal settings, with dedicated frameworks for
+tabular, timeseries, text, and image data, yet no post-hoc method
+has been designed for classifiers that learn from multimodal
+inputs. Existing explainability methods for multimodal classifiers
+apply modality-specific attribution independently to each input,
+which fails to yield coherent explanations and does not transfer to
+arbitrary pre-trained multimodal architectures. To address these
+shortcomings, we present CRANE (Counterfactual Retrieval via
+Agnostic Nearest-neighbour Explanations), the first post-hoc,
+model-agnostic framework for nearest-neighbour multimodal
+counterfactual generation that retrieves real training examples
+from the target class as candidate explanations, ensuring plausi-
+bility by construction. Across four heterogeneous datasets and
+three fusion strategies, we show that Multimodal Consensus
+Retrieval (MC-R), which intersects per-modality neighbour sets
+to identify instances jointly close to the query in every modality,
+emerges as the strongest multimodal strategy, achieving the best
+or joint-best outcome on three of four datasets while grounding
+every explanation in the joint training distribution. Unimodal
+strategies remain competitive when a single modality dominates
+the decision boundary.
+Index Terms—Explainable artificial intelligence, Counterfac-
+tual explanations, Multimodal learning, Post-hoc explanation
+I. INTRODUCTION
+Data science pipelines increasingly operate on heteroge-
+neous inputs, combining structured records, free text, time-
+series, and images within a single predictive model. Clinical
+decision support systems fuse vital signs with structured
+patient demographics to predict outcomes, such as sepsis mor-
+tality [1] and cancer metastasis [2]–[4]; content-moderation
+systems pair images and their captions to detect hateful
+memes [5]; and fraud detectors combine free-text job postings
+with structured posting metadata to flag deceptive listings [6].
+As these multimodal architectures become standard practice,
+the need to explain their predictions grows. This need has
+driven a substantial body of work on explainable Artificial
+Intelligence (XAI) [7], [8].
+Counterfactual explanations are among the most natural and
+actionable forms of post-hoc justification: a counterfactual x′
+reconfigures a sample x so as to flip its prediction while
+staying close to x and consistent with the data manifold.
+Falling within the example-based XAI methods, they answer
+the intuitive, often directly actionable question “what would
+need to change in x for the model to decide otherwise?”.
+Patient to explain
+Demographics:
+Age=72,
+Gender=Male
+Lab exams:
+PSA ↑, NT-
+proBNP ↑
+Prediction:
+Death
+Demographic
+counterfactual
+Age=72,
+Gender=female
+Lab exams
+counterfactual:
+PSA ↑, NT-
+proBNP ↓
+Prediction:
+Survival
+Prediction:
+Survival
+Not a real patient:
+demographics &
+comorbidities
+are not compatible
+(a) Original
+sample
+(b) Independent
+counterfactuals
+(c) Chimeric result
+Chimeric counterfactual
+Demographics:
+Age=72,
+Gender=Female
+Lab exams:
+PSA ↑, NT-
+proBNP ↓
+Prediction:
+Survival
+Fig. 1.
+Independently generated per-modality counterfactuals can produce
+a chimeric explanation whose static features and timeseries trajectories are
+incoherent. Arrows denote rising (↑) or falling (↓) biomarkers.
+Well-performing counterfactual generators exist for individ-
+ual modalities: tabular [9], [10], timeseries [11], [12], text [13],
+and image [14]. These generators, however, assume a single,
+homogeneous input space. When a classifier consumes several
+modalities at once, applying these generators independently
+per modality fails to yield coherent explanations, as illustrated
+in Fig. 1. For a multimodal mortality classifier over static de-
+mographics and laboratory timeseries, a tabular counterfactual
+generator may return a female survivor of the same age, while
+a timeseries generator may return signals that reflect decreas-
+ing N-terminal pro-B-type natriuretic peptide (NT-proBNP),
+a cardiac stress marker, but might not change the increasing
+trend in Prostate Specific Antigen (PSA), which is a clinical
+impossibility, as biological females do not produce PSA. This
+process would result in a chimeric counterfactual that would be
+locally plausible within each modality, yet globally incoherent
+and clinically meaningless when considered as a whole.
+Retrieval-based methods avoid this problem by construction:
+rather than synthesising a new sample, they return a real
+training example from the target class. The nearest-unlike-
+neighbour (NUN) literature exploits this in unimodal set-
+tings [11], [12], [15], but it has not been extended to the
+multimodal case.
+In addition, when using a retrieval-based approach, different
+choices regarding the search space itself deserve consideration.
+One could search within a single modality’s feature space,
+concatenate all modality embeddings and search jointly, or
+arXiv:2610.31594v1  [cs.LG]  22 Oct 2026
+
+
+search in the multimodal model’s latent representation. Each
+choice encodes a different notion of similarity, and how their
+relative merits compare in terms of the standard counterfactual
+quality objectives (prediction-flip rate, proximity, sparsity, and
+plausibility) [16], and of the diversity of the generated set [10]
+remains to be explored.
+We address these open questions with CRANE (Counterfac-
+tual Retrieval via Agnostic Nearest-neighbour Explanations),
+a post-hoc, model-agnostic framework for nearest-neighbour
+counterfactual generation for multimodal classifiers. CRANE1
+supports arbitrary combinations of tabular, timeseries, text,
+and image modalities through retrieval strategies spanning
+from unimodal search to multimodal fusion, and extends
+the standard counterfactual quality objectives (i.e., outcome,
+proximity, sparsity, and plausibility) to heterogeneous input
+spaces. Among the different strategies, Multimodal Consensus
+Retrieval (MC-R), which retrieves training instances jointly
+close to the query in each modality, emerges as the strongest
+multimodal strategy in four datasets spanning social media,
+recruitment, content moderation, and clinical prediction, while
+unimodal retrieval remains competitive when a single modality
+dominates the decision boundary.
+II. RELATED WORK
+Explainability methods for machine learning (ML) span a
+broad landscape, from feature-attribution methods [17], [18],
+to saliency maps [19], attention-based explanations [20], and
+example-based approaches, like counterfactuals, yet the vast
+majority assume a single, homogeneous input space. This lim-
+itation is sharpest for counterfactuals, where the explanation
+must simultaneously specify what would change across all
+input spaces, not merely within one.
+Counterfactual explanations were formalised in the context
+of ML by Wachter et al. [9], and have since grown into
+a rich research area. For example, DiCE [10] generates a
+diverse set of counterfactuals by adding a determinantal point
+process term to the objective, so that different explanations
+suggest different actionable paths, while Dandl et al. [21]
+proposed a multi-objective formulation that simultaneously
+optimises proximity, sparsity, plausibility, and actionability
+without collapsing them into a single weighted sum.
+A distinct thread within the counterfactual literature avoids
+optimisation altogether by framing explanation as retrieval,
+where a real training example from the target class, the NUN,
+is used directly as the explanation or as a seed for further
+refinement. Brughmans and Martens [15] formalise this ap-
+proach in NICE, which exploits the NUN to construct tabular
+counterfactuals that are guaranteed to exist in the observed
+data distribution. The retrieval strategy carries an important
+structural guarantee: since the returned sample was observed
+in the training data, it is plausible by construction, without
+any explicit plausibility penalty in an objective function.
+However, the methods reviewed above are designed exclu-
+sively for flat tabular or embedding-space inputs; the question
+1The code is available on GitHub; the library can be installed with pip
+install crane-cf.
+of how to generate counterfactuals for classifiers that fuse
+multiple modalities simultaneously has received considerably
+less attention, as the following review of modality-specific
+approaches makes clear.
+III. COUNTERFACTUAL RETRIEVAL VIA AGNOSTIC
+NEAREST-NEIGHBOUR EXPLANATIONS
+A. Problem Formulation
+We introduce a general formulation for multimodal coun-
+terfactual generation that is independent of any particular data
+type, classifier architecture, or application domain.
+Multimodal instance space. Let M ≥1 be the number of
+modalities present in a dataset S. For each modality m ∈
+{1, . . . , M}, let X m be the corresponding modality space,
+encoding the representation format and domain constraints of
+that modality. The multimodal input space is
+X := X 1 × · · · × X M.
+(1)
+A multimodal instance is a tuple x = (x1, . . . , xM) ∈X,
+where xm ∈X m is the component of x in modality m.
+In principle, X m may represent any data type for which a
+suitable distance function dm and plausibility estimator pm can
+be defined. Without loss of generality, in this work we explore
+four modality types commonly encountered in heterogeneous
+data pipelines: static feature vectors (tabular), multivariate
+timeseries, token sequences (text), and two-dimensional pixel
+arrays (image). Adding additional modalities requires only
+specifying appropriate dm and pm functions for each one.
+Multimodal classifier. Let Y be a finite label set. A multi-
+modal classifier is a function f : X →[0, 1]|Y|, where fy(x) is
+the score assigned to label y ∈Y for instance x. The predicted
+label is ˆy := arg maxy∈Y fy(x). CRANE treats f as a black
+box: only the prediction function is required, and no access to
+model internals, gradients, or training procedure is assumed.
+Multimodal counterfactual generation. Given a factual in-
+stance x ∈X with predicted label ˆy = f(x), a labelled
+training set D = {(xi, yi)}n
+i=1, and a target label y⋆̸ = ˆy,
+the goal is to find a counterfactual instance x′ ∈X such
+that f(x′) = y⋆and x′ is of high quality with respect
+to the multimodal equivalents to the standard counterfactual
+objectives, as defined in Section III-A1.
+1) Objectives: To evaluate the generated counterfactuals,
+we use four metrics commonly employed in the counterfac-
+tual explanation literature: outcome, proximity, sparsity, and
+plausibility. Each candidate counterfactual ˙x is compared to
+the factual instance x = (x1, . . . , xM). The latter three scores
+are computed per modality and aggregated using non-negative
+weights wm ≥0, P
+m wm = 1. Every retrieval strategy
+returns an ordered list of such candidates; the best-scoring ones
+under the aggregated objectives are retained as counterfactual
+instances x′ as explained in Section III-A. All objectives are
+minimised; a value of zero denotes a perfect candidate. To
+ensure that scores from modalities with different native scales
+are commensurable, every per-modality function is mapped
+to [0, 1] before aggregation, so the multimodal aggregate is
+
+
+guaranteed to lie in [0, 1] regardless of the number or type
+of modalities present. In all experiments reported here we
+use uniform weights wm = 1/M; dataset-specific weights
+may be substituted when prior knowledge about the relative
+importance of modalities is available. We define the four
+metrics as follows:
+a) Outcome: The first objective measures whether, and
+how decisively, a candidate attains the target label y⋆, using
+validity, a binary indicator
+Validity( ˙x) = 1
+
+argmaxy∈Y fy( ˙x) = y⋆
+,
+(2)
+recording whether the prediction has flipped, and outcome
+Φout( ˙x) = 1 −fy⋆( ˙x),
+(3)
+a continuous deviation between the score the classifier assigns
+to the target class and the score it would assign to an
+unambiguous member of that class. Φout lies in [0, 1] and is
+minimised at 0 when the classifier has full confidence in y⋆.
+b) Proximity: Proximity measures how much the candi-
+date deviates from the factual instance:
+Φprox(x, ˙x) =
+M
+X
+m=1
+wm ˜dm(xm, ˙xm),
+(4)
+where ˜dm ∈[0, 1] is a modality-specific normalised distance.
+For tabular and timeseries modalities, the raw distance is the
+mean absolute error between xm and ˙xm; it is normalised
+by converting it to a percentile rank against a reference
+distribution of pairwise distances computed from all cross-
+class training pairs, so that a score of 0 indicates that the
+counterfactual is closer than all reference pairs and a score of
+1 indicates that it is farther. For text and image modalities, ˜dm
+is the normalised cosine distance, i.e.,
+˜dm(xm, ˙xm) = 1 −cos(ϕm(xm), ϕm( ˙xm))
+2
+,
+(5)
+where ϕm is the modality-specific encoder. Note that ˜dm(·) ∈
+[0, 1], ensuring comparability with the percentile-normalised
+distances used for tabular and timeseries modalities.
+c) Sparsity: Sparsity measures how many components of
+the factual instance must be altered to yield the counterfactual:
+Φspar(x, ˙x) =
+M
+X
+m=1
+wm sm(xm, ˙xm),
+(6)
+where sm ∈[0, 1] is a modality-specific normalised change
+count. For the tabular modality, sm is the ℓ0 norm divided
+by the total number of features D: sm = ∥˙xm −xm∥0/D,
+so that a value of 1 indicates every feature has changed. For
+the timeseries modality with C channels, sm is computed per
+channel as the fraction of timesteps at which the absolute
+difference exceeds a threshold τc ≥0 (default τc = 0, so
+any nonzero change is counted); these per-channel fractions
+are averaged over all C channels, giving sm ∈[0, 1]. For
+the text modality, sm is the token-level Levenshtein distance
+between xm and ˙xm, divided by max(1, |xm|) where |xm| is
+the number of tokens in the factual instance, and capped at 1.0.
+For the image modality, sm is the fraction of pixel elements
+(across all channels, after normalising integer images to [0, 1])
+whose absolute difference exceeds a threshold (default 0).
+d) Plausibility: It measures how typical the candidate
+counterfactual is relative to the target-class training distribu-
+tion:
+Φplaus( ˙x) =
+M
+X
+m=1
+wm pm( ˙xm),
+(7)
+where pm ∈[0, 1] is a normalised outlier score for modality
+m. For each modality, a Local Outlier Factor (LOF) model
+with k = 20 neighbours is fitted in novelty-detection mode
+on the target-class portion of the training set; timeseries are
+flattened to a vector of length T × C before fitting. The raw
+outlierness of a candidate ˙xm is −score_samples( ˙xm),
+so higher values indicate a greater deviation from the training
+distribution. This raw score is then mapped to [0, 1] via
+its percentile rank against the raw scores of all target-class
+training points:
+pm( ˙xm) = 1
+n
+n
+X
+i=1
+1[raw(xm
+i ) ≤raw( ˙xm)] ,
+(8)
+where the sum is over the n target-class training instances. A
+score of 0 indicates that the candidate is at least as inlier-like
+as every target-class training point; a score of 1 indicates that
+it is a stronger outlier than every target-class training point.
+On the plausibility of retrieved counterfactuals. A key
+property of retrieval-based methods is that whenever k = 1,
+the returned counterfactual is a real training instance from the
+target class and is therefore plausible by construction: it lies
+on the empirical data manifold, and all its modalities were
+observed together in a single real-world instance, preserving
+cross-modal coherence. When k > 1, CRANE always returns
+the single nearest neighbour as its first candidate; the j-th
+subsequent candidate (j = 2, . . . , k) is the component-wise
+median over the j nearest neighbours, yielding a sequence
+of increasingly smoothed prototypes. In general, none of
+these median candidates corresponds to any observed train-
+ing instance. The plausibility objective in Eq. (7) quantifies
+plausibility for all candidates uniformly.
+B. CRANE Retrieval Strategies
+CRANE constructs counterfactual candidates by searching
+the training set D for the k instances closest to x among
+those labelled y⋆, and assembling a candidate from those
+neighbours. The key design choice is in which space the
+nearest-neighbour search is performed. CRANE provides a
+family of retrieval strategies, ranging from unimodal search to
+multimodal fusion. All strategies share a common interface:
+they take (x, y⋆, k) as input and return an ordered list of
+candidate counterfactuals. All treat the classifier f as a black
+box. The different strategies are described below:
+1) Unimodal
+Retrieval:
+CRANE
+provides
+four
+uni-
+modal retrieval strategies — TABULARNN, TIMESERIESNN,
+TEXTNN, and IMAGENN — each ranking target-class training
+
+
+instances by distance in a single modality’s feature or embed-
+ding space. Let Dy⋆= {xi | yi = y⋆} denote the target-class
+training instances. Given a modality-specific distance dm, the
+k nearest neighbours are
+N (k)
+m (x) = kNNy⋆(xm; dm) ,
+(9)
+the k elements of Dy⋆with smallest dm(xm, xm
+i ). For text
+and image modalities, dm operates in encoder embedding
+space: dm(a, b) = 1 −cos(ϕm(a), ϕm(b)), where ϕm is a
+configurable pre-trained encoder treated as a hyperparameter
+of the distance function. In the experiments reported here we
+evaluate BERT-family models (multilingual E5, MiniLM), TF-
+IDF, and Word2Vec for text; ResNet-50, EfficientNet-B0, ViT-
+B/16, and CLIP ViT-B/32 for images. All four strategies share
+the same retrieval interface, but the rule for constructing the
+j-th candidate (j = 1, . . . , k) from the ranked neighbours
+depends on whether the modality is structured or unstructured,
+and this choice has direct consequences for how quality
+metrics behave as k increases.
+Structured modalities (tabular, timeseries). Feature values
+are defined on a common continuous scale, so a component-
+wise median over j neighbours is a meaningful summary. The
+j-th candidate prototype is the progressive median over the j
+nearest neighbours:
+π(j)
+m (x) =
+median
+xi ∈N(j)
+m (x)
+xm
+i .
+(10)
+At j = 1 this returns a real training instance. For j > 1 the
+prototype is a smoothed aggregate that may not correspond
+to any observed row, but it remains close to the centre of
+the local target-class neighbourhood. As a result, proximity
+and plausibility tend to improve modestly as j increases,
+since the progressive median averages out outlying feature
+values. TABULARNN uses Euclidean or Manhattan distance;
+TIMESERIESNN uses Euclidean, DTW, or LCSS.
+Unstructured modalities (text, image). No meaningful me-
+dian exists in the original representation space: the component-
+wise median of token sequences or pixel arrays is not a
+coherent text or image. CRANE therefore uses rank-matched
+selection: the j-th candidate takes the literal text or image from
+the j-th nearest neighbour in embedding space,
+π(j)
+m (x) = xm
+(j),
+(11)
+where x(j) denotes the j-th nearest neighbour under dm.
+Therefore, every candidate is a real observed training instance
+in any j, but as j increases, the selected instances are drawn
+from progressively more distant regions of the embedding
+space. Proximity and sparsity objectives for text and image
+are measured in embedding space, since recovering an un-
+ambiguous token sequence or pixel array from an encoder
+representation is not possible, in general.
+2) Early-Fusion Nearest Neighbour (EF-NN): Early-fusion
+retrieval forms a joint representation by concatenating the
+embeddings of all modalities into a single vector:
+˜x = concat
+ ϕ1(x1), . . . , ϕM(xM)
+
+,
+(12)
+and retrieves the k nearest neighbours in this joint space using
+a distance ρ defined on the concatenated vector (e.g., cosine
+or Euclidean). The prototype is assembled from the jointly-
+ranked neighbours using the modality-type materialisation
+rules defined in Section III-B (Eqs. 10–11). The only differ-
+ence from a unimodal strategy is the ranking step: neighbours
+are ordered by distance in the concatenated space ˜x rather than
+in any single modality’s space.
+3) Intermediate-Fusion
+Nearest
+Neighbour
+(IF-NN):
+Intermediate-fusion retrieval performs neighbour search in the
+latent representation learned by the classifier. Let λ : X →Rd
+denote the penultimate-layer activation of the multimodal
+classifier f. Distances are computed as
+dint(x, xi) = ∥λ(x) −λ(xi)∥2,
+(13)
+and the j-th candidate is assembled from the j nearest
+neighbours in this representation. Because λ(x) is a single
+continuous vector regardless of the original modality types,
+candidate materialisation always follows the structured rule:
+the j-th candidate is the component-wise median over the
+latent-space-ranked neighbours, mapped back to input space
+by retrieving the corresponding complete training instances
+and applying Eqs. 10–11 per modality. By operating in the
+model’s own embedding space, IF-NN retrieves instances that
+the classifier itself considers similar to x. However, unlike
+all other CRANE strategies, which operate solely through
+a prediction function and are fully model-agnostic, this one
+requires the explained model to be a deep neural network
+with accessible intermediate activations; it is not applicable
+to non-differentiable models.
+4) Multimodal Consensus Retrieval (MC-R): MC-R re-
+trieves instances that are simultaneously close to x across
+all modalities by intersecting per-modality neighbour sets. For
+each modality m, the top-k nearest target-class neighbours are
+retrieved independently:
+N (k)
+m (x) = kNNy⋆(xm; dm) .
+(14)
+The consensus set is the intersection of these sets:
+S(x) =
+M
+\
+m=1
+N (k)
+m (x).
+(15)
+k is chosen large enough to ensure S(x)̸ = ∅. The j-th
+candidate is then assembled from the j nearest instances in
+S(x), ranked by the summed per-modality distance, using
+the same materialisation rules (Eqs. 10–11). MC-R is the
+most conservative multimodal strategy: candidates are drawn
+from the intersection of per-modality neighbourhoods and are
+therefore jointly close to x in every modality simultaneously.
+The first candidate (when |S(x)| ≥1) is always a real training
+instance.
+5) Modality-wise Prototype Synthesis (MPS): MPS syn-
+thesises a candidate by combining independent per-modality
+prototypes. For each modality m, the k nearest neighbours are
+retrieved in that modality’s own feature or embedding space,
+as in Eq. 9. The per-modality prototype π(j)
+m (x) for the j-th
+
+
+candidate is computed following the modality-type rules in
+Eqs. 10–11. The j-th synthetic counterfactual is assembled by
+concatenating the per-modality prototypes:
+˙xMPS =
+ π(j)
+1 (x), . . . , π(j)
+M (x)
+
+.
+(16)
+Unlike MC-R, MPS does not require any training instance
+to rank highly in all modalities simultaneously, so it can
+produce multimodal candidates even when no single instance
+is jointly close to x across all modalities. However, because
+each modality is sourced from a different nearest neighbour,
+MPS candidates are synthetic composites that do not in general
+correspond to any observed training instance, even at j = 1.
+Consequently, MPS does not carry the structural plausibility
+guarantees that hold for MC-R and the unimodal retrievers.
+IV. EXPERIMENTS
+A. Datasets
+We evaluate CRANE on four publicly available datasets
+spanning diverse application domains, modality combinations,
+and class structures. A summary is given in Table I.
+Sepsis (in-hospital mortality). The Sepsis dataset is extracted
+from MIMIC-III [22] following the procedure described in [1],
+which identifies ICU admissions with a confirmed sepsis di-
+agnosis. Each admission is represented as 24 hourly timesteps
+over 100 features, partitioned into a timeseries modality of 53
+time-varying clinical variables (vital signs and laboratory val-
+ues) and a tabular modality of 47 static features (demographic
+and admission data extracted from the first timestep). The
+classification task is binary in-hospital mortality prediction.
+The dataset is strongly imbalanced, with a mortality rate of
+approximately 7.4%. Evaluation follows 5-fold stratified cross-
+validation; results are pooled across folds and reported as F1
+score as the primary metric, and AUC.
+Long COVID Tweets (emotion classification). This dataset 2
+consists of Italian tweets discussing long COVID, annotated
+with four emotion labels drawn from the FEEL-IT taxon-
+omy [23]: fear, anger, sadness, and joy. Each instance com-
+prises a raw tweet text field and a tabular modality encoding
+engagement metadata (likes, retweets, replies, quote counts)
+and structural tweet features (hashtag and URL counts). The
+class distribution is imbalanced, with fear (41.6%) and anger
+(32.9%) dominating and joy (8.8%) forming the minority class.
+Hateful Memes (hate speech detection). The Hateful Memes
+dataset [24] is a binary classification benchmark for detecting
+hate speech in internet memes. Each instance consists of a text
+caption and a 224×224 RGB image. The class distribution is
+moderately imbalanced, with 63.7% non-hateful and 36.3%
+hateful instances.
+Real or Fake Jobs (fraud detection). This dataset [25]
+contains job postings labelled as real or fraudulent. Each
+instance combines a tabular modality (structured fields such
+as salary range, employment type, and required experience)
+with three independent text fields: job description, company
+2https://huggingface.co/datasets/Santarabantoosoo/italian long covid tweets
+TABLE I
+SUMMARY OF DATASETS USED IN THE EXPERIMENTS.
+Dataset
+Modalities
+Task
+Train
+Test
+Sepsis
+TS + Tab
+Binary
+2,085/fold
+521/fold
+Long COVID Tweets
+Text + Tab
+4-class
+20,121
+5,031
+Hateful Memes
+Text + Image
+Binary
+7,632
+1,908
+Real or Fake Jobs
+Text + Tab
+Binary
+14,304
+3,576
+profile, and requirements. The task is strongly imbalanced,
+with fraudulent postings accounting for only 4.8% of the data.
+B. Experimental Setup
+1) Classifier Families and Fusion Strategies: For each
+dataset, we train classifiers under three fusion strategies: early
+fusion, intermediate fusion, and late fusion, as defined in
+Section III-B. For each fusion strategy, we compare two clas-
+sifier families: a deep family based on multi-layer perceptrons
+(MLP) with task-trained branches, and a non-deep family
+using tree-based ensembles (Random Forest and Gradient
+Boosting) or, for timeseries branches, the ROCKET transform
+with Logistic Regression [26]. This design yields a range
+of classifier types that stress-tests CRANE’s model-agnostic
+claim: the IF-NN retrieval strategy requires a deep neural
+classifier with accessible penultimate activations and is there-
+fore evaluated only on deep models, while all other CRANE
+strategies are evaluated uniformly across both families.
+Text is encoded using pre-trained transformer models:
+XLM-RoBERTa for Long COVID Tweets, DistilBERT for
+Real or Fake Jobs, and BERT or MiniLM for Hateful Memes.
+Images in Hateful Memes are encoded using ResNet-50,
+EfficientNet-B0, or ViT-B/16. For early-fusion classifiers, all
+encoders are frozen (no fine-tuning); for intermediate-fusion
+classifiers, the transformer backbone is fine-tuned end-to-end.
+Class imbalance is addressed via inverse-frequency weighting
+for all classifiers. For training we use a 15% hold-out valida-
+tion split for early stopping and hyperparameter tuning.
+2) CRANE Configuration: Each CRANE retrieval strategy
+is configured with k = 20, returning 20 candidates per
+query. For MC-R, the per-modality search pool is set to
+ksearch = 200 neighbours per modality prior to intersection,
+ensuring that the consensus set is non-empty for all queries
+in our datasets. For each dataset we run a systematic ablation
+over all valid combinations of encoder and distance metric
+per modality (as defined in Section III-B), yielding 6, 22, 16,
+and 84 combinations for Sepsis, Long COVID Tweets, Real or
+Fake Jobs, and Hateful Memes, respectively. The results are
+reported as averages across all ablation combinations.
+3) CRANE Strategies per Dataset: Not all retrieval strate-
+gies are applicable to every dataset and classifier combination.
+IF-NN is evaluated only on deep classifiers, as described in
+Section IV-B; for datasets where a modality is absent (e.g., no
+image modality in Sepsis, Tweets, or Jobs), the corresponding
+unimodal strategy is not evaluated.

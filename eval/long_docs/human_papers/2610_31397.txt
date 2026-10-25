@@ -1,0 +1,331 @@
+Parameter-Efficient Adaptation of Large Language Models to
+a Low-Resource Agglutinative Language: A Corpus, Datasets,
+and a Reproducible Benchmark for the Bashkir Language
+A Preprint
+M. K. Arabov∗1 and S. S. Khaybullina†1
+1Department of Data Analysis and Programming Technologies, Institute of Computational Mathematics and
+Information Technologies, Kazan (Volga Region) Federal University, Kazan, Russia
+October 23, 2026
+Abstract
+Bashkir is a low-resource agglutinative language written in Cyrillic and remains poorly represented in
+the ecosystem of modern large language models. This work presents an open resource suite for Bashkir
+and a systematic benchmark of large-language-model adaptation methods: the Bashkir Web Corpus
+(71,567 documents, 46.9 million tokens, 16 sources) and three labelled datasets for text classification:
+binary (16,994 documents), multiclass (17,897 documents, 19 categories) and multilabel (22,318
+documents, 14 labels); the benchmark is conducted on the first two. Experiments are conducted
+on eight architectures in the 82M–8B parameter range (DistilGPT2, GPT-2 base, GPT-2 medium,
+Phi-3-mini, Mistral-7B, YandexGPT-5-Lite-8B, mBERT, XLM-R) and three groups of adaptation
+strategies: full fine-tuning, QLoRA and in-context learning (zero-shot and few-shot); the benefit of
+continual pretraining (CPT) on the Bashkir corpus is additionally investigated.
+Four results constitute the main contribution of the work. First, QLoRA adaptation of 3.8–8B
+generative models outperforms full fine-tuning of encoder-only baselines on binary classification:
+YandexGPT-5-Lite-8B with CPT reaches a macro-F1 of 0.748 versus 0.653 for XLM-R and 0.650 for
+mBERT; in a pairwise comparison of accuracy for the step6 configurations (0.737 versus 0.659 and
+0.652), the difference between QLoRA adaptation and the encoder-only baseline is significant after
+Holm correction for 15 comparisons (𝑝Holm < 0.001). Second, YandexGPT-5-Lite-8B significantly
+outperforms Mistral-7B and Phi-3-mini on multiclass classification, BPB and native-speaker ratings
+(mean 3.28 versus 2.52 and 2.22; 𝑛= 100; annotator agreement 𝛼= 0.69–0.77; 𝑝Holm < 0.05);
+zero-shot ICL shows a numerical advantage (0.58–0.68 versus 0.36–0.51 macro-F1), but no formal
+test was conducted for it; on binary classification, the numerical advantage of YandexGPT-5-Lite-8B
+is not statistically confirmed within the QLoRA group (𝑝Holm ≥0.084). Third, the effect of CPT
+depends on both the base model and the task: on perplexity, CPT is significant for all three models but
+with opposite signs — it improves Phi-3-mini (Δ = +0.58) and YandexGPT-5-Lite-8B (Δ = +0.33)
+and worsens Mistral-7B (Δ = −1.15, 𝑝Holm < 0.001); on binary classification, by contrast, CPT
+gives the largest gain precisely for Mistral-7B (+4.0 macro-F1 points). Fourth, tokeniser fertility
+on Bashkir varies by a factor of 2.67 (from 2.92 to 7.80) and is consistent with adaptation quality,
+whereas perplexity under different tokenisers is unsuitable for cross-model comparison.
+Practical recommendations: under a limited computational budget, preference should be given to
+models with a Cyrillic tokeniser and Russian-language pretraining; for assessing generation quality in
+a low-resource language, direct scoring by LLM judges reproduces native-speaker ratings for grammar
+and coherence (𝜌= 0.33–0.46) but not for language correctness (𝜌= 0.16, 𝑝= 0.11); native-speaker
+evaluation remains necessary. All artefacts — the corpus, datasets, experiment code and trained
+adapters — are released under open licences.
+∗MKArabov@kpfu.ru
+†khaybulinas@mail.ru
+arXiv:2610.31397v1  [cs.CL]  22 Oct 2026
+
+
+Parameter-Efficient Adaptation of LLMs to Bashkir
+A Preprint
+Keywords Bashkir language · low-resource languages · agglutinative languages · QLoRA · continual pretraining ·
+tokenisation · LLM-as-Judge · reproducible benchmark
+1
+Introduction
+Bashkir belongs to the Turkic language family and is one of the state languages of the Republic of Bashkortostan.
+Despite this, Bashkir has an extremely limited digital presence: the volume of machine-readable texts, annotated corpora
+and pretrained language models is substantially smaller than for languages with a high digital presence and than for a
+number of closely related Turkic languages.
+Over the past few years, large language models have made a qualitative leap: growth in the number of parameters, the
+transition to instruction tuning, the emergence of parameter-efficient adaptation methods and open models have made
+large language models the main instrument of natural language processing com [2026], Burnashev et al. [2026]. This
+development, however, is unevenly distributed across languages. The overwhelming majority of modern models are
+trained on English, which leads to digital inequality: languages with a limited digital presence — including Bashkir —
+are effectively excluded from the ecosystem of modern language technologies.
+This inequality manifests itself at three levels. First, tokenisers of multilingual models fragment agglutinative word
+forms into excessively long subsequences of subtokens, which reduces processing quality Eyupoglu [2019], Grechachin
+[2018]. Second, the absence of large open corpora limits the possibilities of both pretraining from scratch and continual
+training Khudiakova [2025]. Third, existing linguistic resources for Bashkir were created within a paradigm oriented
+towards search and aggregation of data rather than machine learning Sirazitdinov [2025].
+The digitisation of the Bashkir language began in the 2000s and is associated primarily with the creation of the Machine
+Fund of the Bashkir Language — an integrated information system developed at the Institute of History, Language
+and Literature, Ufa Federal Research Centre, Russian Academy of Sciences (IIL UFRC RAS) since 2006 Sirazitdinov
+and Buskunbaeva [2010], Sirazitdinov [2025]. The structure of the Fund includes a general word list, lexicographic,
+grammatical and experimental-phonetic databases, catalogues of manuscript and early printed books, a dialectological
+database, and corpus databases of prose, journalistic and folklore texts Sirazitdinov [2025]. The total number of
+linguistic data databases exceeds 75. These resources became the basis for subsequent corpus and applied developments
+Sirazitdinov [2024].
+However, the architecture of the Machine Fund, developed on the basis of the Oracle relational database management
+system, is oriented towards search and aggregation of linguistic information and is not intended for training neural
+network models. The resulting gap between accumulated linguistic data and modern machine-learning methods
+determined the need to create open corpora suitable for pretraining and fine-tuning transformer architectures.
+In parallel, a strand emerged in Turkic studies concerned with the application of natural language processing methods to
+low-resource languages. Studies show that transfer of knowledge from closely related languages, multilingual training
+and parameter-efficient fine-tuning make it possible to achieve acceptable quality even with limited data volumes
+Saykhunov and Suleymanov [2019], Khusainov and Suleymanov [2021], Mirzakhalov et al. [2021], Gatiatullin et al.
+[2024], Suleymanov et al. [2026]. At the same time, until recently there were no systematic studies for Bashkir
+comparing different strategies for adapting large language models.
+The relevance of this work is determined by three factors. First, Bashkir remains a low-resource language, and existing
+open corpora have a limited volume and source imbalance Khudiakova [2025]. Second, parameter-efficient fine-tuning
+methods that have proved themselves in other languages com [2026], Burnashev et al. [2026], Arabov et al. [2026a] have
+not been systematically tested on Bashkir material. Third, practical applications — machine translation Karpov [2026],
+Maxim [2026], Tyurin [2026], speech recognition and synthesis Radford et al. [2022], Orel et al. [2023], Bekarystankyzy
+et al. [2024], text classification Smetanina et al. [2020], Arabov et al. [2026a,b] — require reproducible benchmarks and
+open datasets, which remain insufficient for Bashkir.
+This study aims to fill this gap. The work presents three groups of artefacts and results. The first group is resources:
+the open Bashkir Web Corpus with 46.9 million tokens, as well as three annotated datasets for binary, multiclass and
+multilabel classification. The second group is empirical results: the application of QLoRA to medium-scale generative
+models, an assessment of continual pretraining on the Bashkir corpus as a preliminary stage before downstream
+adaptation, a comparison of in-context learning strategies (zero-shot and few-shot) with parameter updates, and full
+fine-tuning of small architectures as a baseline. The third group is analysis: measurement of tokeniser fertility and
+validation of LLM judges against ratings by native Bashkir speakers. Experiments were conducted on eight large language
+model architectures in the range from 82M to 8B parameters: three small models of the GPT-2 family (DistilGPT2,
+GPT-2 base, GPT-2 medium), three medium-scale generative models (Phi-3-mini, Mistral-7B, YandexGPT-5-Lite-8B)
+2
+
+
+Parameter-Efficient Adaptation of LLMs to Bashkir
+A Preprint
+and two encoder-only baselines (mBERT, XLM-R). All artefacts — experiment code, preprocessing scripts, trained
+adapters and the corpus itself — are released under open licences to ensure reproducibility.
+The study addresses four research questions. RQ1: How does QLoRA adaptation of generative models of 3,8–8B
+compare with full fine-tuning of encoder-only baselines (mBERT, XLM-R) on Bashkir text classification tasks? RQ2:
+Does continual pretraining on the Bashkir corpus produce a measurable gain in perplexity and downstream quality
+relative to QLoRA without CPT, and is the effect the same for different base models? RQ3: How is tokeniser fertility
+related to adaptation quality, and does it explain the gap between models with a Cyrillic vocabulary and a BPE
+vocabulary? RQ4: Do LLM judges reproduce the ratings of native Bashkir speakers, and which generation quality
+criteria remain inaccessible to automatic evaluation?
+The work is organised as follows. Section 2 contains a review of the literature on the digitisation of the Bashkir language,
+corpus linguistics, the morphology of agglutinative languages, PEFT and the application of PEFT to Turkic languages.
+Section 3 describes the corpus, datasets, models, adaptation strategies, hyperparameters and metrics. Section 4 presents
+results on language modelling, continual pretraining, binary and multiclass classification, in-context learning, generation
+quality and tokeniser analysis. Section 5 discusses the factors behind the superiority of YandexGPT-5-Lite-8B, the
+selective effect of CPT, the divergence between LLM judges and native speakers, the role of tokenisation and practical
+recommendations. Section 6 formulates limitations, and Section 7 concludes and outlines directions for further work.
+2
+Related Work
+2.1
+Digitisation of the Bashkir Language and the Formation of Linguistic Resources
+The first works describing the process of digitising the Bashkir language date from the early 2010s. The article
+Sirazitdinov and Buskunbaeva [2010] describes in detail the experience of creating national font layouts, the integration
+of the Bashkir language into operating systems together with Microsoft, and the conceptual foundations and launch of
+the information system “Machine Fund of the Bashkir Language”. For modern natural language processing, this work is
+a historical and methodological source explaining the origin and initial architecture of the main linguistic resource.
+A generalising article is Khisamitdinova [2016], which summarises the development of Bashkir philology in the
+post-Soviet period. Particular attention is paid to the creation of the ten-volume “Academic Dictionary of the Bashkir
+Language” and the conversion of its dictionary databases into digital format — the creation of electronic glossaries and
+terminological data banks. These lexicographic developments subsequently became the basis for building morphological
+analysers and automatic dictionaries.
+The most complete description of the structure and functional capabilities of the Machine Fund is presented in Sirazitdinov
+[2025]. The author describes the organisation of ten large sections of the Fund (general word list, lexicographic,
+grammatical, experimental-phonetic databases, catalogues of manuscript and early printed books, dialectological
+database, corpus databases). For natural language processing tasks, this material is the main source for understanding
+how the annotation of source data is organised and where aggregated characteristics are extracted from.
+A retrospective analysis of scientific and practical activity in the field of applied linguistics at IIL UFRC RAS over more
+than 30 years is presented in Sirazitdinov [2024]. Over this period, an infrastructure was created for the functioning of
+the national language in computer technologies, theoretical foundations for an automatic morphological analyser, and
+phonetic, lexical and full-text linguistic databases, which made it possible to develop the information systems “Machine
+Fund of the Bashkir Language” and “Terminological Data Bank”.
+2.2
+Corpus Linguistics of the Bashkir Language
+Practical aspects of creating corpora of the Bashkir language are considered in a number of works. In Ishmukhametova
+[2014], the experience of creating a subcorpus of literary texts of the Machine Fund is described: issues of data cleaning,
+tokenisation and formats for encoding metatextual annotation (genre, author, year) are considered. These aspects are
+fundamentally important for selecting and filtering quality data during pretraining of transformer models.
+In Buskunbaeva et al. [2018], using the material of the folklore corpus, types of one-member sentences in the proverbial
+fund of the Bashkir language are described: the structural classification of proverbial constructions and the principles of
+their annotation in the corpus are considered. This material is important for developing syntactic analysers and for
+understanding how the annotation of folklore texts in Bashkir corpora is organised.
+The dialectological aspect of corpus linguistics is presented in Sirazitdinov et al. [2016], which describes an applied
+component of the Machine Fund — an integrated Dialectological Database consisting of a lexical subfund, a textological
+3
+
+
+Parameter-Efficient Adaptation of LLMs to Bashkir
+A Preprint
+corpus and an atlas. For natural language processing tasks, the article is valuable for its description of the principles of
+annotation, tagging and computer recognition of regional variations of the Bashkir folklore and living continuum.
+Issues of code-switching using the material of the journalistic corpus are considered in Buskunbaeva [2022]. Structural
+types of switches and borrowings are analysed, which is necessary for correct tokenisation, dataset cleaning and training
+transformer models to process the Russian–Bashkir bilingual context. This problem is particularly relevant because real
+Runet texts often contain a mixture of Russian and Bashkir.
+The development of an audio corpus of the eastern dialect of the Bashkir language is the subject of Buskunbaeva and
+Sirazitdinov [2020]. The methodology of creating an audio corpus, the principles of phonetic and acoustic annotation,
+the digitisation of live recordings and the alignment of audio segments with text transcripts are described. This material
+is important for developers of voice assistants, speech recognition systems and speech synthesis models.
+Parameters of oral speech segmentation using the material of a media audio corpus are studied in Khamitova and
+Sirazitdinov [2024]: using the ELAN program, syntagms and phrase volume are analysed. In the field of speech-to-text
+conversion, this publication provides mathematical and linguistic parameters for segmenting the audio stream and
+configuring acoustic models for Bashkir speech recognition.
+Finally, the Bashqort Raw Corpus dataset Khudiakova [2025] is a collection of Bashkir texts intended for continual
+training of large language models. The resource is published on the Hugging Face platform and is one of the few open
+corpora of the Bashkir language.
+2.3
+Lexicography, Orthography and Formal Grammar
+The transition of classical lexicography into the digital environment is considered in Yagafarova [2015]: the structure,
+strengths and weaknesses of existing electronic and online Bashkir dictionaries are analysed. In solving natural language
+processing tasks, these materials are used to develop automatic parsers, electronic glossaries and machine translation
+systems.
+A fundamental classification of the principles of nomination and thematic groups of Bashkir vocabulary is presented in
+the doctoral dissertation Yagafarova [2019]. In IT developments, this structure is used to design Bashkir WordNet-like
+networks, build semantic ontologies, knowledge graphs and named entity extraction systems.
+The principles of creating the information and reference portal on Bashkir orthography Belemle.ru are described
+in Yagafarova [2025]. For developers, the material is valuable for its description of standardised rules underlying
+spell-checking algorithms, automatic correction of typos and normalisation of Bashkir text before it is fed into neural
+network models.
+The formalisation of Bashkir syntax from the standpoint of computer modelling is presented in Sirazitdinov [2021]: the
+author identifies strict models and schemes of verbal government using the material of generalised-personal proverbs.
+In natural language processing tasks, the formalisation of grammar makes it possible to specify rules for accurate
+semantic-syntactic parsing of text constructions.
+2.4
+Applied Platforms and Services
+The software architecture of the Bashkortsoft ecosystem is considered in Gataullin and Mukhametov [2022]: modules
+for intelligent text analysis, an API for integrating Bashkir dictionaries into third-party IT solutions, algorithms for
+automatic spell-checking and normalisation of noisy user input are described. This material is important as an example
+of implementing applied text preprocessing pipelines before feeding data into neural networks.
+The process of transferring scientific databases of the Machine Fund into commercial and publicly accessible web
+interfaces of the Bashkortsoft project is described in Sirazitdinov and Buskunbaeva [2021]. Technical problems of
+matching encodings, parsing large volumes of dictionary entries and optimising search queries for online translators
+operating in real time are considered.
+The concept of collecting open legally clean datasets for training large language models is presented in Gataullin [2024]:
+problems of copyright in texts are analysed, and the integration of Bashkir translation on modern IT platforms is
+described. The architecture of the Bashkorttele repository, including audiobooks, annotated Bashkir epics and works by
+classical authors, is described in Yusupova and Gataullin [2026]. The data alignment format (each audio fragment is
+strictly aligned with text in Bashkir and Russian) makes this work a methodological guide for training speech-to-text
+systems.
+Scaling of the Bashkorttele data repository is described in Kilsenbaev [2026]: the structure of a trilingual parallel spoken
+corpus of 10,000 phrases is disclosed, as well as the integration of an archive of live Bashkir speech with a volume
+4
+
+
+Parameter-Efficient Adaptation of LLMs to Bashkir
+A Preprint
+of 53.3 hours of clean audio based on radio programmes of the State Television and Radio Broadcasting Company
+“Bashkortostan”.
+2.5
+Morphology of Agglutinative Languages
+A two-level morphological description of the Bashkir language is presented in Eyupoglu [2019]: the description is
+based on a lexicon of root words, implemented using XML and connected to the Nuve framework. The phonetic rules of
+the Bashkir language are encoded using 41 two-level rules. This work is one of the few attempts at a formal description
+of Bashkir morphology in terms of two-level morphology.
+A network model of agglutinative morphology based on graph theory is proposed in Grechachin [2018]. The model is
+implemented for modern Bashkir and for Old Turkic; on its basis, a morphological parser for the Old Turkic language
+was created.
+A neuro-symbolic approach to the morphology of Bashkir nouns is developed in Isangulov et al. [2025, 2026]. In
+Isangulov et al. [2025], a hybrid method is presented that combines a large language model and a finite-state automaton
+to ensure morphological correctness during text generation in agglutinative languages: the system automatically extracts
+rules from corpus data, generates context-dependent regex rules and LEXC morphotactics; the integration of the
+finite-state automaton into the language-model loop improved machine translation quality from BLEU 16.14 / ChrF
+45.13 to BLEU 25.71 / ChrF 50.87 without retraining the translator. In Isangulov et al. [2026], the previous version of
+the pipeline is extended: 69.60 % coverage was achieved and 174 of 250 forms were recognised on the same benchmark.
+2.6
+Turkic Languages: Corpora and Machine Translation
+The principles of building multilingual Turkic corpora are considered in Saykhunov and Suleymanov [2019]: the
+architecture of cross-lingual models for closely related languages is studied, and transfer learning algorithms are
+proposed to improve the quality of machine translation and text classification in the low-resource Bashkir language.
+A multilingual neural machine translation system for seven Turkic–Russian language pairs is presented in Khusainov
+and Suleymanov [2021]: parallel corpora with a total volume of about 7.9 million sentence pairs were created, and for
+the first time for Turkic languages, transfer learning experiments were conducted on a combined Russian–Turkic parallel
+corpus.
+A large-scale study of machine translation in the Turkic language family is presented in Mirzakhalov et al. [2021]:
+a parallel corpus covering 22 Turkic languages was created, bilingual baseline models for 26 language pairs were
+proposed, as well as new test sets in three different translation domains.
+The toolkit of the “Turkic Morpheme” portal for data augmentation in low-resource machine translation is described in
+Gatiatullin et al. [2024]: an augmentation method based on morphological translation showed an increase in machine
+translation quality by the BLEU metric, especially effectively for closely related languages with similar grammar and
+morphology.
+Methods for creating machine translation systems for low-resource languages are considered in Suleymanov et al. [2026]:
+an approach combining data augmentation and knowledge transfer is proposed; BERT is chosen as the architecture,
+used both as an encoder and as a decoder. Parallel corpora with a total volume of about 30 million sentence pairs were
+collected.
+The Russian–Bashkir parallel corpus BorisTM [2025] contains 9.7 million sentence pairs filtered by semantic similarity.
+The corpus combines real translations and synthetic data obtained by back-translation.
+The application of parameter-efficient fine-tuning to the task of Russian–Bashkir machine translation is presented in
+Karpov [2026]: fine-tuning of nllb-200-distilled-600M with LoRA on synthetic data achieved chrF++ 46.94 for Bashkir.
+In Maxim [2026], adaptation of the Tencent HY-MT1.5-7B model with LoRA is described for correcting output from
+Arabic script to Cyrillic in Russian–Kazakh and Russian–Bashkir pairs. In Tyurin [2026], a comparative study of
+NLLB-200, M2M-100 and MarianMT architectures was conducted; the best system — a fine-tuned NLLB-200-1.3B
+with exact-match extraction — reached chrF++ 52.67.
+2.7
+Speech Processing for Turkic Languages
+The Whisper speech recognition model Radford et al. [2022] was adapted to Bashkir by reducing the vocabulary to
+16,384 tokens. The Bashkort TTS dataset bas is the largest open dataset for speech synthesis in Bashkir: 62,852 audio
+files, eight speakers and three speech styles.
+5
+
+
+Parameter-Efficient Adaptation of LLMs to Bashkir
+A Preprint
+Multilingual speech synthesis for Turkic languages using transliteration is presented in Yeshpanov et al. [2023]: a
+system based on Tacotron 2 was trained only on Kazakh data, and to generate speech in other Turkic languages, letters
+of the alphabets are mapped to International Phonetic Alphabet symbols, which are then converted into Kazakh letters.
+Transfer learning from Kazakh for speech recognition of nine Turkic languages is studied in Orel et al. [2023]: most
+models built using transfer learning outperformed monolingual baselines; the most significant improvement was achieved
+for Yakut. Multilingual end-to-end speech recognition for five agglutinative Turkic languages with a common Cyrillic
+script is presented in Bekarystankyzy et al. [2024]: multilingual training improved recognition scores for all languages
+except Bashkir. In Bekarystankyzy et al. [2025], an integrated end-to-end multilingual speech recognition architecture
+is proposed, using Connectionist Temporal Classification and an attention mechanism with a language model.
+2.8
+Sentiment Analysis and Text Classification
+A software solution for building classifiers for natural language text analysis is presented in Smetanina et al. [2020]:
+the task of sentiment analysis of Bashkir news texts is formulated, and a hybrid approach including dictionary-based
+methods and machine-learning methods is proposed. In Suleimanov et al. [2020], a formal description of the term
+“opinion”, the sentiment analysis task, approaches to its solution and ready-made software implementations are presented;
+the developed solution based on the support vector machine with stochastic gradient descent demonstrated the highest
+scores in terms of precision, recall and F-measure.
+2.9
+Parameter-Efficient Fine-Tuning
+The methods of parameter-efficient fine-tuning arose as a response to the high cost of full fine-tuning of large language
+models. LoRA Hu et al. [2022] freezes pretrained weights and adds trainable low-rank matrices, which reduces the
+number of trainable parameters by several orders of magnitude. QLoRA Dettmers et al. [2023] extends this approach
+with 4-bit quantisation to the NF4 format, which makes it possible to fine-tune models with billions of parameters on a
+single GPU. DoRA Liu et al. [2024] decomposes pretrained weights into magnitude and direction, applying LoRA
+only to the direction update; this decomposition increases the learning capacity and stability of the method. QDoRA
+combines DoRA weight decomposition with 4-bit quantisation, which makes the method applicable under limited GPU
+memory.
+In this work, QLoRA is used among the methods listed above: it is implemented in all PEFT experiments and forms the
+basis of the comparative analysis. Unquantised LoRA does not fit into 24 GB of NVIDIA L4 memory for 7–8B models
+and was not run in the configuration reported here; DoRA and QDoRA are planned as an extension and require further
+validation of compatibility with 4-bit quantisation in the Colab environment.
+2.10
+Application of PEFT to Turkic Languages
+A comparative study of LoRA and QLoRA methods for the Bashkir language is presented in com [2026]: experiments
+were conducted on a corpus of 71 thousand documents (46.9 million tokens) using DistilGPT2, GPT-2, Phi-2, Qwen2.5-
+7B, DeepSeek-7B and Mistral-7B. The best perplexity was obtained for GPT-2 medium with full fine-tuning (3.34), while
+QLoRA for Mistral-7B (3.79) and Phi-2 (3.81) achieved comparable quality with 40 times fewer trainable parameters.
+Application of LoRA and QLoRA to the Tatar language is studied in Burnashev et al. [2026]: QLoRA adaptation of
+Mistral-7B reached a perplexity of 3.98 on the test set, comparable to fully fine-tuned gpt2-medium (2.91). Mistral-7B
+outperformed Qwen2.5-7B (perplexity 5.44) and DeepSeek-7B (perplexity 5.32) in adaptation to Tatar. Increasing the
+LoRA rank from 8 to 16 consistently improved performance across all architectures.
+Combining classical and transformer approaches for text classification and topic modelling of the Tatar language
+is presented in Arabov et al. [2026a]: on a news corpus of 153,162 documents, classical approaches (TF-IDF+LR,
+FastText+LR) and transformer architectures (mBERT, XLM-R, DistilBERT) were systematically compared on three
+tasks — binary, multiclass (9 categories) and multilabel (13 categories).
+Modelling subword embeddings for low-resource languages in the context of Industry 4.0 is presented in Arabov et al.
+[2026c]: using Tatar as an example, a comparative analysis of Word2Vec and FastText architectures was carried out;
+subword approaches using character n-grams significantly improved robustness to rare and unseen word forms.
+A comprehensive study of Tatar text classification methods — from corpus creation and Tatar2Vec vector models to
+benchmark construction — is presented in Arabov et al. [2026b]: the TatCorp 222M corpus, TatarTokenizers tokenisers,
+Tatar2Vec models and an annotated dataset of 13,160 texts in ten topic categories were created. It was established that
+the use of subword BPE tokenisation in the task of topic categorisation of an agglutinative language systematically
+reduces classification quality.
+6

@@ -1,0 +1,795 @@
+UniVOE: A Removal-Driven Framework for Interaction-Aware Universal Video
+Object Editing
+Shuzhou Yang1†
+Lanqing Guo2∗
+Lingen Li3
+Weiqi Li1
+Zhao Zhong2
+Liefeng Bo2
+Jian Zhang1∗
+1SECE, Peking University
+2Tencent Hunyuan
+3The Chinese University of Hong Kong
+https://univoe.github.io/
+Footprint
+Bubble
+Input Video
+Object Removal
+Object Injection
+Reflection
+Deformation
+Lighting
+Shadow
+“Remove the woman”
+“Remove the camel”
+“Inject the woman”
+“Add the camel”
+“Remove the man in gray”
+“Add a man in gray, facing the mirror while working out.”
+“Remove the playing child”
+“Add a child jumping on a trampoline”
+“Remove the desk lamp”
+“Place a lamp that emits a soft glow on the nightstand.”
+“Remove the diver on the right”
+“Add a diver on the right”
+Figure 1: We propose UniVOE, a video object editing pipeline that enables object-centered removal and
+injection, together with predictions of changes in object-related effects. Such as footprint, shadow, reflection,
+and lighting. Users can easily remove or insert target objects using prompts, as shown above each editing result.
+Abstract
+Video object removal and injection are reciprocal editing oper-
+ations between object-present and object-absent video states,
+yet they differ substantially in training difficulty. Removal
+can be effectively bootstrapped from video inpainting and
+further adapted to erase object-related interaction effects. In-
+jection, however, requires large-scale paired supervision to
+model object appearance, dynamics, and scene-dependent ef-
+fects, while perfectly aligned real-world pairs are difficult to
+collect and synthetic data lacks sufficient realism and diversity.
+To address this challenge, we present UniVOE, a removal-
+driven framework for training both video object removal and
+∗Corresponding authors.
+†Work done during an internship at Hunyuan, Tencent.
+injection models. We first train an effect-aware remover by
+transferring video inpainting priors and finetuning on object-
+present/object-absent pairs. The trained remover converts real
+object-present videos into object-absent counterparts, creat-
+ing large-scale paired supervision for injection. An injection
+model is trained on these pairs in the reverse direction to re-
+cover objects together with their dynamics and interaction ef-
+fects. Moreover, since pixel-level reconstruction alone cannot
+adequately capture perceptual realism, we introduce a reward-
+based post-training method that aligns injection results with
+human preferences using a proprietary reward model. Ex-
+periments against strong open-source and commercial sys-
+tems demonstrate that UniVOE achieves state-of-the-art per-
+formance on both object removal and injection, particularly
+in challenging interaction-effect cases.
+1
+arXiv:2610.31641v1  [cs.CV]  22 Oct 2026
+
+
+Introduction
+Video object removal and injection are critical in visual con-
+tent creation, with broad applications in film post-production,
+advertising, and virtual production. Unlike image editing,
+video editing must account for not only the target object it-
+self, but also its dynamic imprint on surrounding scene. A
+moving object may cast shadows, produce reflections, and
+contact surfaces. Editing only the object but leaving these
+interaction effects untreated during removal or synthesizing
+them incorrectly in injection will produce perceptible arti-
+facts. A practical tool should jointly edit the object and its
+effects.
+Recent diffusion-based video editing methods made sig-
+nificant progress in fidelity and temporal consistency (Yang
+et al. 2026c; Li et al. 2025a; Zhou et al. 2023; Kushwaha et al.
+2026; Yang et al. 2026a). Some works further recognize the
+close relationship between object removal and insertion (Fu
+et al. 2026): effect-aware removers erase shadows and re-
+flections together with the target object, while reciprocal
+formulations use insertion as an auxiliary inverse task to im-
+prove removal. General video inpainting systems also support
+adding or removing objects (Bian et al. 2025). Nevertheless,
+realistic object injection remains difficult. It must halluci-
+nate absent foreground, infer plausible object motion, and
+predict interactive effects such as shadows and reflections.
+The main bottleneck is supervision. Ideally, both directions
+should be trained with paired videos of the same scene in
+object present and absent states under identical lighting, and
+background dynamics. Such pairs are hard to capture in the
+wild, while synthetic rendering, despite perfect alignment,
+lacks diversity, photorealism, and dynamics of real footage.
+Our key insight is that object removal and injection share
+the same paired data structure, but are asymmetric in learn-
+ing difficulty. Let Vobj and Vabs denote the object present
+and absent states of the same video. The two tasks can
+be viewed as conditional generation in opposite directions:
+πrem(Vabs | Vobj, c) ⇐⇒πinj(Vobj | Vabs, c), where c denotes
+the editing condition, such as text prompt in Fig. 1. The same
+pair can supervise both directions: removal learns to elimi-
+nate the object and its effects, while injection learns to predict
+them. However, removal can be scaled from video inpaint-
+ing, which provides abundant supervision for background
+completion, temporal structure, and scene consistency. With
+limited paired Vobj-Vabs data, this prior can be adapted to
+complete object removal and effect erasing. Injection, in con-
+trast, requires cleaner supervision for object appearance, mo-
+tion, and interaction. This reciprocal-but-asymmetric struc-
+ture motivates removal-driven strategy: strengthen easier re-
+moval direction, and use it to derive supervision for injection.
+We propose UniVOE, a removal-driven framework for re-
+alistic video object removal and injection. As shown in Fig. 2,
+UniVOE first trains an effect-aware remover by transferring
+scalable inpainting priors to object removal and refines with
+limited object-present/absent pairs (Miao et al. 2026; Fu et al.
+2026). The trained remover is then applied to real object-
+present videos to derive object-absent counterparts, while
+the original videos serve as injection targets containing real
+object motion and interaction effects. These removal-derived
+pairs, together with limited open-source data, supervise an
+UniVOE Training (Removal à Injection)
+Removal Data Scaling via Inpainting
+Real Object-Present
+Videos
+Real Object-Absent
+or
+Inpainted Videos
+UniVOE
+Step 2
+Masked Videos
+Injection Model
+Real Object-Present
+Videos
+Inpainted Videos
+Step 1
+Removal Model
+Figure 2: UniVOE uses removal to scale paired video data
+up, drives the training of injection.
+injection model with flow-matching (Lipman et al. 2023).
+However, pixel-wise supervision alone cannot fully close the
+perceptual gap of injection: for an object-absent video, mul-
+tiple appearances, trajectories, and contact patterns may be
+plausible, while failures such as over-saturation, unnatural
+motion, missing contact shadows, or unrealistic reflections
+are better captured by perceptual judgment than by recon-
+struction error. We therefore introduce an online post-training
+stage tailored to object injection. It employs a proprietary re-
+ward model, finetuned from Qwen3-VL (Bai et al. 2025),
+to rank the motion quality and naturalness of edited videos,
+steering optimization toward model’s performance ceiling.
+More importantly, as an editing task, the complete frame
+sequence should be fully covered during ranking and train-
+ing. To make online post-training feasible for large diffusion
+models at realistic video resolutions and durations, we de-
+sign a VRAM-efficient Group-Relative Advantage Regres-
+sion (GRAR). It avoids the memory overhead of maintaining
+a reference policy while preserving reward-guided training.
+Experiments demonstrate that UniVOE achieves SOTA em-
+pirical results on both video object removal and injection.
+As shown in Fig. 1, for removal, it robustly eliminates target
+objects together with their shadows, reflections, and con-
+tact cues. For injection, it synthesizes objects with plausible
+motion and interaction effects. Compared with strong open-
+source and commercial systems, UniVOE is competitive and
+clearly stronger in challenging interaction-effect cases that
+prior methods often mishandle. Our contributions are sum-
+marized as follows:
+• We propose an effective training framework to optimize
+video object removal and injection models with limited
+real-world paired data, named UniVOE. We exploit their
+reciprocal-but-asymmetric training structure: removal is
+first scaled with easier inpainting task and then reused as
+a supervision engine for the harder injection direction.
+• To enhance the realism of injection, we develop a novel
+post-training algorithm, called GRAR, to overcome the
+limitation of pixel-level reconstruction and align the in-
+jected results with human preference. Experiments verify
+its effectiveness in improving injection quality.
+• We apply various techniques to removal model for large-
+scale training data curation. First, object deletion is boot-
+strapped with video inpainting. Next, we adapt the model
+with paired data to enable interactive effects removal.
+2
+
+
+Besides, we accelerate inference to facilitate large-scale
+generation. Finally, we add an effective video filtering
+mechanism to retain only high-quality data for training.
+• Extensive comparisons with open-source and commercial
+systems show that UniVOE achieves SOTA performance
+on both object removal and injection, especially in chal-
+lenging interaction-effect erasing and prediction.
+Related Work
+Video Object Removal
+Video object removal is a special case of video inpainting: the
+masked region must be filled with plausible and temporally
+coherent background. Early methods rely on temporal adver-
+sarial losses, optical-flow propagation, or spatio-temporal
+attention to improve completion quality (Chang et al. 2019;
+Zeng, Fu, and Chao 2020; Liu et al. 2021; Li et al. 2022; Zhou
+et al. 2023; Zhang, Rao, and Agrawala 2023; Gu et al. 2025;
+Gao et al. 2025), recent diffusion-based pipelines extend the
+generative range to large holes (Li et al. 2025a; Bian et al.
+2025). These generic inpainters fill the masked region but are
+not designed to clean up object-induced effects outside the
+mask. A second line of work, namely effect-aware removal,
+targets the shadows, reflections, mirror images, and deforma-
+tions that an object leaves on the surrounding scene (Miao
+et al. 2026; Kushwaha et al. 2026). EffectErase (Fu et al.
+2026) treats object insertion as an auxiliary inverse task to
+regularize removal. In contrast, we treat removal as a super-
+vision engine for injection: a trained effect-aware remover
+converts object-present videos into object-absent counter-
+parts for paired supervision of object injection.
+Video Object Injection
+Object injection places a target object into a host scene
+while keeping it visually compatible with background. At im-
+age level, prior work has explored exemplar-guided editing,
+object compositing, and zero-shot object-level customiza-
+tion (Yang et al. 2023; Song et al. 2023; Lu, Liu, and Kong
+2023; Chen et al. 2024; Li et al. 2025b). Lifting these to video
+is harder: the inserted object must remain temporally consis-
+tent and move coherently. Recent video editing methods add
+controllability through first-frame editing, reference-object
+preservation, or compositing (Ku et al. 2024; Mou et al.
+2024; Wei et al. 2024; Tu et al. 2025; Yang et al. 2026b;
+Ye et al. 2025), but they typically expect the user to specify
+object identity, motion track, and other injection-related con-
+trols up front. Unlike these methods, UniVOE offers lighter
+interface (text by default, with an optional reference image).
+This enables flexible use and large-scale paired data curation.
+Post-training for Preference Alignment
+Aligning generation results with human perception gener-
+ally takes one of two routes. Offline preference optimi-
+sation (Rafailov et al. 2023; Xu et al. 2023; Prabhudesai
+et al. 2024; Wallace et al. 2024) fine-tunes the model on
+a fixed set of pairwise preferences. It is simple and stable,
+but bound to expensive human annotation, and the model
+never trains on its own samples. Online post-training instead
+scores samples drawn from the current policy on the fly,
+which saves manual annotation and allows the model to ex-
+plore its higher performance boundaries. Within online for
+diffusion and flow-matching, recent work explores PPO-style
+trust regions (Liu et al. 2026) and negative-aware fine-tuning,
+exemplified by DiffusionNFT (Zheng et al. 2025). Although
+these are effective on image models, applying them off-the-
+shelf to large video backbones for editing tasks runs into
+a memory wall: keeping a frozen reference policy along-
+side a trainable one, plus storing rollouts of long video la-
+tents, needs larger VRAM. Therefore, we propose a VRAM-
+efficient post-training strategy tailored to video editing. It fol-
+lows a single-pass reward-weighted regression but discards
+the reference policy, named GRAR.
+Method
+UniVOE contains two models, an effect-aware remover πrem
+and an injector πinj, which share the same structure but are
+trained for opposite directions of object present/absent trans-
+formation. Both are built on Wan2.1-14B (Wan et al. 2025).
+Preliminaries: Latent Flow Matching
+Let x0 ∈RC×T ×H×W denote the latent of a clean video,
+and let ϵ ∼N(0, I) be Gaussian noise of the same shape. For
+timestep t ∼U[0, 1], we use the rectified-flow interpolant:
+xt = (1−t)x0 +tϵ,
+v⋆(x0, ϵ, t) = ∂txt = ϵ−x0. (1)
+A network vθ(xt, t | c) predicts velocity conditioned on c. In
+our case, c includes an input video, video mask, prompt, and
+an optional reference image. Flow-matching objective is:
+LFM(θ) = Ex0,ϵ,t,c
+h
+∥vθ(xt, t | c) −v⋆(x0, ϵ, t)∥2
+2
+i
+. (2)
+At inference, samples are generated by using the learned ve-
+locity field from noise to data. Both πrem and πinj of UniVOE
+optimize with this objective, but differ in condition c.
+Stage 1: Effect-Aware Video Object Removal
+As Fig. 2 shows, video inpainting and object removal share
+a common goal: recovering background occluded by tar-
+get region. This similarity allows us to bootstrap object re-
+moval from inpainting data. Further, removal requires erasing
+object-induced interaction effects, e.g., shadows and reflec-
+tions that extend beyond object. We train remover in two
+steps: inpainting pretraining and effect-aware fine-tuning.
+Video inpainting.
+We employ SAM2 (Ravi et al. 2025)
+to segment foreground objects in real-world videos, obtain
+their masks M. We collect over 63K high-quality videos
+containing salient objects and apply Gaussian dilation to M
+to ensure sufficient coverage of object boundaries. In train-
+ing, we randomly sample two videos, V idA and V idB, and
+use M from V idB to mask corresponding regions in V idA,
+producing realistic object-shaped missing regions with tem-
+poral variations. The masked V idA is used as input, while
+the original V idA serves as the ground truth. The removal
+model is optimized with the reconstruction loss in Eq. (2),
+enabling it to learn a strong scene completion prior for plau-
+sibly recovering background content occluded by objects.
+3
+
+
+(b) VOE Unit
+(a) UniVOE Model
+(c) GRAR
+UniVOE
+…
+DiT Block
+DiT Block
+Prompt Embedding
+Condition Tokens
+Noise Tokens
+Remove the 
+running man in 
+gray…
+VOE Block
+VOE Block
+VOE Block
+Reward
+Model
+𝑣⋆,($)
+𝑣⋆,(&)
+𝑣⋆,(')
+−∥𝑣!(𝑥"
+($)) −𝑣⋆,($) ∥
+∥𝑣!(𝑥"
+(()) −𝑣⋆,(() ∥
+∥𝑣!(𝑥"
+())) −𝑣⋆,()) ∥
+Removal Unit
+Injection Unit
+Mask Video
+All-One Mask
+Video to be Edited
+Video to be Edited
+Reference (Optional)
+Reference (Optional)
+VOE Unit
+Instruction
+Latent Noise
+…
+Edited Video
+Tokenizers
+DiT Block
++
+Inject: a man running…
+On-Policy Rollout
+-0.5
++0.3
++0.6
+Figure 3: Workflow of UniVOE. (a) The remover and injector share the same network, but use different instructions and VOE
+units. (b) For removal, VOE unit contains an input video and an inflated binary mask video to indicate object to be removed. For
+injection, an all-one mask is used to enable global interaction-aware injection. The reference image is optional in removal and
+injection. It is generated with external image editing model, providing more specific editing guidance. (c) To improve physical
+realism of injected results, we propose GRAR to update the pre-trained injection model toward human preferences.
+Effect-aware fine-tuning.
+An inpainting model fills con-
+tent inside the masked region, while object removal requires
+eliminating object-induced effects, such as shadows, reflec-
+tions, or other interactions that may extend beyond the object
+mask. To make the remover effect-aware, we further fine-tune
+it on synthesized and captured object-present/object-absent
+video pairs collected from prior datasets (Miao et al. 2026;
+Fu et al. 2026), yielding 68K filtered training pairs. During
+training, we use inflated object mask M that fully covers
+the target object but leaves interaction effects outside. This
+encourages the model to recover the complete object-absent
+scene rather than merely inpainting the object region, while
+improving robustness to inaccurate masks at inference time.
+Process is formulated as: πrem (Vabs | Vobj, M, crem), where
+Vobj and Vabs denote the object-present and object-absent
+videos, respectively. Removal condition crem supports both
+text-only and reference-guided modes:
+crem =
+p,
+without a reference image,
+(p, Iref),
+with a reference image,
+(3)
+where p denotes the instruction as shown in Fig. 3(a), Iref is
+a reference image specifying the desired object-absent state.
+As shown in Fig. 3(b), the reference-guided mode pro-
+vides an explicit cue in addition to the input video and mask.
+Specifically, we edit the first frame of Vobj using the same re-
+moval instruction p with HunyuanImage3 (Cao et al. 2025),
+producing Iref in which the target object has been removed.
+When Iref is provided, UniVOE prepends it to Vobj as an
+additional conditioning frame. Correspondingly, one noise
+frame is prepended to the latent noise sequence and one all-
+zero mask frame is prepended to the mask sequence, so that
+the video, noise, and mask remain temporally aligned. The
+reference frame provides an explicit but static object-absent
+prior, guiding the model to remove the dynamic object con-
+sistently with the edited first frame throughout the video.
+Inference Acceleration.
+When applying remover to large-
+scale data curation, its inference cost directly limits the scale
+of paired data we can generate. To accelerate it, we distill re-
+mover from the default 50-steps sampling into 12-steps. Con-
+cretely, we shorten the flow-matching sampler to 12-steps
+with a fixed sigma shift of 5.0, and finetune with Eq. (2). To
+synchronize timesteps of the backbone and branch, we add
+a LoRA (Hu et al. 2022) of rank 32 to attention and feed-
+forward layers of backbone, jointly update the full branch to-
+gether with LoRA. In inference, we directly remove objects
+in 12-steps, making large-scale object-absent video genera-
+tion practical. Note that our removal results in this paper are
+all generated from distilled 12-steps model, which yields a
+substantial speed-up with imperceptible quality degradation.
+Stage 2: Removal-Driven Injection Pre-training
+Given a collection of real object-present videos {V (i)
+obj}, we
+apply the trained remover πrem to derive paired supervision:
+V (i)
+abs = πrem(V (i)
+obj, ˜
+M (i)).
+(4)
+The derived video V (i)
+abs serves as the injection input, while
+the original video V (i)
+obj naturally becomes a photorealis-
+tic target containing real object motion and interaction ef-
+fects. Each removal-derived training sample is represented
+as
+
+V (i)
+abs, V (i)
+obj, p(i), I(i)
+ref
+
+, where p(i) is the injection prompt
+and I(i)
+ref is an optional reference image. We generate object
+prompts from the target video V (i)
+obj using Qwen3-VL. As
+4
+
+
+shown in Fig. 3(b), I(i)
+ref provides specific appearance and in-
+teraction constraints. During training, it can be taken from
+the first frame of V (i)
+obj. In inference, it is obtained by applying
+image editing tool (Cao et al. 2025) to the first frame of V (i)
+abs,
+enabling more explicit injection control.
+Totally, we employ removal model to produce 69K usable
+paired data, combined with the previously filtered 68K open-
+source data, all 137K video pairs are used to train injection
+model. We define injection condition as cinj = (Vabs, p, Iref).
+The injector can be trained with:
+L(θ) = E(Vobj,cinj)∼Dinj, ϵ,t
+h
+∥(vθ(xt, t | cinj) −v⋆)∥2
+2
+i
+,
+(5)
+where Dinj denotes the union of training data. The result-
+ing injection model is denoted as πinj, which is trained to
+inject not only the object itself, but also its related realistic
+interaction effects such as shadows, reflections, contact, etc.
+Stage 3: Post-Training with GRAR
+Although Stage 2 provides basic object injection ability,
+pixel-wise supervision cannot fully capture perceptual qual-
+ity. For an object-absent video, multiple appearances, dy-
+namics, and interaction patterns can be plausible, while ar-
+tifacts such as over-saturation, floating objects, implausible
+reflections, and incoherent motion are perceptually critical.
+Hence, we introduce online post-training to improve realism
+and interaction plausibility.
+Given the injection model πinj, we generate Vgen ∼πinj
+θ (· |
+Vabs, cinj) and compute a reward r = Qθ(Vgen), where Qθ
+evaluates object motion and appearance quality. Since native
+Qwen3-VL cannot reliably assess such qualities, we collect
+professionally annotated rankings on motion quality and ap-
+pearance realism and use them to finetune Qwen3-VL into a
+reward model aligned with human preferences.
+In each iteration, we rollout K samples for each condition:
+{V (j)
+gen}K
+j=1 ∼πinj
+θold(· | Vabs, cinj),
+(6)
+and score them through Qθ. Based on the relative advantages
+within the group, assign positive or negative signs to K
+scores. We first calculate the group median ˜rc, then assign:
+A(j) =
+(
++1,
+Qθ(V (j)
+gen) ≥˜rc,
+−1,
+Qθ(V (j)
+gen) < ˜rc.
+(7)
+This positive or negative sign depends on the in-group rank-
+ing, making the update bounded and robust to reward scores.
+Advantage regression.
+Post-training methods mainly re-
+quire double models, a reference policy, a trainable policy,
+with multiple forward passes. This is because, limited by
+reward hacking, updates driven solely by rewards cause the
+model to overfit or collapse into a spurious optimum, far
+removed from the high-quality distribution learned in pre-
+training. Hence, reference policy is necessary to constrain
+post-training scope, but inevitably increases VRAM over-
+head, limiting its potential for use in larger-scale models.
+Existing methods are mainly applied to image models or
+small video backbones such as 1.3B (Pan et al. 2025). But
+as to stronger video model such as our injector with 23B
+parameters, using off-the-shelf solutions is infeasible. One
+workaround is to reduce VRAM usage by sampling partial
+frames for training. However, for video editing tasks, abnor-
+mal editing effects in any frame are intolerable, i.e., training
+with full frame sequence is essential for editing. In our case,
+using 97 frames of 480p leads to unacceptably VRAM load.
+To this end, we propose Group-Relative Advantage Re-
+gression (GRAR), a single-policy surrogate that preserves
+preference-aligned optimization without a separate reference
+model. We rethink the role of reference policy from the nature
+of video editing. Reference policy constrains the magnitude
+of post-training for generation. However, for editing, input
+video itself constrains the output content, i.e., the model does
+not generate a new video from scratch but merely modifies
+parts, with the core content directly dictated by input video.
+Therefore, GRAR only regress single trainable policy with
+reward values without redundant reference policy.
+For each rollout j, we treat the generated video as the
+online sample x(j)
+0
+and recompute its flow-matching target
+following Eq. (1). GRAR objective is then formulated as:
+LGRAR(θ) = Ecinj,j,t
+
+A(j) vθ(x(j)
+t , t | cinj) −v⋆,(j)
+2
+2
+
+.
+(8)
+When A(j) = +1, minimizing Eq. (8) pulls the model toward
+the velocity field of high-reward rollouts. When A(j) = −1,
+the sign reverses the update and pushes the model away
+from low-reward rollouts. In this way, GRAR provides a
+negative-aware online update while requiring only a single
+trainable policy during optimization, making online post-
+training feasible for large-scale video editing models.
+Online training loop.
+At each iteration, we sample a batch
+of 8 contexts and generate K = 16 rollouts per context using
+πinj
+θold. We score them with Qθ and compute signed advan-
+tages using Eq. (7). In optimization, only πinj
+θ
+is forwarded to
+minimize Eq. (8), avoiding reference policy storage and for-
+ward passes. After each update, we synchronize the rollout
+policy as θold ←θ. Final policy serves as UniVOE injector.
+Experiments
+Implementation Details
+Both remover and injector share the same model structure,
+each contains 23B parameters, including a 14B frozen Trans-
+former backbone, a 3B trainable control branch, and other
+modules such as VAE, etc. To support practical video edit-
+ing lasting over nine seconds (i.e., more than 200 frames),
+we train with 97 frames of video clip with resolution of
+832×480. Learning rate for remover and injector pre-training
+is 1e-5, and injector post-training is 1e-6. During inference,
+both remover and injector support 2 conditioning paradigms:
+text-only or text-and-reference image. As some compared
+methods require reference image to inject objects. For fair
+comparison, here we compare removal with text-only input
+and compare injection with text-and-reference input.
+Comparison on Object Removal
+We compare removal model with 5 SOTA open-source meth-
+ods, including VideoPainter (SIGGRAPH 2025) (Bian et al.
+5
+
+
+Input frames
+UniVOE (Ours)
+EffectErase
+VideoPainter
+Minimax-Remover
+VACE
+Water flow
+Lighting
+Kling3.0-Omni
+Big object and shadow
+Seedance2.0
+Bernini
+Figure 4: Visual comparison on video object removal. Other methods either remain object-related effects traces (e.g., lighting of
+the car), or predict unnatural background contents. In contrast, our method removes object itself and recovers physically realistic
+scene. It outperforms both open-source and commercial models. More visual comparison can be found in supplementary.
+Input frames
+UniVOE (Ours)
+UniVideo
+VACE
+VideoPainter
+Kling3.0-Omni
+Seedance2.0
+Place a man wearing a black t-shirt, brown shorts, and white sneakers, carrying a green backpack, walking up the stairs from the lower landing.
+Add a grey stone owl statue sitting completely still on the dark granite ledge of the building
+Bernini
+Figure 5: Visual comparison on video object injection. Corresponding prompt is given above. Other methods either inject
+background-inconsistent object, or fail to inject harmonious object. Our model predicts matching target and credible dynamics.
+Data
+Metric
+VidPaint
+VACE
+Minimax
+EffErase
+Bernini
+Kling3
+Seedance2
+Ours
+VOR
+PSNR ↑
+17.425
+11.567
+17.243
+23.210
+16.380
+21.581
+20.002
+23.752
+SSIM ↑
+0.705
+0.601
+0.692
+0.734
+0.674
+0.712
+0.715
+0.786
+LPIPS ↓
+0.253
+0.441
+0.229
+0.142
+0.247
+0.182
+0.204
+0.130
+FVD ↓
+563.08
+825.69
+171.66
+150.82
+238.47
+210.58
+174.36
+146.37
+ROSE
+PSNR ↑
+25.693
+15.377
+28.839
+24.666
+23.814
+22.433
+27.286
+29.596
+SSIM ↑
+0.896
+0.388
+0.745
+0.918
+0.876
+0.903
+0.912
+0.919
+LPIPS ↓
+0.1205
+0.3528
+0.1178
+0.100
+0.136
+0.115
+0.106
+0.098
+FVD ↓
+291.81
+755.80
+146.69
+111.55
+184.73
+201.16
+128.42
+85.25
+Table 1: Comparison on removal. The best results are high-
+lighted in bold. Video materials are given in supplementary.
+2025), VACE (ICCV 2025) (Jiang et al. 2025), Minimax-
+Remover (NeurIPS 2026) (Zi et al. 2026), EffectErase (CVPR
+2026) (Fu et al. 2026), and Bernini (Team et al. 2026), and
+commercial models Kling3-Omni (Team et al. 2025) and
+Seedance2.0 (Seedance et al. 2026). Note that we only in-
+put text prompt to the removal model. As shown in Fig. 4,
+we compare removal performance on various interaction ef-
+Data
+Metric
+VidPaint
+VACE
+UniVideo
+Bernini
+Kling3
+Seedance2
+Ours
+VOR
+DINO-I ↑
+0.310
+0.232
+0.387
+0.327
+0.303
+0.381
+0.390
+CLIP-P ↑
+0.224
+0.200
+0.228
+0.208
+0.227
+0.217
+0.232
+LPIPS ↓
+0.257
+0.366
+0.314
+0.329
+0.295
+0.249
+0.237
+FVD ↓
+391.63
+505.02
+300.69
+337.48
+296.67
+259.31
+234.56
+ROSE
+DINO-I ↑
+0.241
+0.192
+0.346
+0.319
+0.312
+0.334
+0.347
+CLIP-P ↑
+0.220
+0.217
+0.236
+0.242
+0.221
+0.243
+0.248
+LPIPS ↓
+0.130
+0.224
+0.279
+0.245
+0.153
+0.161
+0.114
+FVD ↓
+351.42
+352.24
+282.01
+238.72
+177.63
+143.56
+85.12
+Table 2: Comparison on injection. The best results are high-
+lighted in bold. Video materials are given in supplementary.
+fects, e.g., heavy occlusion and obvious lighting. One can
+see that among all State-Of-The-Art (SOTA) methods, our
+method realizes the best object removal and effects recovery.
+Especially for the bottom cases, where the glass and oven
+are removed, respectively. For glass case, our model recovers
+naturally flowing milk but others fail. For oven case, other
+6

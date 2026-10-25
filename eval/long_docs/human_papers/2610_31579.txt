@@ -1,0 +1,503 @@
+Who Is Sycophantic to Whom? Confident LLMs, Human Deference,
+and the Collapse of Trust Calibration
+Deepthika Sa, Pawni Yadavb, B. Sankarc,∗
+aDepartment of Electronics and Communication Engineering, Amrita School of Engineering, Amrita Vishwa
+Vidyapeetham, Coimbatore, 641112, India
+bDepartment of Information Technology, Netaji Subhas University of Technology New Delhi, 110078, India
+cDepartment of Mechanical Engineering, Indian Institute of Science (IISc), Bangalore, 560012, India
+Abstract
+Research on sycophancy asks whether large language models (LLMs) bend towards what their
+users want to hear. We ask the reverse question: when an LLM is confident, consistent, and
+wrong, do users bend towards it? In a within-subjects experiment, 32 participants learned up
+to five science topics by chatting with five assistants built on the same model (GPT-5-mini).
+Unknown to participants, each assistant’s briefing had 0, 25, 50, 75, or 100% of its facts
+replaced by plausible falsehoods, and every assistant spoke with full confidence. A surprise
+quiz after each topic offered the correct fact, the planted falsehood, and two distractors, with
+a confidence rating for every answer. Across 104 quizzes and 1,040 answers, scores fell from
+7.4 to 2.9 out of 10, and the planted option was chosen on 60% of falsified items against
+11% of correctly taught ones (odds ratio 12.5). Transcript coding showed that whenever
+the assistant stated a falsehood, it was adopted about 65% of the time at every falsification
+level. Absorbed falsehoods were held with high confidence (8.4/10), the modelled confidence
+advantage of right over wrong answers vanished, and the discrimination of confidence for
+correctness fell from an AUROC of 0.70 to chance, while post-task trust ratings barely moved.
+Participants tended to return to the chat more when the assistant was worse, but returning
+went with more absorption, not less, and 30% of all turns pasted quiz questions back to the
+source being checked. The assistant itself was almost never sycophantic and never conceded
+under pushback. We introduce a baseline-corrected Human Deference Index to quantify this
+human-side sycophancy and argue that trustworthiness is a property of the human–AI pair,
+that sycophancy evaluations should measure both directions, and that learning interfaces
+must make reliability legible claim by claim.
+Keywords:
+trust calibration, sycophancy, large language models, human–AI interaction,
+misinformation, automation bias, metacognition, design for trust
+∗Corresponding author.
+Email address: sankarb@iisc.ac.in (B. Sankar)
+arXiv:2610.31579v1  [cs.AI]  22 Oct 2026
+
+
+1. Introduction
+For a species as social as ours, survival has never depended on the individual alone. In
+evolutionary biology, fitness describes an organism’s capacity to survive and reproduce in its
+environment; for humans, that capacity has been shaped by life in groups, where cooperation,
+communication and resource sharing are routine. The cognitive demands of such relationships
+are reflected in the unusually large primate neocortex, which has been linked to the need
+to track relationships within social groups (Dunbar, 1992). Food sharing illustrates the
+point. In many hunter-gatherer societies a successful hunt feeds more than the hunter: large,
+unpredictably acquired food packages tend to be widely distributed, partly because the cost
+of not sharing outweighs the benefit of eating alone (Hawkes et al., 2018). With repeated
+interaction, sharing and reciprocity become patterned, particularly where camp membership is
+stable (Smith et al., 2016). Cooperation among kin is explained by inclusive fitness (Hamilton,
+1964), whereas cooperation among non-kin rests partly on the expectation that partners will
+reciprocate (Rand and Nowak, 2013). Repeated cooperation therefore produces more than
+an exchange of resources. It produces expectations about how others will behave, and those
+expectations are a basis for trust.
+As societies grew more complex, so did the relationships through which such expectations
+form. Human social networks are layered, from an intimate core of family and close friends to
+acquaintances at the margins, and the layers differ in contact frequency, emotional closeness,
+reciprocity and trust (Dunbar, 2025). Nor is trust static within a relationship. It starts from
+some baseline and moves as experience accumulates: perceptions of predictability grow from
+observing the consistency of a partner’s behaviour (Camanto and Campbell, 2025), and trust
+strengthens when positive expectations are confirmed and weakens when they are violated
+(Lewicki et al., 2006). Trust is less a fixed property of a relationship than a running account
+of expectation and outcome, and the degree to which A trusts B need not equal the degree to
+which B trusts A.
+Is a relationship even necessary? Not always. A patient trusts a doctor they have never
+met, and a passenger trusts a pilot they will never see. Non-experts routinely rely on expert
+knowledge they cannot verify, such as a physician’s diagnosis (Leefmann and Lesle, 2020).
+Such trust rests on competence, professional standards, reputation and institutions rather
+than on familiarity: “swift trust” forms among strangers through recognisable roles, and trust
+in a stockbroker is bounded by regulation rather than by acquaintance (Lewicki et al., 2006).
+A relationship is one basis for trust, not a prerequisite for it.
+Yet the trust we extend to strangers is usually cautious. We hesitate before trusting
+someone we have never met, not because they are untrustworthy but because we lack
+information about them: their history, their intentions, the relationship between us. Seen this
+way, an AI assistant is an extreme case. It has no personal history, no body, no reputation
+built through shared experience and no intentions we can read, and it is not even a stranger
+in the usual sense, because a stranger is at least another person. If people are wary of trusting
+a human being they do not know, why would they trust something that is not human at all?
+One answer is that such trust does not need a relationship, because it can rest instead on the
+kind of reliability we attribute to machines.
+We expect a calculator to return 4 for 2 + 2, an ATM to dispense the right amount
+2
+
+
+Figure 1: The calculator fallacy. Top: trust in a deterministic tool is earned through verification,
+because the user can compare output with expectation and accumulate evidence of reliability. Bottom:
+with conversational AI, the learner cannot verify, fluency and confidence stand in for reliability, and
+“checking” routes back to the same source, closing a loop in which trust cannot calibrate.
+and a lift to stop at the chosen floor. Trust in such systems tracks the reliability of their
+performance and the extent to which that performance meets expectations (McKenna et al.,
+2024); consistent performance reinforces trust and failures undermine it (Parasuraman and
+Riley, 1997; de Visser et al., 2018). Crucially, expectation and outcome can be compared.
+The function is defined, the output is verifiable, and reliability is observable across repeated
+use. Where expectation and outcome overlap, reliability is established; reliability confirmed
+over repeated trials becomes confidence; and confidence becomes trust (Figure 1, top).
+Conversational AI breaks this arrangement (Figure 1, bottom). Large language models
+have moved human–computer interaction from specialised, task-bound automation towards
+systems that act as advisers (Henrique and Santos, 2024; Klingbeil et al., 2024). People ask
+them “What should I do?”, “Which option is better?” and “Can you explain this to me?”,
+questions without a single predetermined answer against which a response can be checked.
+An AI system can also be wrong while sounding coherent and certain. With a calculator,
+the user checks whether a function was performed correctly; with AI, the user must judge
+whether the information itself is accurate enough to rely on, often on a topic they are trying
+to learn precisely because they do not know it. Reliance on such systems is already known to
+be unstable: people sometimes discount good computerised advice (Promberger and Baron,
+2006) and, in other conditions, follow AI advice against contrary evidence and their own
+judgement (Klingbeil et al., 2024). And if trust is built through repeated experiences of
+something meeting our expectations, a system that is trained to meet expectations—to sound
+right, to agree, to please—can meet them while being wrong.
+This creates an under-studied failure mode at the intersection of two literatures. Research
+on trust in automation asks whether people’s trust tracks a system’s reliability (Lee and
+See, 2004; Hoff and Bashir, 2015). Research on sycophancy asks whether LLMs tailor their
+3
+
+
+answers to what users want rather than to what is true (Perez et al., 2023; Sharma et al.,
+2024). Both typically treat one side of the human–AI pair as fixed. Sycophancy research, in
+particular, measures whether the model adapts to the user: whether it abandons a correct
+answer under pushback, mirrors a stated opinion or flatters the user’s self-image (Fanous
+et al., 2025; Cheng et al., 2026b; Ye et al., 2026). The reverse direction has received far less
+attention: when the model holds its ground confidently and consistently, does the user adapt
+to the model? We call this human-side deference: the convergence of a person’s beliefs on a
+source’s claims irrespective of their truth. It is the mirror image of model sycophancy, and it
+matters because modern assistants are, by design, fluent, assertive and unhedged (Zhou et al.,
+2024).
+We report HARICHAN (Human–AI Reliance in CHAt iNteractions), a controlled experi-
+ment in which the same LLM taught five science topics while covertly falsifying between none
+and all of its briefing facts, always with full confidence. We address five research questions:
+RQ1. How much planted misinformation do learners absorb as falsification rises, and does
+their acceptance of each stated falsehood change with the source’s overall reliability?
+RQ2. Does learners’ confidence distinguish what they learned correctly from what they
+absorbed falsely?
+RQ3. Does their reported trust track the assistant’s actual reliability?
+RQ4. How do learners check an assistant they have reason to doubt, and what happens
+when they push back?
+RQ5. Is the deference sycophancy on the model’s side or on the human’s, and how does
+human-side deference relate to confidence?
+Our contributions are fourfold. Empirically, we measure misinformation uptake across a
+graded range of assistant reliability in open-ended conversational learning, and we separate
+exposure to a falsehood from acceptance of it by coding every transcript for which facts the
+assistant actually stated. Methodologically, we adapt baseline-corrected sycophancy metrics
+from model evaluation to the human side, introducing a Human Deference Index and pairing
+it with metacognitive measures of confidence. Conceptually, we argue that the “calculator
+fallacy”—extending to a fluent, probabilistic system the trust that deterministic tools earn
+through verification—explains why trust cannot calibrate when error is invisible, and that
+trustworthiness is a property of the human–AI pair. For design, we derive strategies that
+make reliability legible per claim, route verification outward and evaluate trust behaviourally.
+2. Related work
+2.1. Trust, reliance and calibration
+Trust in automation is commonly defined as the attitude that an agent will help achieve
+one’s goals in a situation characterised by uncertainty and vulnerability (Lee and See, 2004),
+and in interpersonal terms as a willingness to be vulnerable that rests on perceived ability,
+benevolence and integrity (Mayer et al., 1995). The design goal is not more trust but calibrated
+trust: trust that matches a system’s actual capability (Lee and See, 2004; Wischnewski et al.,
+4
+
+
+2023), or, in the terms of Jacovi et al. (2021), warranted rather than unwarranted trust. Lee
+and See (2004) also describe resolution, the degree to which changes in capability are mirrored
+by changes in trust, and specificity, the degree to which trust attaches to particular functions
+rather than to the system as a whole. Reviews of trust measurement emphasise that trust is
+latent and multifaceted, that most scales are bespoke, and that behavioural measures should
+accompany self-report (Gebru et al., 2022; Wischnewski et al., 2023). Trust and distrust also
+appear to be distinct factors rather than two ends of one scale (Scharowski et al., 2025), and
+healthy distrust may require both explicit error detection and an intuitive sense of when to
+doubt (Peters et al., 2026).
+Hoff and Bashir (2015) separate dispositional, situational and learned trust and note
+that learned trust updates dynamically with reliability, but only when people can compare
+the system’s performance with their own. Experiments bear this out. Stated and observed
+accuracy both shape trust, but observed accuracy dominates once users can see it (Yin et al.,
+2019); trust can drift away from reliability when no feedback is available (Rittenberg et al.,
+2024); and displaying an AI’s case-level confidence helps calibrate trust where explanations
+do not (Zhang et al., 2020). Computational models describe trust as moving towards recent
+experience, cumulative trust and a prior expectation bias; without outcome feedback, the
+experience term cannot register failure (Hu et al., 2019). For virtual and embedded AI,
+high initial trust typically drops after errors are experienced (Glikson and Woolley, 2020),
+and trust has affective as well as cognitive roots (Gillath et al., 2021; Choung et al., 2023).
+The recurring condition across this literature is visibility: trust calibrates to what users can
+observe.
+2.2. Overreliance and automation bias with conversational AI
+When verification is costly, people lean on automated aids. Automation bias, the use
+of automated output as a substitute for vigilant information seeking, produces commission
+errors even when contradictory cues are available (Skitka et al., 1999; Goddard et al., 2012),
+and it shares an attentional mechanism with complacency that affects experts and novices
+alike (Parasuraman and Manzey, 2010). Labelling advice as algorithmic increases its weight
+regardless of its quality (Logg et al., 2019), and AI-labelled advice can override both contextual
+evidence and people’s own assessments, at real cost (Klingbeil et al., 2024). Appropriate
+reliance requires both relying on correct advice and overriding incorrect advice (Schemmer
+et al., 2023); explanations can reduce overreliance when they lower the cost of verification
+(Vasconcelos et al., 2023) but can also inflate reliance when they merely justify (Dzindolet
+et al., 2003). Sundar (2020) attributes part of this to a “machine heuristic”, the lay belief
+that machines are objective and accurate, which invites users to outsource vigilance.
+Large language models intensify the problem because they are fluent by default and
+rarely express uncertainty; users rely on their confident outputs whether or not those outputs
+are correct (Zhou et al., 2024), and overreliance on overconfident models appears across
+languages (Rathi et al., 2025). Users overestimate the accuracy of model answers from default
+explanations, and longer explanations raise confidence without improving discrimination
+(Steyvers et al., 2025). Model-generated explanations speed up fact-checking but mislead
+when the model is convincingly wrong (Si et al., 2024); users overlooked the errors in ChatGPT
+answers to programming questions 39% of the time even though 52% of those answers were
+5
+
+
+incorrect (Kabir et al., 2024); and LLM-based search is fast but invites overreliance when the
+model errs (Spatharioti et al., 2025). First-person hedging reduces overreliance only in part
+(Kim et al., 2024), sources and visible inconsistencies help more than explanations (Kim et al.,
+2025), and combining visual and verbal uncertainty cues can sharpen subjective discrimination
+while worsening behavioural reliance (Ojewale et al., 2026). In conversational settings, dialogue
+cues increase trust even when an assistant spreads health misinformation, and only acted-upon,
+independent verification lowers it (Liao and Sundar, 2026). AI assistance can also make
+people perform better while making them worse at judging their own performance (Fernandes
+et al., 2026), and human confidence in themselves, rather than in the AI, often governs
+whether advice is adopted (Chong et al., 2022). Most of this work, however, studies single
+decisions with a fixed error rate. Less is known about learning from a conversational source
+whose reliability varies, where the learner has no independent knowledge and the only readily
+available check is the source itself.
+2.3. Misinformation, fluency and epistemic vigilance
+Research on misinformation explains why confidently stated falsehoods persist. Once
+encoded, misinformation continues to influence reasoning even after it is retracted, and
+corrections work best when they supply an alternative account (Lewandowsky et al., 2012).
+Repetition increases perceived truth (Hasher et al., 1977), and prior knowledge offers sur-
+prisingly little protection against this illusory-truth effect (Fazio et al., 2015). Belief in
+misinformation is driven less by a lack of intelligence than by ordinary cognitive shortcuts,
+including reliance on fluency and familiarity (Ecker et al., 2022). People do possess mecha-
+nisms of epistemic vigilance that monitor the competence and benevolence of sources and the
+coherence of what they say (Sperber et al., 2010), and much human knowledge legitimately
+rests on trusting testimony we cannot check (Hardwig, 1991). These mechanisms evolved
+for human informants, however, and fluent machine text offers few of the signals they rely
+on; people form stronger and less revisable beliefs from sources that sound confident and
+knowledgeable (Kidd and Birhane, 2023). Access to external information can also inflate
+people’s sense of what they themselves know (Fisher et al., 2015; Sparrow et al., 2011), and
+offloading cognition to tools depends on metacognitive judgements that can be miscalibrated
+(Risko and Gilbert, 2016). Measuring such metacognition requires separating sensitivity
+(does confidence discriminate right from wrong?) from bias (is confidence too high overall?)
+(Fleming and Lau, 2014).
+2.4. Sycophancy: the model adapts to the user
+Sycophancy refers to the tendency of language models to tailor responses to what users
+appear to want rather than to what is true. It was first documented as models repeating
+back users’ stated views, increasingly so at larger scales (Perez et al., 2023), and has been
+traced to human preference data that reward agreement and convincingly written responses
+over correct ones (Sharma et al., 2024). Models agree with users on subjective questions
+and follow plausible hints even on factual ones (Ranaldi and Pucci, 2023). A family of
+benchmarks now quantifies the behaviour. SycEval classifies answer changes under rebuttal as
+progressive (incorrect to correct) or regressive (correct to incorrect) and finds sycophancy in
+58% of cases, with citation-based rebuttals producing the most regressive flips (Fanous et al.,
+6
+
+
+2025). SYCON Bench measures how many turns a model holds its stance under sustained
+pressure and how often it flips (Hong et al., 2025). Adversarial scientific QA dialogues show
+that resistance to misleading cues depends more on alignment and reasoning than on scale
+(Zhang et al., 2025). ELEPHANT broadens the construct to social sycophancy, the excessive
+preservation of the user’s face through validation, indirectness and acceptance of the user’s
+framing, and subtracts a human baseline to score it (Cheng et al., 2026b). A psychometric
+Social Sycophancy Scale distinguishes uncritical agreement, obsequiousness and excitement
+as perceived by readers (Rehani et al., 2026). An expert survey shows that researchers share
+concern about sycophancy but not its boundaries (Ye et al., 2026). Reinforcement learning
+from human feedback can also make models better at convincing human evaluators that wrong
+answers are right, raising evaluators’ false-positive rates (Wen et al., 2025), and training
+models to be warm can increase sycophancy and reduce accuracy (Ibrahim et al., 2026). The
+persuasive power of LLMs in conversation is itself well documented (Salvi et al., 2025).
+2.5. Human consequences of sycophancy
+A smaller body of work traces what sycophancy does to people. In a between-subjects
+study, a custom GPT that never contradicted users lowered demonstrated trust, and the
+decline in self-reported trust was significant mainly when participants could verify answers
+(Carro, 2024). Sycophantic chatbots increase attitude extremity and certainty while being
+perceived as unbiased, an effect driven by one-sided facts rather than by validation (Rathje
+et al., 2025). Sycophancy decreases prosocial intentions and promotes dependence while users
+continue to prefer and trust sycophantic models (Cheng et al., 2026a). Flattery combined
+with agreement lowers perceived authenticity, whereas agreement delivered in a neutral tone
+raises trust (Sun and Wang, 2026). Sycophantic assistants leave novices’ misconceptions
+uncorrected in problem-solving tasks without the novices noticing (Bo et al., 2026).
+Table 1 places our study relative to this work. Almost all of it asks whether the model
+adapts to the user, and measures the model. We hold the model’s behaviour fixed—confident,
+non-flattering and unyielding to pushback—and measure whether the user adapts to the
+model.
+2.6. Designing for calibrated trust
+Design research treats trustworthiness as something communicated through cues. The
+MATCH model distinguishes a system’s actual trustworthiness from the cues that signal it
+and warns that some prominent cues, such as the chatbot medium and a polished design look,
+are irrelevant to trustworthiness yet shape it (Liao and Sundar, 2022). Proposed remedies
+include cognitive forcing functions that make users commit before seeing AI output (Buçinca
+et al., 2021), adaptive cues delivered when over-trust is detected (Okamura and Yamada,
+2020), seamful designs that expose a system’s limits rather than hide them (Ehsan et al.,
+2024), deliberate micro-frictions that interrupt automatic behaviour (Cox et al., 2016), and
+verification affordances that users act on (Liao and Sundar, 2026). In design practice itself, AI
+assistance has been shown to hurt high-performing teams through misplaced reliance (Zhang
+et al., 2021), and trust in generative AI rises and falls with many interacting factors during
+co-design (Guo et al., 2025). All of these strategies presuppose a user who can recognise,
+7
+
+
+Table 1: Where this study sits. Most sycophancy research varies or measures the model’s adaptation
+to the user; we hold a confident, non-adaptive model fixed and measure the human’s adaptation to
+it.
+Work
+Who adapts
+Participants
+What is measured
+Perez et al. (2023);
+Sharma et al. (2024)
+Model →
+user
+None / crowd
+raters
+Agreement with stated user views;
+preference for sycophantic answers
+Fanous et al. (2025);
+Hong et al. (2025)
+Model →
+user
+None
+Answer flips under rebuttal
+(progressive/regressive; turn-of-flip)
+Cheng et al. (2026b);
+Rehani et al. (2026)
+Model →
+user
+None / raters
+Social sycophancy (validation,
+framing, obsequiousness)
+Rathje et al. (2025);
+Cheng et al. (2026a)
+Model →
+user
+Large online
+samples
+Downstream attitudes, certainty,
+prosociality, dependence
+Carro (2024); Sun
+and Wang (2026); Bo
+et al. (2026)
+Model →
+user
+Online / lab
+Trust and performance under a
+sycophantic assistant
+Wen et al. (2025)
+Model →
+evaluator
+Expert evaluators
+False-positive rate when judging
+RLHF outputs
+This study
+User →
+model
+Learners,
+within-subjects
+Uptake of planted falsehoods
+from a confident, fixed model
+across five reliability levels;
+confidence, trust, checking,
+deference
+at the moment of use, that a claim deserves scrutiny. Our study examines whether that
+presupposition holds.
+3. Method
+3.1. Design
+We used a within-subjects experiment with covert manipulation of assistant reliability.
+Each participant learned five topics, each from a different assistant (Assistants A to E, in
+presentation order), and each assistant was configured to one of five reliability levels in which
+0%, 25%, 50%, 75% or 100% of its briefing facts were falsified. Levels were assigned by a
+5 × 5 Latin square: participants received its rows in rotation as they enrolled, and the task
+at position i received the level indexed by (i + row) mod 5. Apart from the first participant,
+who received the same row as the fourth, any five consecutive participants therefore met
+every level at every position equally often. Topic order was randomised independently for
+each participant, so the pairing of topics with levels was left to chance; in the final data each
+topic–level combination occurred in between one and seven quizzes, and topic is included as a
+covariate in a sensitivity model. Figure 2 summarises the procedure.
+3.2. Materials
+Topics were chosen so that a lay adult would be unlikely to know the answers and would
+genuinely need to learn from the assistant: how an electrocardiogram (ECG) measures the
+8
+
+
+Figure 2: Study procedure. After consent and a background survey, each participant completed
+five learning tasks, each with a different assistant whose hidden falsification level was assigned by
+Latin square. The surprise quiz could be interleaved freely with further chat, and every switch was
+logged. A final ranking and a mandatory, corrective debrief closed the session.
+heartbeat; how carbon-14 dating determines the age of artefacts; how GPS determines location;
+how fireflies produce light; and how noise-cancelling headphones work. For each topic we wrote
+twelve fact pairs, each consisting of a verified true statement and a matched, plausible false
+version of the same statement (Table 2; the complete set of 60 pairs is given in Appendix B).
+False versions were designed to be plausible to a novice: they change a number, a mechanism,
+a cause or an attribution while keeping the surface form of an expert explanation.
+At the start of each task, the assigned level determined how many of the twelve facts
+(0, 3, 6, 9 or 12) were served in their false form; the subset was drawn at random for each
+task-run and stored, so that every participant’s exposure could be traced, graded and later
+corrected. Each topic had a ten-item multiple-choice quiz. Every item targeted one fact pair
+(ten of the twelve pairs per topic were quizzed) and offered four options in an order shuffled
+per participant: the correct fact, the exact planted falsehood and two plausible distractors.
+Choosing the planted option on an item whose fact had been falsified in that participant’s
+chat is a direct signature of absorbed misinformation. Choosing it on an item that had been
+taught correctly provides a baseline for how attractive the planted option is on its own.
+3.3. Apparatus: one model, five briefings
+All assistants were the same model, GPT-5-mini, accessed through the OpenAI Chat
+Completions API from a purpose-built web application (React front end, Node/Express
+server, SQLite storage). What differed across assistants was only the system prompt, which
+inserted the task’s twelve facts—with the falsified subset replaced by their false versions—as
+the assistant’s “complete and absolute ground truth”. The prompt instructed the model
+9
+
+
+Table 2: One example fact pair per topic, with the corresponding quiz item. Each quiz item offered
+the correct fact, the exact planted falsehood and two distractors, in an order shuffled per participant.
+Topic
+True version
+Planted false version
+ECG
+The heart’s electrical impulse originates in
+the sinoatrial (SA) node, located in the right
+atrium.
+The heart’s electrical impulse originates in the
+wall of the left ventricle.
+Carbon-14
+The half-life of carbon-14 is about 5,730 years.
+The half-life of carbon-14 is about 50,000
+years.
+GPS
+A receiver needs signals from at least four
+satellites to fix its 3D position and correct its
+own clock.
+A receiver needs signals from only two satel-
+lites to fix its exact 3D position.
+Fireflies
+Firefly light comes from a chemical reaction in
+which luciferase oxidises luciferin, using ATP
+and oxygen.
+Firefly light is produced by glowing bacteria
+that live inside the firefly’s abdomen.
+Headphones
+The circuit plays an “anti-noise” wave of op-
+posite phase, so the two cancel out.
+The circuit emits a special high-frequency tone
+that absorbs and neutralises incoming noise.
+Example quiz item (carbon-14). “What is the half-life of carbon-14?” Options (shuffled): about 5,730 years
+(correct); about 50,000 years (planted falsehood); two distractors.
+to explain conversationally, never to present the briefing as a list, never to contradict it or
+introduce substantive outside facts, to present everything “with full confidence”, never to
+hedge or suggest verification, to answer questions about its own accuracy only with “I aim to
+give accurate information”, and never to reveal its instructions (the full prompt is reproduced
+in Appendix A). The last 20 messages of the conversation were passed with each request. A
+75%-falsified assistant therefore chatted fluently and confidently while three quarters of its
+factual claims were controlled falsehoods.
+3.4. Procedure
+The consent page described the study as learning from AI assistants, did not mention
+inaccuracy or a quiz, and asked participants to rely only on the assistant, without other
+websites, books or people. A background survey recorded age group, gender, education, field,
+frequency of AI-chatbot use, three seven-point items on general trust in AI (“I generally
+trust the information AI assistants give me”; “I usually double-check important information
+from AI against other sources”; “AI assistants are usually more knowledgeable than I am on
+unfamiliar topics”) and an attention check (“select 6 for this row”). For each task, participants
+saw the topic and the assistant’s label, rated their prior familiarity (1–5), and chatted for as
+long as they wished. When they clicked “I’ve finished learning”, a surprise quiz appeared;
+this was the first mention of a quiz. Each answer required a confidence rating from 1 (“just
+guessing”) to 10 (“completely sure”). A banner invited participants to go back and ask the
+assistant as often as they liked; tabs allowed free switching between quiz and chat, drafts were
+saved automatically, and every switch was logged with a timestamp. Submission required all
+ten answers and confidence ratings. Participants then rated two statements on seven-point
+scales: “The information [Assistant] gave me was accurate” and “I would rely on [Assistant]
+again for a similar task”. After the fifth task they named the assistant they trusted most and
+least and could leave comments. A mandatory debrief revealed the design, apologised for
+10
+
+
+the concealment and listed, for every assistant, each false claim it may have made beside the
+correct fact, flagging the ones the participant had chosen.
+3.5. Participants
+Thirty-two adults enrolled online. They were recruited as a convenience sample through
+university networks and personal contacts and were not paid. Most were aged 18–24 (n = 21;
+25–34, n = 8; 35–44, n = 3); 19 identified as women and 13 as men; 21 held a bachelor’s
+degree, six a master’s degree, three a doctorate, and two a school qualification. Twenty-seven
+(84%) used AI chat assistants daily, three weekly and two less often. On the general-trust
+items, participants agreed moderately that they trust AI information (M = 4.34, SD = 1.07),
+agreed that they double-check important AI information (M = 5.59, SD = 1.36) and agreed
+that AI is more knowledgeable than they are on unfamiliar topics (M = 4.94, SD = 1.61).
+Prior familiarity with the topics was low (M = 2.09 on the 1–5 scale; 69% of ratings were 1
+or 2).
+3.6. Measures
+Let r index task-runs (one participant × one assistant), i quiz items, Fr the quizzed items
+whose fact was falsified in run r, and Tr those taught correctly. Let yi be the option chosen
+(correct, planted or distractor) and ci ∈{1, . . . , 10} its confidence. We computed the following
+measures (Table 3).
+3.7. Transcript coding
+Because a falsified fact can only be absorbed if it is actually said, we coded all 104 quizzed
+task-runs (716 messages). For each of the ten quizzed facts, the coder recorded whether
+the assistant’s messages stated the true version, the planted false version, both or neither,
+separately for the learning phase and for the whole run. Each user turn was classified as
+an open request (“tell me everything about ECG”), a specific question, a pasted or retyped
+quiz question, an answer check, a format request, a challenge, a social or meta turn, or other.
+For every challenge we recorded the targeted fact, whether the doubted claim was true or
+false, and whether the assistant held, partly softened or conceded. Finally, the assistant’s
+behaviour in each run was rated from 0 (absent) to 3 (pervasive) on six dimensions adapted
+from the Social Sycophancy Scale (Rehani et al., 2026) and ELEPHANT (Cheng et al.,
+2026b): validation or praise, obsequiousness, excitement, uncritical agreement, hedging and
+assertiveness. Coding was performed by an LLM-based coder (four coder instances, each
+coding a quarter of the runs) following a written protocol that supplied, for each fact, the
+exact true and planted wordings; verbatim quotations were checked programmatically against
+the transcripts. The coders’ notes on borderline cases (e.g., runs in which the assistant stated
+both versions of a fact) were reviewed and resolved by rule.
+3.8. Statistical analysis
+Run-level outcomes (score, absorption, trust ratings) were analysed with linear mixed-
+effects models with a random intercept for participant and falsification level as a continuous
+predictor, reported per 25-percentage-point step; a covariate model added prior familiarity,
+11

@@ -1,0 +1,932 @@
+OP-Print: Tracing Membership Imprints in On-Policy Self-Distillation
+Qi Li
+Xinchao Wang*
+National University of Singapore
+liqi@u.nus.edu
+xinchao@nus.edu.sg
+Abstract
+On-policy distillation has been widely adopted
+for alleviating the distribution mismatch of off-
+policy distillation. Self-distillation further re-
+moves the need for an external teacher by us-
+ing the student’s own outputs, enhanced with
+extra context or demonstrations, as supervi-
+sion. This teacher-free design makes on-policy
+self-distillation practical, yet its privacy risks
+remain largely unexplored. In particular, us-
+ing two coupled views of the same training
+example may strengthen its memorization. Mo-
+tivated by this, we present the first study of
+membership inference attacks against on-policy
+self-distillation. We investigate both gray-box
+and black-box threat models and propose a uni-
+fied attack framework, named OP-Print. OP-
+Print builds on our finding that the supervision
+imprint in on-policy self-distillation is sparse
+and structured, concentrating on uncertainty-
+sensitive correction sites rather than across the
+entire rollout. Exploiting this property, we con-
+struct attack signals tailored to the two access
+levels: in the gray-box setting, OP-Print di-
+rectly aggregates the privileged teacher-student
+residual correction along the same rollout; in
+the black-box setting, it measures restart-based
+output-basin stability as an observable surro-
+gate for the hidden correction process. Across
+diverse models and distillation schemes, all
+baseline attacks remain essentially at random
+guessing even under gray-box access, whereas
+OP-Print is broadly validated to be effective in
+both gray-box and black-box settings.
+1
+Introduction
+On-policy distillation has recently become an im-
+portant paradigm for improving model perfor-
+mance, as it alleviates the distribution mismatch of
+off-policy distillation (Guo et al., 2025; Song and
+Zheng, 2026; Ye et al., 2026b). Its self-distillation
+variants go one step further by removing the need
+*Corresponding Author
+for an external teacher: the distillation signal is
+instead derived from the student model itself, aug-
+mented with additional context or demonstrations
+that bootstrap its own capabilities (Zhao et al.,
+2026a; Shenfeld et al., 2026; Sang et al., 2026;
+He et al., 2026; Yin et al., 2026a). This teacher-
+free property makes on-policy self-distillation es-
+pecially attractive in practice. In particular, the
+model is exposed to two coupled views of the same
+example: a standard version without privileged in-
+formation and a privileged version augmented with
+guidance such as a reference solution. While this
+design improves reasoning performance, its privacy
+implications have remained largely unexamined.
+Intuitively, processing both views of the same sam-
+ple may produce a stronger and more distinctive
+training imprint, potentially making that sample
+easier to memorize than under ordinary training.
+Motivated by this concern, in this work, we in-
+vestigate the data privacy risks of on-policy self-
+distillation through the lens of membership infer-
+ence attacks (Shi et al., 2023; Li et al., 2024; Song
+et al., 2019; Li et al., 2026b; Wang et al., 2025).
+Membership inference asks whether an adversary
+can determine if a given sample was used in train-
+ing (Shokri et al., 2017a; Carlini et al., 2022a;
+Yeom et al., 2018). We explore this problem under
+a unified gray-box and black-box threat model (Hu
+et al., 2022; Wu and Cao, 2025; Bai et al., 2024).
+We found this problem fundamentally nontrivial:
+the supervision signal in on-policy self-distillation
+is not globally visible, nor is it well captured by
+coarse output-level heuristics (Zhang et al., 2024;
+Hu et al., 2025; Li et al., 2026b). Instead, it is
+sparse, structured, and tied to the model’s internal
+correction process. More importantly, our analy-
+sis shows that this signal is organized primarily
+by token difficulty rather than absolute decoding
+position. In other words, privileged correction con-
+centrates on uncertain reasoning steps, while po-
+sition alone provides only weak evidence. This
+1
+arXiv:2610.31616v1  [cs.LG]  22 Oct 2026
+
+
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Normalized rollout position
+0.000
+0.002
+0.004
+0.006
+0.008
+0.010
+Mean chunk-level KL gap
+Non-member
+Member
+(a) Gray-box Trajectory.
+10−4
+10−3
+10−2
+10−1
+100
+False Positive Rate
+10−4
+10−3
+10−2
+10−1
+100
+True Positive Rate
+Gray-box Score (0.607)
+Solution Length (0.523)
+Rollout Correct Rate (0.512)
+Rollout Majority (0.509)
+Mean Rollout Length (0.502)
+Rollout Length Std. (0.501)
+Formatted Rate (0.501)
+(b) TPR@Low FPR.
+Figure 1: Gray-box MIA signals from rollout-level dy-
+namics and attack behavior (AUC) of Gray-box score.
+makes gray-box inference feasible but already non-
+trivial, and makes black-box inference substantially
+harder, since the adversary cannot observe the un-
+derlying uncertainty or correction process and only
+has access to the final outputs.
+To address this problem, we propose a unified
+framework, named OP-Print, that targets the same
+hidden supervision imprint at two levels of ad-
+versary observability. Our key insight is that on-
+policy self-distillation leaves a sparse but structured
+correction imprint concentrated on uncertainty-
+sensitive reasoning tokens. In the gray-box setting,
+this signature can be measured directly by com-
+paring student-conditioned and privileged teacher-
+conditioned behaviors along the same rollout. In
+the black-box setting, the correction process itself
+is hidden, but it still leaves observable traces in the
+geometry of the output basin: when generation is
+restarted from partial prefixes, member and non-
+member examples differ in how stably their contin-
+uations remain within a local solution basin. Based
+on this observation, OP-Print instantiates two com-
+plementary attacks. Its gray-box variant aggre-
+gates teacher-student residual discrepancy along
+self-rollouts into a direct membership score, while
+its black-box variant probes restart-based output-
+basin stability as a natural surrogate for the inac-
+cessible correction signal. Together, they offer a
+unified view of privacy leakage: one captures the
+hidden correction process directly, while the other
+reveals its behavioral effects from outputs alone.
+A gray-box example is shown in Figure 1. The
+gap between members and non-members is observ-
+able but with magnitude vary across decoding po-
+sitions. OP-Print makes use of such signal and
+outperforms the baselines. Across diverse models
+and distillation schemes, we found that all baseline
+attacks, consistent with observations from prior
+works (Meeus et al., 2025a; Das et al., 2025; Duan
+et al., 2024), remain essentially at random guessing
+even under gray-box access, whereas OP-Print is
+broadly effective in both gray-box and black-box
+settings. These results reveal an overlooked pri-
+vacy risk of on-policy self-distillation and show
+that its leakage surface differs from conventional
+distillation. Our contributions are as follows:
+• We uncover the location of the membership
+signal in on-policy self-distillation: rather
+than being globally visible, it resides in a
+sparse and structured correction imprint con-
+centrated on uncertainty-sensitive tokens.
+• Building on this observation, we propose OP-
+Print, a unified attack framework that targets
+this hidden signal under both threat models:
+in the gray-box setting, it exploits privileged
+residual discrepancy directly, while in the
+black-box setting, it captures its restart-based
+output-basin traces, thereby enabling reliable
+membership inference.
+• Extensive experiments across diverse LLMs
+consistently demonstrate the superiority of
+OP-Print. For example, on Qwen3-8B (Yang
+et al., 2025) under the black-box setting, OP-
+Print improves AUC by 7.7% and TPR@5%
+FPR by 26.5% over the strongest baseline.
+2
+Related Work
+On-Policy Self-Distillation. On-policy distilla-
+tion (OPD) trains the student on trajectories sam-
+pled from its own evolving policy, reducing the
+training-inference mismatch of off-policy distilla-
+tion (Song and Zheng, 2026; Zhao et al., 2026a).
+Existing approaches include logit matching (Agar-
+wal et al., 2024a; Ko et al., 2024; Jung et al.,
+2025; Wu et al., 2025b), outcome supervision (Ye
+et al., 2025; Jiang et al., 2023; Xiong et al., 2026;
+Singh et al., 2025; Mendes et al., 2026), and self-
+distillation (Zhao et al., 2026a; Penaloza et al.,
+2026; Ye et al., 2026b,a; Dat et al., 2026). In self-
+distillation, the same model acts as both teacher
+and student under asymmetric conditioning, elim-
+inating the need for an external teacher. Early
+methods such as SPIN (Chen et al., 2024) rely
+on reference data, whereas recent approaches in-
+ject privileged information into the teacher context.
+A representative example is OPSD (Zhao et al.,
+2026a), where the teacher receives additional su-
+pervision while the student sees only the original in-
+put, and training minimizes token-level divergence
+on the student’s own rollouts. Recent extensions
+2
+
+
+(0.0, 0.0526]
+(0.263, 0.316]
+(0.526, 0.579]
+(0.789, 0.842]
+Relative token position
+0.0050
+0.0075
+0.0100
+Mean JSD
+(a) Mean divergence across relative token
+positions.
+(-1.00e-03, 8.73e-11]
+(8.73e-11, 1.66e-09]
+(1.66e-09, 2.97e-08]
+(2.97e-08, 5.36e-07]
+(5.36e-07, 1.53e-05]
+(1.53e-05, 4.10e-04]
+(4.10e-04, 7.20e-03]
+(7.20e-03, 3.61e-02]
+(3.61e-02, 7.57e-02]
+(7.57e-02, 3.16e-01]
+Student uncertainty quantile
+0.00
+0.02
+0.04
+0.06
+Mean JSD
+(b) Mean divergence across student-
+uncertainty quantiles.
+0.0
+0.1
+0.2
+0.3
+Student uncertainty
+0.2
+0.4
+0.6
+0.8
+1.0
+Teacher confidence
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+Mean JSD
+(c) Reliability map of token-level teacher-
+student divergence.
+Figure 2: (a). Divergence varies only mildly across token positions, indicating that position alone is not the main
+source of the signal. (b). Divergence increases with student uncertainty, showing that correction concentrates on
+difficult reasoning tokens. (c). The reliability map reveals localized rather than uniform divergence, confirming that
+the supervision imprint is sparse and structured.
+include GATES (Stein et al., 2026), SDPO (Hübot-
+ter et al., 2026), OPSDC (Sang et al., 2026), and
+SDFT (Shenfeld et al., 2026).
+Membership Inference Attack. Membership In-
+ference Attacks (MIAs) (Shokri et al., 2017a; Car-
+lini et al., 2022a; Li et al., 2026a; Yin et al., 2026b)
+determine whether a sample was used to train a
+target model, posing risks to sensitive training
+data. Existing MIAs mainly fall into metric-based
+and shadow model-based methods (Carlini et al.,
+2022a; Li et al., 2024). Metric-based attacks in-
+fer membership from statistics derived from model
+outputs (Yeom et al., 2018; Salem et al., 2018;
+Song and Mittal, 2021; Li et al., 2024), whereas
+shadow model-based attacks train auxiliary models
+to mimic the target (Shokri et al., 2017a; Zarifzadeh
+et al., 2023). Since the latter is computationally ex-
+pensive and often impractical for LLMs (Li et al.,
+2024, 2026b), this work focuses exclusively on
+metric-based methods.
+MIAs were first studied for classification mod-
+els (Shokri et al., 2017a) and later extended to gen-
+erative (Chen et al., 2020; Hayes et al., 2017) and
+embedding models (Mahloujifar et al., 2021; Song
+and Raghunathan, 2020). Recent work has further
+investigated MIAs against LLMs (Shi et al., 2023;
+Li et al., 2024), covering both pretraining (Shi et al.,
+2023; Zhang et al., 2024; Changpinyo et al., 2021)
+and post-training data (Li et al., 2024; Wu and Cao,
+2025; Hu et al., 2025). The on-policy distillation
+process is commonly conducted during the post-
+training process. This highlights the unique im-
+portance of this problem: The capability of LLMs
+to effectively interact with humans fundamentally
+depends on the post-training stage, as the strength
+of this capability is directly tied to the quality of
+the post-training dataset. Furthermore, develop-
+ers often construct their own task-specific datasets
+for this stage (Song and Zheng, 2026; Zhao et al.,
+2026a), which introduces additional privacy risks.
+Motivated by these factors, we focus on the post-
+training stage MIA of LLMs.
+3
+Method
+Challenges.
+Figure 2 clarifies both the diffi-
+culty and the feasibility of MIA on on-policy self-
+distillation. The key observation is that the su-
+pervision imprint is not organized primarily by
+token position, but by token difficulty. As shown in
+Figure 2a, teacher-student divergence varies only
+moderately across relative decoding positions, so
+position alone provides at most a weak signal. In
+contrast, Figure 2b shows a much sharper depen-
+dence on student uncertainty: the divergence rises
+substantially in higher-uncertainty regions, indicat-
+ing that privileged correction is concentrated on
+difficult reasoning tokens rather than uniformly dis-
+tributed throughout the rollout. Figure 2c further
+shows that this signal occupies only a restricted
+region of the reliability map, confirming that the
+resulting imprint is sparse and structured instead
+of globally exposed. This structure directly ex-
+plains the gap between gray-box and black-box
+attacks. In the gray-box setting, adversaries can
+access the teacher-conditioned residual correction
+signal along the same rollout, and directly aggre-
+gates this privileged discrepancy. In the black-box
+setting, however, the most informative variable is
+fundamentally hidden, and the adversary only ob-
+serves final output tokens. Since position is only
+weakly informative, this makes black-box MIA
+substantially harder.
+Problem Setup. Let x = (q, r) denote a candidate
+training example, where q is the problem and r is
+its reference solution. Given a target checkpoint pθ,
+our goal is to infer whether x belongs to the mem-
+3
+
+
+...
+1
+2
+3
+4
+5
+...
+0.1
+0.3
+0.5
+0.7
+0.9
+1
+2
+3
+4
+5
+...
+1
+2
+3
+4
+5
+...
+...
+Partial
+Prefix
+1
+1
+2
+1
+2
+3
+Let’s analyze the problem... 
+We first identify the variables...
+Then we derive the equation...
+Finally, the solution is 42.
+We begin by restating the goal...
+Next, we set up the model...
+After simplification, we get...
+Thus, the answer is 42.
+Starting with the given info...
+We apply the relevant forluma...
+Computing step by step...
+Therefore, the result is 42.
+High Similarity
+Low Similarity
+Member
+Non-Member
+Initial Rollout
+Prefix Truncation
+Rollout Restart
+Scoring
+Let’s analyze the problem... 
+We begin by restating the goal...
+Starting with the given info...
+Figure 3: An illustration of the black-box attack process of OP-Print. Given multiple initial rollouts, OP-Print
+truncates each rollout at different prefix ratios, restarts generation from the partial prefix, and scores membership
+by measuring the similarity between restarted outputs. Members tend to produce more stable and similar restart
+trajectories, while non-members exhibit lower restart consistency.
+ber set used during self-distillation. We write ps(q)
+for the standard student prompt constructed from
+q alone, and pt(q, r) for the privileged prompt that
+additionally conditions on the reference solution r.
+For a rollout y = (y1, . . . , yT ) ∼pθ(· | ps(q)), let
+y<t denote its prefix before token t.
+A Unified View: Hidden Correction Imprint.
+The analysis in Figure 2 suggests that on-policy
+self-distillation leaves a structured correction im-
+print: membership-relevant signal is sparse, con-
+centrated on uncertainty-sensitive reasoning tokens,
+and only weakly aligned with absolute decoding
+position. This motivates a unified view of both at-
+tacks. We posit a latent quantity measuring how
+much privileged correction the model would still
+require on a rollout:
+∆t(x, y) = KL(pθ(· | pt(q, r), y<t)
+∥pθ(· | ps(q), y<t)) .
+(1)
+Intuitively, ∆t(x, y) is large when the student-
+conditioned model still disagrees substantially with
+its privileged counterpart at token t, and small when
+the correction has already been internalized. Mem-
+bers should therefore exhibit smaller privileged
+correction on average, because self-distillation has
+already adapted the model on those examples. Our
+gray-box attack estimates this quantity directly,
+while our black-box attack targets its observable
+consequence in the output basin.
+Gray-box Attack: Privileged Residual Aggre-
+gation. In the gray-box setting, we can evalu-
+ate the target model under both ps(q) and pt(q, r)
+along the same rollout. Given K sampled rollouts
+{y(k)}K
+k=1 from pθ(· | ps(q)), we define the gray-
+Algorithm 1: OP-Print (Black-box)
+Require: Target model pθ, query q, prefix ratios P, number
+of full generations M, number of restarts R
+Ensure: Membership score Sblack(x)
+1: Sample M generations {y(m)}M
+m=1 ∼pθ(· | ps(q))
+2: for m = 1, . . . , M do
+3:
+for each ρ ∈P do
+4:
+Truncate y(m) into prefix πρ(y(m))
+5:
+Restart decoding R times from πρ(y(m))
+6:
+Obtain restart set Rm,ρ(x), where
+Rm,ρ(x) = {˜y(m,ρ,1), . . . , ˜y(m,ρ,R)}.
+7:
+Compute restart stability
+Stabtext(Rm,ρ(x)) =
+2
+R(R −1)
+X
+i<j
+sim
+
+˜y(m,ρ,i), ˜y(m,ρ,j)
+8:
+end for
+9: end for
+10: Aggregate over all full generations and prefix ratios:
+Sblack(x) =
+1
+M|P|
+M
+X
+m=1
+X
+ρ∈P
+Stabtext(Rm,ρ(x))
+11: return Sblack(x)
+box score as
+Sgray(x) = −1
+K
+K
+X
+k=1
+1
+Tk
+Tk
+X
+t=1
+∆t
+
+x, y(k)
+.
+(2)
+Here, a larger score means a smaller average privi-
+leged gap, hence stronger evidence that the exam-
+ple has already been absorbed by the self-distilled
+model. In implementation, we compute the diver-
+gence in fixed-size chunks (e.g., 64 tokens) for
+efficiency (ablations can be found in Section 4.2).
+In our experiments, we also introduce a grey-box
+scoring variant to assess the utility of the maximum-
+discrepancy position. This variant can be written as
+Smax
+gray(x) = −1
+K
+PK
+k=1 max1≤t≤Tk ∆t
+ x, y(k)
+.
+4
+
+
+Table 1: Gray-box and black-box results with the JSD objective. Colors indicate the top-2 and worst-2 results in the
+gray-box setting, and the top-1 and worst-1 results in the black-box setting.
+Method
+Qwen3-1.7B
+Qwen3-4B
+Qwen3-8B
+AUC
+Acc.
+TPR@5%FPR
+AUC
+Acc.
+TPR@5%FPR
+AUC
+Acc.
+TPR@5%FPR
+Gray-box setting
+Min-K% Prob
+0.512
+0.518
+0.052
+0.497
+0.505
+0.046
+0.529
+0.511
+0.055
+ModRényi (α = 0.5)
+0.484
+0.506
+0.044
+0.508
+0.508
+0.051
+0.513
+0.514
+0.056
+ModRényi (α = 2)
+0.516
+0.514
+0.057
+0.507
+0.512
+0.047
+0.506
+0.502
+0.050
+Rényi (α = 0.5)
+0.503
+0.509
+0.049
+0.517
+0.511
+0.054
+0.495
+0.503
+0.045
+Rényi (α = 1)
+0.508
+0.501
+0.046
+0.512
+0.507
+0.050
+0.507
+0.513
+0.056
+Rényi (α = 2)
+0.517
+0.518
+0.055
+0.506
+0.508
+0.044
+0.491
+0.503
+0.052
+Rényi (α = ∞)
+0.489
+0.502
+0.048
+0.514
+0.511
+0.057
+0.511
+0.509
+0.046
+OP-Print-G
+0.579
+0.586
+0.108
+0.580
+0.583
+0.095
+0.556
+0.543
+0.088
+OP-Print-G-Max
+0.594
+0.583
+0.110
+0.611
+0.604
+0.127
+0.587
+0.580
+0.102
+Black-box setting
+S-Len
+0.505
+0.516
+0.068
+0.419
+0.507
+0.060
+0.505
+0.516
+0.068
+RC-Rate
+0.507
+0.517
+0.034
+0.544
+0.566
+0.104
+0.506
+0.508
+0.046
+R-Maj
+0.516
+0.523
+0.000
+0.450
+0.508
+0.000
+0.493
+0.523
+0.000
+Avg. R-Len
+0.495
+0.508
+0.000
+0.458
+0.508
+0.000
+0.489
+0.506
+0.000
+R-Std
+0.536
+0.528
+0.066
+0.542
+0.568
+0.084
+0.511
+0.515
+0.046
+F-Rate
+0.508
+0.513
+0.048
+0.516
+0.543
+0.098
+0.517
+0.521
+0.052
+OP-Print-B
+0.554
+0.552
+0.086
+0.575
+0.573
+0.089
+0.557
+0.546
+0.086
+Black-box Attack: Restart-based Basin Stability.
+In the black-box setting, the informative variable
+in Figure 2, i.e., the teacher-conditioned residual
+correction, is hidden. The adversary sees only gen-
+erated text, so a direct estimate of Equation 1 is
+unavailable. Our key design choice is therefore to
+attack the behavioral trace left by hidden correc-
+tion, rather than the hidden correction itself.
+As illustrated in Figure 3, for each input q, we
+first sample M full generations {y(m)}M
+m=1 from
+pθ(· | ps(q)). For each generation y(m) and each
+prefix ratio ρ ∈P, we truncate it to a partial pre-
+fix πρ(y(m)) and restart decoding from that prefix
+multiple times, obtaining a restart set
+Rm,ρ(x) =
+n
+˜y(m,ρ,1), . . . , ˜y(m,ρ,R)o
+.
+(3)
+We then measure how tightly these restarted con-
+tinuations collapse in text space:
+Stabtext(Rm,ρ(x)) =
+2
+R(R −1)
+X
+i<j
+sim
+
+˜y(m,ρ,i), ˜y(m,ρ,j)
+,
+(4)
+where sim(·, ·) is a normalized string-level similar-
+ity. Our final black-box score is the average restart-
+text stability across sampled full generations and
+prefix ratios:
+Sblack(x) =
+1
+M|P|
+M
+X
+m=1
+X
+ρ∈P
+Stabtext(Rm,ρ(x)) .
+(5)
+A higher Sblack(x) indicates a narrower and more
+stable output basin under prefix restarts, which we
+interpret as evidence that the hidden correction has
+already been more strongly internalized, and hence
+that x is more likely to be a member. The pseudo
+code is provided in Algorithm 1.
+4
+Experiments
+Distillation Variants. We evaluate our attacks on
+two representative on-policy self-distillation vari-
+ants. Both follow the same high-level training
+paradigm (Zhao et al., 2026a; Song and Zheng,
+2026): the student first generates an on-policy com-
+pletion from the original problem, and the result-
+ing continuation is then paired with two condition-
+ing contexts with teacher-side prompt contains ad-
+ditional privileged information derived from the
+reference solution.
+In the first variant, we fol-
+low the practice of previous works (Zhao et al.,
+2026a; Shenfeld et al., 2026) to use a generalized
+Jensen-Shannon divergence (JSD) objective that
+aligns the teacher and student distributions over
+the student-generated continuation. For the sec-
+ond variant, we follow a tinker-style (Lu and Lab,
+5
+
+
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Normalized rollout position
+−0.05
+0.00
+0.05
+0.10
+Chunk-level KL gap
+Rollout
+Mean gap
+(a) Gray-box member case.
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Normalized rollout position
+−0.05
+0.00
+0.05
+0.10
+Chunk-level KL gap
+Rollout
+Mean gap
+(b) Gray-box non-member case.
+0.2
+0.4
+0.6
+0.8
+Prefix ratio
+0.2
+0.4
+0.6
+Restart text similarity
+restart_text_sim
+full_text_sim
+0.2
+0.4
+0.6
+0.8
+Prefix ratio
+0.00
+0.25
+0.50
+0.75
+1.00
+Value
+restart_correct_rate
+full correct_rate
+(c) Black-box member case.
+0.2
+0.4
+0.6
+0.8
+Prefix ratio
+0.00
+0.05
+0.10
+0.15
+Restart text similarity
+restart_text_sim
+full_text_sim
+0.2
+0.4
+0.6
+0.8
+Prefix ratio
+0.00
+0.25
+0.50
+0.75
+1.00
+Value
+restart_correct_rate
+full correct_rate
+(d) Black-box non-member case.
+Figure 4: Representative gray-box and black-box OP-Print signals. (a)(b) In the gray-box setting, members show
+lower chunk-level KL gaps and higher scores than non-members. (c)(d) In the black-box setting, members exhibit
+more stable outputs under prefix restarts, whereas non-members are less stable.
+2025) formulation. It preserves the same privi-
+leged teacher / standard student setup, but replaces
+distribution matching with a sampled-token policy-
+improvement objective. Concretely, the teacher-
+student log-probability difference on the generated
+continuation is used as an advantage-like signal,
+and optimization increases the student probabil-
+ity on tokens preferred by the privileged teacher.
+This yields a more policy-oriented realization of
+on-policy self-distillation. These two variants pro-
+vide a useful contrast between distribution-level
+and sampled-token-level self-distillation under the
+same on-policy training principle. All training hy-
+perparameters are deferred to Appendix A.
+Datasets and Models. A long-standing and highly
+debated issue in MIA against LLMs is data con-
+struction (Meeus et al., 2025a; Das et al., 2025;
+Duan et al., 2024). In prior work, the attack results
+are often rendered unreliable by severe distribution
+mismatch between the member and non-member
+sets, leading to overclaimed performance (Meeus
+et al., 2025a). On the other side, prior work has
+found that training a model too much on-policy self-
+distillation can suffer from mode collapse (Song
+and Zheng, 2026; Zhao et al., 2026a). This also
+motivates controlling the data scale in evaluation.
+To avoid the above problems and to ensure a correct
+and fair evaluation of attack performance, we care-
+fully select and construct the dataset and train the
+target models under a protocol that strictly follows
+the requirements of membership inference evalu-
+ation. For the dataset, e use the mathematical rea-
+soning subset of OpenThoughts (Guha et al., 2025),
+sampling 1k problem-solution pairs with chain-of-
+thought reasoning, splitting them evenly into 500
+members and 500 non-members. For the target
+models, we fine-tune three Qwen3 variants (Yang
+et al., 2025) (1.7B, 4B, 8B) on the sampled member
+set under the distillation variants described above.
+Training details are in Appenfix A.
+Baselines. We consider both the general gray-box
+baselines and on-policy self-distillation specified
+black-box baselines. For gray-box baselines, we in-
+clude Min-K% (Zhang et al., 2024) and MaxRényi-
+K% (Li et al., 2024). We report the best results
+among different variants of these methods. For
+black-box baselines, we construct rollout-derived
+metrics including solution length (S-Len), rollout
+correct-rate (RC-Rate), rollout majority-answer (R-
+Maj), average rollout length (Avg. R-Len), rollout-
+length standard deviation (R-Std), and formatted-
+answer rate (F-Rate). These metrics capture output
+length, correctness, answer consistency, length sta-
+bility, and formatting reliability, respectively.
+Evaluation metric.
+As a binary classification
+problem, the performance can be evaluated with
+the AUC score (Carlini et al., 2021). We define
+the members as "positive" and the non-members
+as "negative". We also report True Positive Rate
+(TPR) at low False Positive Rate (FPR) (Carlini
+et al., 2022a), which is an important metric in MIAs
+and measures detection rate at a meaningful thresh-
+old. We set the threshold as 5% and evaluate all the
+methods under TPR@5% FPR. We also report the
+best classification accuracy achievable by sweep-
+ing over all possible thresholds on the attack scores.
+6

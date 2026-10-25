@@ -1,0 +1,644 @@
+Preprint. Under review.
+SHIFT-AWARE SCORE TRANSPORT FOR PRIVACY
+AUDITING WITHOUT RETRAINING
+Yaohong Yang1,2, Gauri Pradhan3, Qi Chen1,2, Samuel Kaski1,2,4, Antti Honkela3
+1 ELLIS Institute Finland
+2Department of Computer Science, Aalto University, Finland
+3Department of Computer Science, University of Helsinki, Finland
+4 Department of Computer Science, University of Manchester, United Kingdom
+{yaohong.yang, qi.chen.inf, samuel.kaski}@aalto.fi
+{gauri.pradhan, antti.honkela}@helsinki.fi
+ABSTRACT
+Privacy auditing empirically assesses privacy leakage by using membership in-
+ference attacks to establish lower bounds on privacy loss. We consider an obser-
+vational auditing setting in which the auditor cannot insert canaries, control data
+inclusion, or retrain the target model, and must instead rely on fixed sets of known
+members and non-members. This setting is relevant for large deployed models or
+when retraining is restricted by computational or access constraints. In this case,
+non-members available for auditing may differ in distribution from the training
+data, causing membership-inference scores to be skewed due to the distribution
+shift. We address this problem by estimating the counterfactual in-distribution
+non-member score distribution using the available out-of-distribution (OOD) non-
+members. Our proposed method learns the relationship between data representa-
+tions and membership-inference scores from OOD non-members and transports
+it to the target covariate distribution. Because this transport may become unreli-
+able under extrapolation or imperfect conditional invariance, we further introduce
+a conservative correction calibrated directly to the nominal transported privacy
+level. We construct controlled calibration tasks from the available non-member
+data to estimate how representation-space displacement inflates the audit, and use
+this estimate to correct the transport-induced audit error. Across multiple datasets
+with distribution shifts, our method yields substantially more stable privacy esti-
+mates while retaining tighter lower bounds than baselines.
+1
+INTRODUCTION
+Membership inference attacks (MIAs) distinguish training-set members from non-members based
+on a model’s behavior, and are widely used to empirically assess privacy leakage of machine learn-
+ing models (Shokri et al., 2017; Yeom et al., 2018; Carlini et al., 2022). A fundamental assumption
+underlying such comparisons is that members and non-members are drawn from same data distri-
+butions. In practice, however, available non-members may differ systematically from the training
+distribution (Liang & You, 2024; Duan et al., 2024; Meeus et al., 2025). Under such distribution
+shift, membership-inference scores can capture distributional differences in addition to membership
+information, effectively confounding membership inference with distribution-shift detection (Duan
+et al., 2024; Das et al., 2025; Zhang et al., 2025). Consequently, the observed membership signal
+can substantially overestimate privacy leakage (Maini et al., 2024; Even et al., 2026).
+This issue is particularly consequential for privacy auditing, where MIAs are used to establish em-
+pirical lower bounds on privacy loss (Jagielski et al., 2020; Tramer et al., 2022). Most existing
+auditing methods avoid this confounding by controlling the training process—for example, by re-
+training models (Jagielski et al., 2020; Nasr et al., 2023), randomizing the inclusion of candidate
+examples (Steinke et al., 2023; Mahloujifar et al., 2025), or inserting canaries (Pillutla et al., 2023;
+Steinke et al., 2023). Such intervention may be unavailable for already-deployed or third-party mod-
+els and can be prohibitively expensive for large models (Kazmi et al., 2024; Cebere et al., 2026).
+1
+arXiv:2610.31549v1  [cs.LG]  22 Oct 2026
+
+
+Preprint. Under review.
+Figure 1: Overview of our shift-aware privacy auditing framework. (a) Counterfactual score trans-
+port. We learn the relationship S = R(Z) between data representations Z and non-member MIA
+scores S from the available OOD non-members QZ, and transport this relationship to the target
+representation distribution PZ to estimate the unavailable IID non-member score distribution. (b)
+We construct shift-aware calibration tasks within the OOD non-members by transporting scores
+from source slabs to target slabs along the QZ →PZ shift direction. Since the target-slab scores are
+observed, the resulting transport-induced audit error can be measured. (c) The displacement–audit
+error model measures how the audit error changes with representation displacement, which is eval-
+uated at the QZ →PZ displacement to estimate the transport-induced error used for correction.
+Therefore, we consider an observational auditing setting where the model has already been trained
+and cannot be retrained (Kazmi et al., 2024; Cebere et al., 2026). The auditor only has black-box
+access to the target model together with fixed sets of examples known to be training-set members
+and non-members. This setting removes the ability to randomize membership, and consequently
+introduces a challenge that is largely absent when the auditor controls data inclusion: the avail-
+able non-members might not follow the same distribution as the training data. Correcting for this
+distributional confounding is therefore necessary to obtain a valid lower bound on privacy leakage.
+A natural solution is to reconstruct the missing in-distribution non-member score distribution. We
+model how the MIA score varies with data distributions among the available OOD non-members.
+This nominal transport is motivated by a conditional score-invariance assumption: after conditioning
+on the representation, the non-member score distribution is invariant across domains. This allows
+the conditional score mechanism learned from the reference distribution to be evaluated under the
+target distribution. However, conditional transport alone is insufficient. Even when conditional score
+invariance is valid on the common support, the target distribution may place substantial mass in re-
+gions that are poorly represented by the available non-members. Predicting scores there necessarily
+requires extrapolation. Moreover, the conditional-invariance assumption may be imperfect.
+Our key idea is to correct the transport-induced audit error by constructing controlled calibration
+tasks within the observed non-member population. We partition the OOD non-members into slabs
+separated along the source-to-target direction, train the same score-transport model on a source-side
+slab, and evaluate it on a more target-like slab whose true scores remain observable. Because both
+the predicted and observed score samples are available, we can directly measure how much such
+extrapolation inflates the resulting privacy lower bound. Repeating this procedure over multiple
+controlled displacements yields an empirical relationship between representation-space displace-
+ment and transport-induced audit error. We then evaluate this error-growth relationship at the actual
+OOD-to-IID displacement and use the resulting estimate to correct the nominal transported audit.
+As shown in Figure 1, counterfactual score transport (panel (a)) provides a nominal estimate of
+the missing IID non-member distribution, while the shift-aware calibration (panel (b) and (c)) de-
+termines how much of the resulting privacy evidence should be trusted. In this work, we use the
+µ-Gaussian differential privacy (µ-GDP) formulation (Dong et al., 2022) as a framework for quan-
+tifying empirical privacy leakage, and report the empirical lower bound on µ.
+Our contributions are threefold:
+• We estimate the missing IID non-member score distribution by applying a score model learned
+from OOD non-members to covariates drawn from the target distribution, under a conditional
+invariance assumption (Section 4.1).
+• We identify when this assumption may fail (Section 4.2) and construct calibration tasks to
+measure how representation-space displacement affects transport-induced audit error, then use
+the resulting error-growth estimate to correct the transported audit. (Section 4.3).
+2
+
+
+Preprint. Under review.
+• Across image and language benchmarks with synthetic and natural distribution shifts, we
+demonstrate that uncorrected observational auditing can substantially overestimate privacy
+leakage. We show that the proposed methods stabilize the audit when transport requires sub-
+stantial extrapolation or conditional invariance is imperfect, while retaining tighter privacy
+lower bounds than baselines (Section 5).
+2
+BACKGROUND AND RELATED WORK
+Privacy auditing. An auditing algorithm takes a learning algorithm A and a privacy hypothesis H,
+and tests whether the observed behavior of A satisfies H (Jagielski et al., 2020; Nasr et al., 2023).
+Typically, the auditor performs a randomized experiment with known membership labels Ai, applies
+a MIA to produce guesses Ti ∈{−1, 0, 1} for each example, where Ti = 0 denotes abstention, and
+then evaluates H using the attack outcomes and the known memberships. For an error probability
+p ∈[0, 1], the audit is p-valid if P(Reject H | A satisfies H) ≤p. Empirical privacy parameters can
+then be obtained from the strongest privacy hypothesis that the audit can confidently reject.
+Early approaches often require retraining models on neighboring datasets (Jagielski et al., 2020;
+Nasr et al., 2021; Lu et al., 2022; Nasr et al., 2023; Zanella-Beguelin et al., 2023), while more recent
+one-run methods reduce this cost by controlling the inclusion of multiple candidate examples within
+a single training run (Steinke et al., 2023; Mahloujifar et al., 2025; Xiang et al., 2025; Keinan et al.,
+2026). However, these approaches still rely on intervention in the training process, which requires
+the membership indicators Ai ∈{−1, 1} to be independent.
+Auditing under distribution shift. Distribution shift is known to affect membership inference
+by changing the score distributions of non-members, potentially overestimate the privacy leakage
+(Yichuan et al., 2024; Meeus et al., 2024; Das et al., 2025; Zhao et al., 2025). Kazmi et al. (2024)
+addresses the lack of in-distribution non-members by training a generative model on known mem-
+bers and using generated samples as non-members, while accounting for distributional mismatch
+between real and generated data through a baseline classifier. Cebere et al. (2026) instead explicitly
+corrects the shift through global composition or propensity-based conditional adjustment; its guar-
+antees, however, rely on distributional overlap and accurate propensity estimation, and can become
+overly conservative under severe shift. Kalemaj et al. (2025) evaluates label privacy without inter-
+vening on the training dataset by exploiting naturally occurring variation in the data. Related work
+has also used conditional modeling, particularly quantile regression, to estimate example-dependent
+non-member score distributions (Bertran et al., 2023). Thaker et al. (2026) study this approach under
+class-support shift, where the available background data omit entire classes or subclasses. In con-
+trast, we consider covariate shift, where the member and available non-member populations share
+the same task and label space but differ in their input distributions.
+Measuring privacy leakage with µ-GDP. We quantify empirical privacy leakage using the µ-GDP
+scale, which characterizes distinguishability through the hypothesis-testing trade-off between neigh-
+boring datasets (Dong et al., 2022).
+Definition 1. An algorithm A is µ-GDP if for all neighboring datasets D and D′,
+T(A(D), A(D′))(α) ≥T(N(0, 1), N(µ, 1))(α), ∀α ∈[0, 1],
+(1)
+where T(A(D), A(D′))(α) = inf{βϕ : αϕ ≤α} with Type-I error αϕ and Type-II error βϕ from
+all rejection rules ϕ.
+For privacy audit with µ-GDP, the auditor performs membership guesses and compares the observed
+guessing performance against that permitted by a candidate µ-GDP guarantee, yielding a lower
+confidence bound ˆµ on the privacy parameter (Nasr et al., 2023; Mahloujifar et al., 2025).
+3
+PROBLEM FORMULATION
+We consider post-hoc privacy auditing of a fixed target model M without retraining or controlled
+data inclusion (Cebere et al., 2026). The auditor has only black-box access to the model, meaning it
+can only observe the model outputs but not its internal representations or intermediate computations.
+Let s = S(x) ∈R denote a membership-inference score, oriented such that a larger score indicates
+stronger evidence of membership. Let A ∈{−1, 1} denote membership, where A = 1 indicates
+3
+
+
+Preprint. Under review.
+Algorithm 1 Extrapolation-Calibrated Counterfactual Score Transport
+Require: Member data DM = (Daud
+M , Dref
+M), OOD non-members DQ
+N = (DQ,aud
+N
+, DQ,ref
+N
+), pre-
+trained representation ϕ, slab fractions F.
+1: Compute ZM = {ϕ(xM
+i )}, xM
+i
+∈XM and ZQ
+N = {ϕ(xQ
+i )}, xQ
+i ∈X Q
+N .
+2: ˜SP
+N ←predictions on Zref
+M from the transport learned on DQ
+N (Equation 7 and 11).
+3: ˆµtrans ←ˆµ( ˜SP
+N; Saudit
+M ).
+4: for f ∈F do
+▷Shift-aware calibration tasks
+5:
+Take source slab DQ,so
+N,f and target slab DQ,ta
+N,f from DQ,ref
+N
+along the QZ →PZ shift direction.
+6:
+Compute the representation-space displacement ∆f ←Equation (18).
+7:
+˜S pred
+f
+←predictions on ZQ,ta
+N,f from the transport learned on DQ,so
+N,f (Equation 7 and 11).
+8:
+Compute the transport-induced audit error ef ←Equation (19).
+9: end for
+10: Fit quantile regression on (∆f, ef): (ˆaτ,ˆbτ) ←arg minb≥0
+P
+f∈F ρτ(ef −a −b∆f).
+11: ˆµcorr ←[ˆµtrans −ˆr]+, ˆr ←[ˆaτ + ˆbτ ¯d]+, ¯d = max(d∗, ∆min), d∗←Equation (17).
+12: return Corrected privacy lower bound ˆµcorr.
+a training-set member. Let PX denote the training-data distribution and QX an out-of-distribution
+population from which the available non-members are drawn. The auditor has access to
+DM = {XM, SM} = {(xi,M, si,M)}nM
+i=1,
+xi,M ∼PX,
+Ai = 1
+(2)
+consisting of known members and their target-model scores, and
+DQ
+N = {X Q
+N , SQ
+N} = {(xQ
+i,N, sQ
+i,N)}nQ
+i=1,
+xQ
+i,N ∼QX,
+Ai = −1
+(3)
+consisting of known OOD non-members and their target-model scores.
+Given n = |SM| + |SQ
+N| auditing samples, suppose the auditor applies a fixed decision rule to
+predict member, non-member, or abstain, and makes c membership guesses, of which k are correct.
+We denote the resulting lower confidence bound on the µ-GDP parameter by
+ˆµ(SQ
+N, SM) = µL(c, k, n),
+(4)
+where µL(c, k, n) is the lower bound obtained from the one-run auditing procedure.
+Let SP
+N denote the IID non-member score S(X) for X ∼PX. The desired reference distribution
+for privacy auditing is the score distribution of IID non-members
+FSP
+N = PX∼PX(S(X) ≤s | A = −1),
+(5)
+which is unavailable at deployment. Our goal is therefore to correct the privacy lower bound ˆµ ob-
+tained from (SQ
+N, SM) so that it remains valid while being as tight as possible to the bound obtained
+using the in-distribution non-members (SP
+N, SM).
+4
+METHODOLOGY
+In Section 4.1, we estimate the counterfactual IID non-member score distribution by learning the
+relationship between representations and MIA scores from the OOD non-members and transporting
+it to the target covariate distribution. In Section 4.2, we characterize the two modes of transport
+error: lack of support overlap and violations of conditional score invariance. Finally, in Section 4.3,
+we construct controlled calibration tasks within the observed non-member data to estimate transport-
+induced audit inflation as a function of representation-space displacement, and use this estimate to
+correct the transported privacy lower bound. The whole algorithm is in Algorithm 1.
+We split member data DM and non-member data DQ
+N into disjoint subsets:
+reference data
+(Dref
+M , DQ,ref
+N
+) and auditing data (Daud
+M , DQ,aud
+N
+). The auditing data are reserved for the final au-
+dit, while the reference data are used to learn how to mitigate the effect of distribution shift.
+4
+
+
+Preprint. Under review.
+4.1
+COUNTERFACTUAL SCORE TRANSPORT
+Because directly modeling the MIA score as a function of the high-dimensional input X is difficult,
+we introduce a fixed pretrained representation ϕ : X →Z. Let PZ and QZ denote the corresponding
+representation distributions under PX and QX.
+Assumption 1 (Conditional score invariance). For all z in the common support of PZ and QZ,
+FSP
+N (s | z) = FSQ
+N (s | z), where FSP
+N (s | z) = P(SN ≤s | Z = z, A = −1, D = P) and
+analogously for Q. D denotes the domain.
+Equivalently, SN ⊥D | Z, A = −1. Under this assumption (Chernozhukov et al., 2013) and when
+supp(PZ) ⊆supp(QZ), the target IID non-member score distribution can be written as
+FSP
+N (s) =
+Z
+P(SN ≤s | Z = z, A = −1, D = P) dPZ(z) =
+Z
+FSQ
+N (s | z) dPZ(z).
+(6)
+The OOD non-members provide information about the conditional score mechanism FSQ
+N (S | Z),
+while the member inputs provide samples from the target covariate distribution PZ. Thus, we esti-
+mate the counterfactual IID non-member MIA score distribution ˜FSP
+N using the OOD non-member
+data DQ
+N and the target reference representations P ref
+Z with two transport estimators in the following.
+4.1.1
+LINEAR RESIDUAL TRANSPORT
+We model the conditional mean of OOD non-member scores m(z) = E[SN|Z = z, D = Q], and
+estimate m(z) from reference OOD non-members DQ,ref
+N
+by squared-loss regression
+ˆm(z) = arg min
+X
+(zQ,ref
+i
+,sQ,ref
+i
+)∈DQ,ref
+N
+(sQ,ref
+i
+−m(zQ,ref
+i
+))2.
+(7)
+For an observed OOD audit non-member (zQ,aud
+i
+, sQ,aud
+i
+) ∈DQ,aud
+N
+, define its residual
+ˆϵQ
+i = sQ,aud
+i
+−ˆm(zQ,aud
+i
+).
+(8)
+We then sample B independent reference members z′
+i,1, . . . , z′
+i,B ∼P ref
+Z from the member covariate
+pool and transport the score to the same residual under the target covariate:
+˜sP,lr
+i,b
+= ˆm(z′
+i,b) + ˆϵQ
+i , b = 1, . . . , B.
+(9)
+This transformation changes the conditional location of the score according to the target covariate
+while preserving the residual. The linear transport assumes an additive score model SN = m(Z)+ϵ,
+where the residual distribution is invariant across covariates and domains. Consequently, linear
+transport primarily corrects changes in conditional location and may fail when distribution shift
+changes conditional variance, skewness, or tail behavior.
+4.1.2
+CONDITIONAL QUANTILE TRANSPORT
+To model the full conditional score distribution, we estimate conditional quantile function (Koenker
+& Hallock, 2001)
+qτ(z) = F −1
+SQ
+N (τ | Z = z),
+τ ∈(0, 1).
+(10)
+For a grid of quantile levels T , the quantile models are trained by minimizing pinball loss on DQ,ref
+N
+,
+ˆqτ(z) = arg min
+X
+(zQ,ref
+i
+,sQ,ref
+i
+)∈DQ,ref
+N
+ρτ
+
+sQ,ref
+i
+−q(zQ,ref
+i
+)
+
+,
+(11)
+where ρτ(u) = u (τ −1{u < 0}) .
+For each audit OOD non-member (zQ,aud
+i
+, sQ,aud
+i
+) ∈DQ,aud
+N
+, we estimate its conditional quantile,
+ˆτi = ˆFSQ
+N (sQ,aud
+i
+| zQ,aud
+i
+).
+(12)
+5
+
+
+Preprint. Under review.
+We again sample B independent members z′
+i,1, . . . , z′
+i,B ∼P ref
+Z from the member covariate pool
+and transport the score to the same conditional percentile under the target covariate:
+˜sP,qr
+i,b
+= ˆqˆτi(z′
+i,b), b = 1, . . . , B.
+(13)
+The transported sample ˜SP,lr
+N
+and ˜SP,qr
+N
+is obtained by averaging the replicate empirical CDFs,
+which reduces sample variance without averaging individual records’ scores. Specifically,
+˜FSP
+N,b(s) =
+1
+naud
+Q
+naud
+Q
+X
+i=1
+1{˜sP
+i,b ≤s}, ˜FSP
+N (s) = 1
+B
+B
+X
+b=1
+˜FSP
+N,b(s).
+(14)
+The final naud
+Q
+transported samples ˜SP,lr
+N
+and ˜SP,qr
+N
+are obtained from ˜FSP
+N respectively.
+4.2
+WHEN IS NOMINAL TRANSPORT UNRELIABLE?
+Recall that identifying FSP
+N via Equation (6) requires two conditions: (a) the conditional invariance
+assumption (Assumption 1), and (b) sufficient support overlap, supp(PZ) ⊆supp(QZ). Either
+condition may fail. The representation Z must retain sufficient information about the target-model
+score for conditional invariance to hold, while support coverage is required to avoid extrapolating
+the score model beyond the observed source covariates. We distinguish the two failure modes:
+1. Lack of support overlap. Suppose Assumption 1 holds on the overlap region, but supp(PZ) ⊈
+supp(QZ). Let O = supp(PZ) ∩supp(QZ), Oc = supp(PZ) \ O. Then
+FSP
+N (s) =
+Z
+O
+FSQ
+N (s | z) dPZ(z) +
+Z
+Oc FSP
+N (s | z) dPZ(z).
+(15)
+The second term is not identified from the OOD non-members and requires extrapolation.
+2. Violation of conditional invariance. Even within the overlap region, Assumption 1 may fail,
+such that
+FSP
+N (S | Z = z)̸ = FSQ
+N (S | Z = z).
+(16)
+In this case, transporting the conditional score distribution from QZ to PZ can be biased even
+without extrapolation.
+Diagnostic assessment of conditional transportability. In order to assess whether the score distri-
+bution learned from OOD non-members transfers to the target domain, we define the domain propen-
+sity score π(z) = P(D = Q | Z = z, A = −1), where values near 0 and 1 indicate IID-like and
+OOD-like representations, respectively. We partition the data into ten propensity bins and, for each
+bin I, estimate the OOD non-member score CDF: FQ,I(s) = P(S ≤s | D = Q, π(z) ∈I). For an
+observation with score S, we compute its PIT (probability integral transform) value U = FQ,I(S). If
+the conditional score distribution is transportable from Q to P, the PIT values for IID non-members
+should be approximately uniform, and their ECDF should follow the diagonal.
+As shown in Figure 2 for a distribution-shift benchmark DomainNet (Peng et al., 2019) and across
+more datasets in Figures 7 and 8, the IID non-member curve is either close to the diagonal or lies
+below it. The latter indicates larger IID non-member MIA scores than predicted from OOD non-
+members, implying that nominal transport tends to under-correct the shift and can yield an anti-
+conservative privacy lower bound. This motivates our calibration tasks to correct the audit error.
+4.3
+SHIFT-AWARE CONSERVATIVE CORRECTION
+We estimate the unknown audit error induced from the transport using calibration tasks. We order the
+OOD data along the QZ →PZ shift direction, transport scores from a source-side subset to a target-
+like subset with known scores, and measure the resulting audit error. Repeating this at different
+transport distances allows us to learn how the resulting audit error changes with representation-
+space displacement, estimate the error of the actual QZ →PZ transport distance and correct its
+transported privacy lower bound.
+Source-to-target displacement. We reduce the source-to-target mismatch to a scalar. Let bΣQ be
+a Ledoit–Wolf shrinkage estimate of the reference covariance ZQ,ref
+N
+and W = bΣ−1/2
+Q
+the corre-
+sponding whitening map, so that one unit is one reference standard deviation. With ¯zQ
+N and ¯zP
+M the
+6
+
+
+Preprint. Under review.
+0.0
+0.5
+1.0
+Empirical CDF
+[0.0,0.1)
+[0.1,0.2)
+[0.2,0.3)
+[0.3,0.4)
+[0.4,0.5)
+0.0
+0.5
+1.0
+PIT
+0.0
+0.5
+1.0
+Empirical CDF
+[0.5,0.6)
+0.0
+0.5
+1.0
+PIT
+[0.6,0.7)
+0.0
+0.5
+1.0
+PIT
+[0.7,0.8)
+0.0
+0.5
+1.0
+PIT
+[0.8,0.9)
+0.0
+0.5
+1.0
+PIT
+[0.9,1.0)
+OOD non-members
+IID non-members
+Uniform reference
+Figure 2: Diagnostic assessment of conditional transportability. The dashed diagonal denotes the
+uniform reference expected under conditional transportability. The OOD non-members are used
+to construct the reference score distributions, while IID non-member curves below the diagonal
+indicate larger MIA scores than predicted by the OOD reference distributions.
+reference OOD non-member and member means, define the shift axis and the induced displacements
+O =
+W(¯zP
+M −¯zQ
+N)
+∥W(¯zP
+M −¯zQ
+N)∥
+,
+d(z) =
+
+W(z −¯zQ
+N), O
+
+,
+d∗=
+W(¯zP
+M −¯zQ
+N)
+.
+(17)
+O means the shift direction from non-members to members. Each non-member sample is assigned
+a signed displacement d, centered to have mean zero, while d∗denotes the mean displacement of
+the member pool, representing the distance over which the transport is required to extrapolate.
+Controlled slab extrapolation. d(z) measures a sample’s position along the QZ →PZ shift
+direction, with larger d(z) indicating a position closer to the target side. We therefore sort DQ,ref
+N
+by
+d(z). For each fraction f ∈(0, 1
+2], we take the bottom f-fraction as a source slab DQ,so
+N,f and the top
+f-fraction as a target slab DQ,ta
+N,f . This creates a controlled transport task from a source-like region
+to a more target-like region along the same direction as the actual QZ →PZ transport. We quantify
+the distance of this task by the difference between the mean positions of the two slabs,
+∆f =
+1
+|DQ,ta
+N,f |
+X
+zi∈DQ,ta
+N,f
+d(zi) −
+1
+|DQ,so
+N,f |
+X
+zj∈DQ,so
+N,f
+d(zj).
+(18)
+We refit the same residual and quantile transport (equation 7 and 11) on DQ,so
+N,f alone, and use it to
+produce predicted score samples at the covariates of ZQ,ta
+N,f . Because ZQ,ta
+N,f is real reference data, its
+observed scores SQ,ta
+N,f are known, so we could measure the transport-induced audit error between
+the predicted and observed samples measures when made to extrapolate a distance ∆f.
+Let Sobs
+f
+denote the observed score samples and ˜Spred
+f
+the predicted score samples on ZQ,ta
+N,f learned
+from DQ,so
+N,f at separation ∆f. We therefore define the transport-induced audit error:
+ef = ˆµ( ˜Spred; Sref
+M) −ˆµ(Sobs
+f ; Sref
+M).
+(19)
+Fit the error-growth envelope.
+By varying the fraction f, we obtain a collection of pairs
+{(∆f, ef)}. The slab separations ∆f are bounded by the reference pool’s own spread [∆min, ∆max],
+whereas the transport must travel d∗. We fit a growth law g(∆) to the pairs {(∆f, ef)} and read it
+off at d∗:
+ˆr = [ˆg( ¯d)]+,
+¯d = max(d∗, ∆min),
+ef = g(∆f),
+(20)
+where [c]+ = max(c, 0). In order to obtain an upper estimate of how large the error can become at a
+given displacement, we use τ = 0.95 to fit an upper conditional quantile of the observed calibration
+errors. Let ˆµtrans = ˆµ( ˜SP
+N; Saudit
+M ) be the bound the audit would report on the transported samples.
+We define
+ˆµcorr = [ˆµtrans −ˆr]+,
+ereal = [ˆµtrans −ˆµoracle]+ .
+(21)
+7

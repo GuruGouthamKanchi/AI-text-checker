@@ -1,0 +1,656 @@
+Preprint
+ON THE TOKEN COLLAPSE PHENOMENON IN
+TEXTUAL GRAPH SOFT PROMPTING
+Andrea Giuseppe Di Francesco1,2,*
+Rishabh Jain3
+Franco Maria Nardini2
+Nicola Tonellotto4
+Pietro Li`o3
+Fabrizio Silvestri1
+1Sapienza University of Rome, Rome, Italy
+2ISTI-CNR, Pisa, Italy
+3University of Cambridge, Cambridge, UK
+4University of Pisa, Pisa, Italy *Corresponding author
+difrancesco@diag.uniroma1.it
+ABSTRACT
+Recent methods for injecting graph structure into LLM prompts include graph
+soft prompting, in which a graph neural network (GNN) learns graph-specific
+tokens that capture relational information among entities in textual prompts. A
+major development in this line of work is G-Retriever, which combines graph
+soft prompts with a verbalized description of the same graph to strengthen the
+textual prompt signal.
+In this paper, we conduct an in-depth analysis of G-
+Retriever and uncover a pathological behavior we term token collapse. Across
+three benchmarks, three graph encoders, two LLM families, and both frozen and
+LoRA-adapted models, G-Retriever’s graph tokens become almost indistinguish-
+able across inputs. We provide evidence that the same failure is inherited by
+subsequent methods to G-Retriever, even with multi-token pooling. Under the
+standard setup, swapping a token with the dataset mean, a token from another ex-
+ample, or one derived from a corrupted graph produces no resolved answer-level
+effect in accuracy. Moreover, a learned constant prompt that never accesses the
+graph matches or surpasses G-Retriever on all three benchmarks. These findings
+indicate that, rather than conveying graph content as intended, the collapsed to-
+ken functions primarily as a generic soft prompt. We examine conditions linked
+to this collapse and propose a two-stage procedure that yields non-collapsed to-
+kens while maintaining competitive performance in most cases. However, to-
+ken variability alone does not prove that the model is using graph information:
+via interventions and decoding probes, we show that depending on the configu-
+ration, a token can reflect the question, an answer prior, or graph-derived con-
+tent that the LLM may or may not actually leverage. Overall, our results offer
+a practical approach to evaluating graph-token alignment rather than inferring
+it from task accuracy alone. Code to reproduce our experiments is available at
+https://github.com/difra100/Token_Collapse_KGQA.
+1
+INTRODUCTION
+Large language models (LLMs) store knowledge in their parameters, making information outside
+or newer than their pre-training data hard to access or update (Lewis et al., 2020). Such external
+knowledge may be organised as text-attributed graphs (He et al., 2024). We can incorporate this in-
+formation into an LLM either by textualizing the graphs, i.e., constructing verbalized descriptions of
+nodes and edges, or through graph soft prompting, i.e., providing a learned representation generated
+by a graph neural network (GNN). Verbalisation has two limitations: its token cost grows with the
+amount of graph content included, and serialisation imposes a sequence order on facts that have no
+intrinsic order. Expressive Graph soft prompting aims to offer an alternative interface for convey-
+ing relational information without verbalising every node and edge. G-Retriever (He et al., 2024)
+supplies the same underlying graph via both channels. However, this design introduces an identifi-
+ability issue: because the graph content is already present in textual form, improvements in answer
+1
+arXiv:2610.31572v1  [cs.LG]  22 Oct 2026
+
+
+Preprint
+accuracy alone cannot distinguish whether the model relies on the graph token, the verbalized graph,
+or both. Furthermore, the training objective does not explicitly enforce that the graph-derived to-
+ken encodes graph-specific information when the textual channel suffices. Consequently, a token
+computed from the graph may degenerate into a graph-invariant soft prompt.
+3
+0
+3
+PC1
+3
+0
+3
+PC2
+c=0.996
+=0.03
+G-Retriever
+0.1
+0.0
+0.1
+0.1
+0.0
+0.1
+×33
+3
+0
+3
+PC1
+c=0.142
+=0.71
+Ours
+Figure 1:
+Graph tokens of all 1,628
+WebQSP test questions, projected onto
+two principal components after removing
+the mean token µ, with pairwise cosines
+shown below.
+G-Retriever interprets its ablations as evidence that the
+graph encoder and verbalised graph provide comple-
+mentary graph representations (He et al., 2024). We
+revisit this interpretation by testing what the graph to-
+ken contains and whether the LLM uses it.
+This study evaluates the proposed mechanism by
+quantifying both the information encoded in graph-
+derived tokens and the information that the large lan-
+guage model (LLM) causally exploits during infer-
+ence.
+The experimental protocol integrates token-
+space statistical analyses with fixed-weight causal in-
+terventions: individual tokens are substituted with (i)
+the training-set mean token, (ii) a token sampled from
+a different example, or (iii) a token recomputed from
+corrupted or different graph inputs. In addition to an-
+swer accuracy, we assess gold-answer log-likelihood
+to capture subtler shifts in the model’s output distribu-
+tion, and we employ decoding-based probes to measure the recoverability of question, answer, and
+graph attributes from internal representations. Graph-free control conditions preserve the projector
+architecture and the full training pipeline while ablating the graph input itself.
+Applying this protocol to G-Retriever uncovers an unanticipated phenomenon that we call token col-
+lapse, which also recurs in subsequent graph-prompting methods. Specifically, across several graph
+encoders, benchmark datasets, LLM families, and fine-tuning regimes, the token representations
+generated by G-Retriever are nearly invariant with respect to the input graph (Figure 1). More-
+over, substituting these input-dependent projected tokens with a fixed alternative yields no resolved
+answer-level effect under the default configuration; indeed, a learned constant token that never ob-
+serves any graph matches or even surpasses the performance of the full model. These results indicate
+that the collapsed token operates primarily as a soft prompt rather than as a carrier of graph-specific
+information. Although likelihood-based analyses show that perturbing the token can modulate the
+output distribution, such sensitivity alone is insufficient to demonstrate input- or graph-conditioned
+utilization.
+We associate collapse with two factors: a projector that suppresses variation in the encoder repre-
+sentations and an answer objective that does not require this variation to be preserved. Our ablations
+implicate both factors, although they do not isolate either as the sole cause. We address them with
+a two-stage pipeline that first aligns and freezes the graph encoder, then trains separate graph-token
+and prompt-token pathways. The resulting tokens no longer collapse, but non-collapse alone guar-
+antees neither graph use nor improved accuracy. Depending on the benchmark and training con-
+figuration, they may encode the question, an answer prior, graph information made redundant by
+the text, or graph information that the LLM uses to answer. This distinction matters because task
+improvements may otherwise be attributed to graph–language alignment even when they arise from
+the verbalised graph or a graph-independent soft prompt. By separating token variation, graph con-
+tent, and downstream use, our protocol makes alignment empirically testable and provides concrete
+criteria for developing graph–language models that preserve and use task-relevant graph information
+beyond what is already supplied by the textual channel.
+Contributions.
+We identify token collapse across G-Retriever benchmarks, graph encoders, LLM
+families, and tuning regimes, and find the same failure in recent graph-prompting methods. Using
+matched graph-free controls and fixed-weight interventions, we show that the collapsed token acts
+primarily as a soft prompt rather than as a graph representation used to answer. We associate collapse
+with the projector and end-to-end answer training, and propose a two-stage pipeline that mitigates
+it across the tested settings. Finally, we show that a non-collapsed token may encode question or
+answer priors, unused graph information, or graph information that changes the answer. Together,
+2
+
+
+Preprint
+these results provide a practical protocol for testing graph-token alignment rather than inferring it
+from task accuracy.
+2
+RELATED WORK
+Graph soft prompting. Soft prompting conditions an LLM with learned continuous vectors (Lester
+et al., 2021; Li & Liang, 2021); graph soft prompting instead projects graph-encoder outputs into one
+or more such tokens. GraphToken (Fatemi et al., 2024), GraphLLM (Chai et al., 2026), GNP (Tian
+et al., 2024), GraphGPT (Tang et al., 2024), and G-Retriever (He et al., 2024) differ in their en-
+coders, token counts, retrieval, and LLM adaptation. In this paper, we test whether G-Retriever and
+subsequent methods preserve and use graph-specific information in their projected tokens.
+Evaluating graph–language models.
+Recent work questions whether existing objectives and
+benchmarks require graph–language integration. Zhang et al. (2026) show that autoregressive train-
+ing can favour a text-dominant solution, while Petkar et al. (2026) find that single-modality and raw
+soft-prompt baselines remain competitive and introduce CLEGR to test compositional graph–text
+reasoning. We complement these studies by auditing the graph token– LLM interface of graph soft
+prompting. Extended related work discussion is in Appendix S.
+3
+METHOD
+3.1
+PRELIMINARIES: GRAPH SOFT PROMPTING IN G-RETRIEVER
+A textual graph G = (V, E, {xv}v∈V, {xe}e∈E) associates every node v with a text attribute xv and
+every edge e with a text attribute xe. Each example i consists of a graph, a question qi, and an
+answer yi.
+Retrieval. Node, edge, and question texts are embedded by a frozen sentence encoder LM(·) into
+Rd (Reimers & Gurevych, 2019). The respective representations are zv = LM(xv), ze = LM(xe),
+and qi = LM(qi).
+When the complete graph exceeds the LLM’s context length or a predefined budget, only a relevant
+subgraph can be supplied to the model. Following G-Retriever, similarities between qi and the node
+and edge embeddings define retrieval relevance, and a prize-collecting Steiner tree is used to select
+a compact, connected subgraph (Bienstock et al., 1993). We denote the resulting question-specific
+subgraph by Gi. When the complete graph fits within the budget, no retrieval is needed and Gi = G.
+Graph token. A graph encoder fϕ processes Gi using node features zv, edge features ze, and
+optionally the question representation qi. G-Retriever uses a graph transformer by default (Shi
+et al., 2020); we also evaluate GAT (Veliˇckovi´c et al., 2018) and GCN (Kipf & Welling, 2017). The
+node representations are mean-pooled into hi ∈Rdg, and a projector Pψ maps the result into the
+LLM embedding space:
+ti = Pψ(hi) = W2σ(W1hi + b1) + b2 ∈Rdℓ,
+(1)
+where σ is the logistic sigmoid and the projector has hidden width dp. We refer to ti as the graph
+token.
+Generation. The retrieved subgraph is also verbalised as a list of nodes and edges, denoted by
+τ(Gi), and truncated to a budget of Lmax tokens. In the default frozen-LLM setting, the model
+receives
+[ ebos; ti; Emb(τ(Gi)); Emb(qi) ].
+The graph token therefore precedes the verbalised graph and the question. The LLM parameters θ
+remain fixed, while the graph encoder and projector are trained with the answer loss
+LQA(ϕ, ψ) = −
+X
+i
+X
+k
+log pθ
+ yi,k | yi,<k, ti, τ(Gi), qi
+
+.
+(2)
+The graph encoder does not receive the question directly, so in G-Retriever the token depends on the
+question only through retrieval.
+3
+
+
+Preprint
+Figure 2: Two-stage pipeline. Stage 1 aligns the question-conditioned graph encoder. Stage 2
+freezes it and trains separate graph-token and prompt-token pathways. Orange modules are trained;
+blue modules are frozen.
+3.2
+THE GRAPH TOKEN COLLAPSE PHENOMENON
+Task accuracy conflates three distinct questions: Does the token vary across inputs? Does the LLM
+use the graph token? What information does it contain? We address them with complementary mea-
+surements of token geometry, fixed-weight interventions, gold-answer likelihood, and decodability.
+Does the token vary across inputs? We measure inter-sample cosine, the input-specific residual
+relative to the mean token, and token norm relative to ordinary word embeddings. Collapse appears
+as cosine near one and a small residual ratio. We also compute inter-sample cosine before projection,
+on the pooled encoder representations hi, to determine where collapse arises. Formal definitions are
+given in Appendix D.
+Does the LLM use graph-specific token variation? At fixed weights, REAL uses the original to-
+ken, MEAN replaces it with the training-set mean, and SWAP uses another example’s token. Our
+main graph-specific intervention, GSWAP, recomputes the token from another graph while preserv-
+ing the original question conditioning. NODE, EDGE, and REL corrupt individual graph components,
+while NOTXT removes the verbalised graph. Retrained no-entity and no-question variants isolate
+the information available during training. Because accuracy observes only changes in the decoded
+answer, we also measure the paired change in gold-answer negative log-likelihood under teacher
+forcing. This detects smaller changes in the output distribution. Full details on our interventions are
+in Appendix D.
+What does the token contain? Recoverable content and downstream use are not equivalent: a
+token may contain information that the LLM ignores. This matters for our pipeline because Stage 1
+is conditioned on the question and trained with an answer-related target. A non-collapsed token may
+therefore encode the question, an answer prediction or prior, the graph, or a mixture. The answer
+can be a supervision target rather than an input, so it cannot be removed through a fixed-weight
+intervention; appendix Table 8 maps the information retained by the remaining conditions.
+We complement the interventions with a post-hoc probe that maps stored tokens to frozen embed-
+dings of the question, answer, or verbalised graph. The map is fitted on half of the test examples;
+on the held-out half, we report the median rank of each example’s correct target among all candi-
+dates. A constant token provides the control rank. Estimation details and limitations are given in
+Appendix D.
+Graph-free controls. CONST passes a learned graph-independent vector through G-Retriever’s
+projector, while MLPQ replaces the graph encoder with an MLP over the question. PT is the raw
+prompt-tuning baseline, the same as that used by He et al. (2024), and does not use the projector.
+These controls distinguish the contribution of graph input from that of token parameterisation.
+4
+
+
+Preprint
+3.3
+PREVENTING COLLAPSE: A TWO-STAGE PIPELINE
+Our ablations associate collapse with two factors: a Sigmoid projector that suppresses encoder vari-
+ation and end-to-end answer training that does not require this variation to be preserved. We address
+both while retaining G-Retriever’s data, prompt, answer loss, and optimisation setup (Figure 2).
+Stage 1: preserve input-specific variation. Without the LLM, we train the graph encoder with
+an InfoNCE objective (van den Oord et al., 2019). Its pooled representation hi is aligned with a
+frozen embedding of a sample-specific target and contrasted against negative targets. The question
+conditions each node through xv = zv + Wqqi, with Wq initialised at zero. We use the answer as
+the target, or the verbalized graph, when the answer space is too small to distinguish samples (e.g.,
+answers are Yes/No). The encoder is then frozen.
+Stage 2: separate graph representation from prompting. Using the original answer loss, we
+jointly train a GELU projector over the frozen encoder and a separate graph-independent prompt
+token. Freezing protects the variation learned in Stage 1, while the second pathway gives the shared
+prompting function its own token rather than forcing it to compete with input-specific information.
+The full objective, targets, and design ablations are reported in Appendix N.
+4
+EXPERIMENTS
+We investigate four questions. RQ1: Do graph tokens collapse, and how general is this behaviour?
+RQ2: What role does the collapsed token play when the same graph is also verbalised in the prompt?
+RQ3: What is collapse associated with, and can it be prevented without sacrificing task perfor-
+mance? RQ4: What do non-collapsed tokens encode, and which of that information does the LLM
+use?
+4.1
+SETUP
+Benchmarks.
+We use the three GraphQA benchmarks introduced by He et al. (2024):
+ExplaGraphs, SceneGraphs, and WebQSP. Following their official splits, retrieval proce-
+dures, and evaluators, we report accuracy on ExplaGraphs and SceneGraphs and Hit@1 on
+WebQSP. Dataset statistics and retrieval settings are in Appendix B.
+Models. We reproduce G-Retriever with its default graph transformer (GT) and frozen Llama-2-7B
+(Touvron et al., 2023). Robustness experiments use GAT, GCN, Qwen2.5-3B (Qwen Team, 2025),
+and LoRA adaptation. Architecture, optimisation, and pipeline settings are in Appendix A.
+Evaluation stability. Re-evaluating identical WebQSP weights in a separate process changes Hit@1
+by 1.04 points. We therefore require an answer-level difference larger than 2 points with p <
+.05. Gold-answer likelihood is more stable; we require |∆NLL| > 0.03 and a bootstrap interval
+excluding the replicate floor. Calibration results are in Appendix D.
+Statistical testing. Accuracy and Hit@1 comparisons are paired with the exact McNemar test (Mc-
+Nemar, 1947). We denote p < .10, .05, .01, and .001 by †, *, **, and ***, respectively; unmarked
+comparisons have p ≥.10. Reported p-values are unadjusted, so claims rely on the effect-size
+criteria above and consistent evidence rather than isolated significant cells.
+4.2
+RQ1: DO GRAPH TOKENS COLLAPSE, AND HOW GENERAL IS COLLAPSE?
+Collapse occurs in every tested configuration. Token cosine ranges from 0.985 to 0.998, while
+the input-specific residual is only 4–12% of the shared mean, whose norm is 22–97 times that of an
+ordinary word embedding (Appendix E). Figure 1 illustrates this geometry on WebQSP. Models with
+similarly collapsed tokens nevertheless obtain substantially different scores, so task performance
+does not reveal collapse.
+The encoder representations are considerably more variable, with cosines between 0.423 and 0.693.
+This makes GNN oversmoothing (Rusch et al., 2023) an insufficient explanation for token collapse:
+even if node representations are smoothed within a graph, the pooled outputs might remain distinct
+across inputs, and near-identity appears only after projection. Collapse also persists across three
+5
+
+
+Preprint
+Table 1: Collapse across datasets, graph encoders, LLMs, and tuning regimes. Scores are
+accuracy for ExplaGraphs and SceneGraphs and Hit@1 for WebQSP.
+Dataset
+Model
+Score
+Encoder cosine
+Token cosine
+ExplaGraphs
+G-Retriever (GT)
+85.56
+0.678
+0.997
+G-Retriever (GAT)
+85.20
+0.457
+0.998
+G-Retriever (GCN)
+78.88
+0.423
+0.985
+SceneGraphs
+G-Retriever (GT)
+81.35
+0.630
+0.993
+G-Retriever (GAT)
+80.20
+0.693
+0.998
+G-Retriever (GCN)
+80.55
+0.428
+0.998
+WebQSP
+G-Retriever (GT)
+70.33
+0.593
+0.996
++ LoRA
+74.32
+0.621
+0.997
++ Qwen2.5-3B
+55.47
+0.589
+0.997
+Table 2: Role of G-Retriever’s collapsed token. REAL, NOTXT, and CONST are absolute scores;
+other columns report differences from their corresponding reference. Full results in Appendices I, J,
+and K.
+Dataset
+REAL
+∆MEAN
+∆SWAP
+∆GSWAP
+NOTXT
+∆NOTXT-MEAN
+CONST
+ExplaGraphs
+85.56
+−0.18
+−1.26
+−1.08
+66.43
+−0.90
+85.56
+SceneGraphs
+81.35
+−0.35
+−1.20†
+−1.10†
+30.20
++0.45
+81.40
+WebQSP
+70.33
+−1.84*
+−0.92
+−0.55
+41.34
++1.04
+71.25
+graph encoders, two LLM families, and frozen and LoRA-adapted LLMs. Moreover, a controlled
+WebQSP audit finds the same geometry in later single- and multi-token graph-prompting methods
+(Appendix F). This answers RQ1: collapse is a recurring failure mode rather than a peculiarity of
+one encoder, LLM, or single-token implementation. We next ask what the collapsed token con-
+tributes to the answer.
+4.3
+RQ2: WHAT ROLE DOES THE COLLAPSED TOKEN PLAY?
+The input-specific component has no resolved answer-level effect. Across all three benchmarks,
+MEAN, SWAP, and GSWAP remain within the two-point threshold (Table 2); corrupting entities,
+edges, or relations gives the same result (more evidence in Appendix I). Yet replacing the token with
+zero costs 59.64–81.95 points (see Appendix J). The model therefore relies on the token’s shared
+value, but not measurably on its graph-specific variation.
+The verbalised graph is the dominant graph channel. Removing it costs 19–51 points, whereas
+replacing the remaining token with its mean changes performance by at most 1.04 points. Thus,
+in the default Llama-2 configuration, task-relevant graph information is supplied primarily through
+text.
+The shared token acts as a soft prompt. CONST, a graph-independent vector passed through the
+same projector, matches or exceeds G-Retriever on every benchmark. Graph input is therefore un-
+necessary for the benefit attributed to the collapsed token. Raw prompt tuning, namely the existing
+ablation performed by He et al. (2024), performs worse (Appendix K), but changes the parameteri-
+sation and is not a controlled graph-versus-no-graph comparison.
+Small distributional effects remain: on WebQSP, SWAP and GSWAP increase gold-answer NLL by
+0.0183 and 0.0182, both below the 0.03 criterion (Appendix L). These results answer RQ2: the
+collapsed token functions primarily as a projector-parameterised soft prompt, while the verbalised
+graph is the dominant graph-information channel. RQ3 asks what collapse is associated with and
+whether it can be prevented.
+6
+
+
+Preprint
+Table 3: Factors associated with collapse on ExplaGraphs. Step 0 precedes projector train-
+ing, and significance markers compare task score with the first row. Full projector diagnostics and
+intervention results are in Appendices H and I.
+Encoder
+Projector
+Encoder cos.
+Step-0 token cos.
+Token cos.
+Score
+trained end to end
+Sigmoid
+0.695
+1.000
+0.997
+85.56
+trained end to end
+GELU
+0.787
+0.992
+0.914
+73.29***
+frozen after Stage 1
+Sigmoid
+0.024
+0.987
+0.992
+84.48
+frozen after Stage 1
+GELU
+0.024
+0.091
+0.323
+57.76***
+4.4
+RQ3: WHAT IS COLLAPSE ASSOCIATED WITH, AND CAN IT BE PREVENTED?
+Factors associated with collapse. Table 3 identifies two associations. With the aligned Stage 1
+encoder frozen, its representations are highly distinct (cosine 0.024), yet the Sigmoid projector
+produces nearly identical tokens before and after training (0.9870 and 0.9918). GELU instead yields
+cosine 0.0910 before training and 0.3229 afterwards. Untrained-projector experiments reproduce
+this contrast on random inputs (Appendix H), linking the Sigmoid parameterisation to suppression
+of encoder variation.
+Changing the projector alone is insufficient: under end-to-end answer training, GELU still pro-
+duces highly similar tokens (cosine 0.9139). Conversely, combining the aligned frozen encoder
+with GELU prevents collapse, but the single-token model falls to approximately majority-class per-
+formance (57.76 versus 58.8). Thus, both factors are associated with collapse, but this experiment
+does not identify either as the sole cause. The cross-method audit supports this qualification (Ap-
+pendix F). GRAG (Hu et al., 2025) and GRETPool (Grover et al., 2026) inherit the same Sigmoid
+projector and also collapse, while GraSP (Wang et al., 2026) collapses despite using the hyperbolic
+tangent.
+Preventing collapse while retaining performance. Table 4 shows that the complete two-token
+pipeline mitigates collapse in every tested setting. For the standard pipeline, token cosine falls from
+above 0.99 to 0.099–0.142 with Llama-2 and to 0.103–0.200 with Qwen2.5-3B.
+With Llama-2,
+the pipeline retains performance on WebQSP (69.90 versus 70.33) and
+ExplaGraphs (85.74 versus 85.56), with both differences below our resolution threshold. On
+ExplaGraphs, the separate prompt pathway recovers the performance lost by the non-collapsed
+single-token model, raising its score from 57.76 to 85.74. On SceneGraphs, however, GSWAP
+produces a resolved −5.30-point effect while the score falls from 81.35 to 72.50.
+The Qwen2.5-3B replication further separates performance from graph use. The Qwen rows in Ta-
+ble 4 use a matched training budget and are distinct from the robustness checkpoint in Table 1. On
+WebQSP, our pipeline improves the matched baseline from 57.13 to 65.79 (p = 4.5×10−20), while
+GSWAP produces a resolved −2.09-point effect (p = .0027). On ExplaGraphs, it improves from
+74.37 to 83.94 (p = 1.5×10−5), but GSWAP has no effect (+0.36). Conversely, on SceneGraphs,
+it produces the strongest graph-replacement effect in the study (−6.50, p < .001) while scoring 3.40
+points below G-Retriever. Qwen G-Retriever on ExplaGraphs provides the opposite exception:
+its tokens remain collapsed, yet GSWAP causes a resolved −4.51-point effect. Near-collapse there-
+fore does not imply complete insensitivity to the remaining variation.
+These results answer RQ3. We found that collapse is associated with both the projector and end-to-
+end answer training, without either being isolated as its sole cause. The two-stage pipeline mitigates
+collapse across both LLM families and can retain or improve performance. However, geometric
+collapse, graph-specific token use, and task performance remain distinct properties. RQ4 takes a
+step forward and examines what the tokens encode and which information the LLM uses.
+4.5
+RQ4: WHAT DOES A NON-COLLAPSED TOKEN CARRY?
+Non-collapse shows that tokens differ across inputs, but not what they represent or whether the LLM
+uses those differences. Because Stage 1 receives the question and an answer-related target, the token
+may encode the question, an answer prior, the graph, or a mixture.
+7
+
+
+Preprint
+Table 4: Token geometry, performance, and intervention effects. Ours denotes the complete two-
+token pipeline; Intervention columns report condition minus REAL. Bold scores mark the highest
+score within each dataset–LLM block; bold GSWAP effects satisfy |∆| > 2 and p < .05. Complete
+interventions and p-values are in Appendix I, and pipeline ablations are in Appendix O.
+Dataset
+Model
+Score
+Token cos.
+∆MEAN
+∆SWAP
+∆GSWAP
+Llama-2-7B
+WebQSP
+G-Retriever
+70.33
+0.996
+−1.84*
+−0.92
+−0.55
+Ours
+69.90
+0.142
+−3.13***
+−2.15*
+−1.97†
+no entity features
+72.73
+0.125
+−6.14***
+−5.65***
+−1.97*
+no question
+69.84
+0.169
+−0.06
+−3.69***
+−2.33*
+SceneGraphs
+G-Retriever
+81.35
+0.993
+−0.35
+−1.20†
+−1.10†
+Ours
+72.50
+0.133
+−1.40
+−3.40***
+−5.30***
+no entity features
+79.65
+0.125
+−5.75***
+−9.60***
++0.35
+no question
+76.35
+0.225
+−1.15
+−0.25
+−0.25
+ExplaGraphs
+G-Retriever
+85.56
+0.997
+−0.18
+−1.26
+−1.08
+Ours
+85.74
+0.099
++0.36
+−0.54
+−1.44
+no entity features
+84.48
+0.113
++3.07**
+0.00
+−0.36
+no question
+87.55
+0.108
++1.08
++0.90
++1.26
+Qwen2.5-3B, matched training budget
+WebQSP
+G-Retriever
+57.13
+0.997
+−0.55
+−1.41
+−1.60†
+Ours
+65.79
+0.200
+−2.09**
+−1.90**
+−2.09**
+SceneGraphs
+G-Retriever
+76.05
+0.997
+−0.30
+−1.05†
+−1.15*
+Ours
+72.65
+0.139
+−7.00***
+−5.75***
+−6.50***
+ExplaGraphs
+G-Retriever
+74.37
+0.998
+−1.62
+−2.17
+−4.51*
+Ours
+83.94
+0.103
++0.90
+0.00
++0.36
+We separate recoverable content from downstream use. Table 5 reports question, answer, and graph
+retrieval ranks, answer-level effects under GSWAP, and likelihood changes under SWAP and GSWAP.
+Table 4 measures reliance on sample-specific token information through MEAN and SWAP, while
+the appendix Table 70 repeats the interventions without the retrieved verbalised graph. Complete
+cross-LLM results are reported in Appendix M.
+The retrieval probe maps each token to the corresponding question, answer, or verbalised graph
+among held-out candidates. We report the median rank of the correct target: lower is better, and a
+constant token provides the control rank. Recoverability does not imply use. A low answer rank,
+for example, means that the answer is predictable from the token, not that it was computed from the
+graph or used by the LLM.
+We use five diagnoses. USED means that GSWAP changes the task score by more than two points
+with p < .05. MASKED means that this effect resolves only after removing the verbalised graph.
+PRIOR identifies a no-entity model whose token carries question and answer information and is
+used under MEAN or SWAP, without resolved graph-specific use. DECODABLE means that graph in-
+formation is recoverable without a resolved answer-level effect. SOFT PROMPT denotes a collapsed
+baseline without resolved graph-specific use; any information recoverable from its residual variation
+is reported separately by the retrieval ranks.
+WebQSP: the token’s role depends on training. The standard token makes the question and an-
+swer strongly recoverable, at ranks 65 and 60 against the control of 407. With the verbalised graph
+present, GSWAP affects likelihood but not the decoded score; after removing the text, it causes a re-
+solved −2.27-point effect (Tables 5 and 70). Removing entity features further strengthens question
+and answer recovery and improves Hit@1 without resolved graph use, supporting the PRIOR diag-
+nosis. Conversely, removing question conditioning produces resolved graph use. Thus, the same
+architecture can favour priors or graph information depending on its training inputs.
+8

@@ -1,0 +1,726 @@
+Beyond Causal Masks: Auditing and Localizing
+Hidden Future-Token Leakage in Adaptive Sequence
+Models
+Huiting Liua, Jinsong Wua,b,∗
+aSchool of Artificial Intelligence, Guilin University of Electronic
+Technology, Guilin, 541004, China
+bDepartment of Electrical Engineering, University of Chile, Santiago, 8370451, Chile
+Abstract
+Hidden future-token leakage can create false architectural gains: an autore-
+gressive model may appear substantially better under teacher-forced eval-
+uation while its free-running generation deteriorates.
+We investigate this
+failure in an adaptive residual-routing decoder whose sequence-level routing
+summary exposes prefix positions to future tokens despite a correct causal
+attention mask. An anomalous 24-layer checkpoint reduces validation loss
+from the baseline’s 3.5958 to 1.4259, yet it fails a prefix-invariance audit
+and has substantially higher reference-model perplexity during generation.
+Layer-wise diagnostics and implementation inspection trace the violation to
+a full-sequence summary broadcast through the dynamic routing-query path.
+Two independently trained 12-layer causal repairs eliminate detectable leak-
+age and return validation loss and reference perplexity to the control scale,
+removing the large apparent advantage.
+As diagnostic tools, we use the
+established prefix-invariance contract, maximum prefix-output discrepancy
+(LeakScore), complementary behavioral metrics, and layer-wise profiles. Sup-
+porting experiments cover six synthetic implementation pairs spanning five
+module families, clean pretrained controls, controlled fault injection, and
+cache consistency across numerical precisions. These results illustrate how
+hidden future-token access can produce misleading claims of architectural
+progress and why lower teacher-forced loss should be interpreted together
+with whole-model causal checks and free-running evaluation.
+Keywords:
+autoregressive models, causal masking, leakage detection,
+sequence modeling
+∗Corresponding author. Email address: wujs@ieee.org
+arXiv:2610.31522v1  [cs.AI]  22 Oct 2026
+
+
+1. Introduction
+In decoder-only Transformers, causal self-attention restricts the output
+at position t to information from the prefix x1:t. The same restriction must
+hold for every operation contributing to that output. Sequence-level pooling,
+temporal convolution, state aggregation, routing, and cross-time normaliza-
+tion can create additional information paths outside of masked attention.
+Prior work on linear attention and recurrent-style sequence compression like-
+wise makes autoregressive behavior depend on prefix-consistent state aggre-
+gation [1]. Adaptive computation and selective state updates further moti-
+vate checking the complete dependency structure [2, 3].
+We use hidden future-token leakage to describe suffix influence on pre-
+fix outputs through an auxiliary operation outside standard masked self-
+attention, despite a correct attention mask. Such access can lower teacher-
+forced validation loss without improving valid autoregressive prediction.
+Broader studies of leakage have shown how invalid information access can
+inflate empirical performance claims [4]; here we examine this risk within
+the model’s computation. The practical concern is a false architectural gain:
+an apparent improvement that depends on information unavailable during
+causal generation.
+Figure 1 illustrates the dependency structure. At position i, the causal
+path uses only x1:i, while a non-causal auxiliary operation introduces an
+additional dependency on xi+1:T. The auxiliary operation may also use past
+and present inputs; the violation is the future-to-prefix dependency, not the
+presence of the auxiliary module itself.
+Our motivation comes from a follow-up implementation of CDR-AttnRes
+(Content-Conditioned Depth Routing for Attention Residuals), a residual-
+routing decoder variant inspired by Attention Residuals [5]. A full-sequence
+summary was broadcast as a low-rank correction to the depth-routing query.
+An unusually low teacher-forced validation loss suggested a strong improve-
+ment, but causal auditing detected leakage and free-running generation had
+substantially higher reference-model perplexity than the controls. Localiza-
+tion and code inspection identified the query path; independently trained
+12-layer repairs removed detectable leakage and the large apparent advan-
+tage. Section 7 distinguishes the anomalous 24-layer trigger from the 12-layer
+repair comparisons.
+Our diagnostic framework uses the established prefix-invariance principle:
+changing the suffix should leave shared-prefix outputs unchanged. We denote
+2
+
+
+past and present
+future
+x1, . . . , xi
+xi+1, . . . , xT
+Causal
+computation
+uses x1:i only
+Non-causal
+auxiliary
+operation
+Prefix output at position i
+fi(x)
+Permitted dependency
+Future-token leakage
+Figure 1: Mechanism of hidden future-token leakage.
+Solid paths represent permitted
+dependencies on past and present inputs, while the orange dashed path highlights a for-
+bidden dependency on future inputs through a non-causal auxiliary operation. This is a
+schematic dependency diagram rather than a particular architecture: pooling, temporal
+mixing, state aggregation, routing, and cross-time normalization can introduce such paths
+when implemented non-causally.
+the maximum prefix-output discrepancy by LeakScore, supplement it with
+behavioral metrics, and inspect layer-wise profiles to guide implementation
+review. Controlled module comparisons and pretrained-model checks support
+interpretation of these diagnostics.
+The main contributions are threefold.
+First, we document a false ar-
+chitectural gain in a real adaptive architecture: a large teacher-forced loss
+advantage accompanies detectable leakage and generation degradation, and
+disappears once the non-causal path is repaired. Second, we provide cross-
+module diagnostic evidence across six implementation pairs spanning five
+module families, together with clean controls and fault-injected pretrained
+models. Third, we use layer-wise localization to support root-cause analysis:
+FirstLeakLayer identifies the first monitored layer with detectable suffix in-
+3
+
+
+fluence and guides inspection of the CDR query path. Prefix invariance and
+LeakScore serve as diagnostic tools rather than a new causal contract.
+Sections 3–4 define the problem and audit. Sections 5–6 present sup-
+porting experiments, followed by the CDR case in Section 7 and practical
+implications in Section 8.
+2. Related Work
+Leakage and empirical reliability. Data leakage can produce overoptimistic
+empirical conclusions [4], while overlap between benchmark content and
+training data complicates evaluation [6, 7].
+These concerns arise at the
+dataset or evaluation-protocol level. Our focus is an internal dependency
+violation: future tokens influence prefix computation even when the dataset
+split and attention mask are correct.
+Causality contracts. FBS describes a no-leakage unit test comparing shared-
+prefix logits under different suffixes by ℓ∞discrepancy, together with preview-
+cache consistency checks [8].
+TorchLean formalizes causality-related con-
+tracts for attention and state-space sequence models, including prefix preser-
+vation, cache-position alignment, and scan consistency. Its diagnostic ex-
+amples also address normalization state and padding conventions [9]. We
+build on the established prefix-invariance principle. Our empirical emphasis
+is a documented case in which a false gain disappears under causal repair,
+supported by cross-module diagnosis and layer-wise localization.
+Sequence mixing beyond standard attention. Masked self-attention enforces
+causal token access in decoder-only Transformers [10]; segment-level and
+sparse-window variants support longer contexts [11, 12]. Linear attention and
+recurrent-form Transformers aggregate history into prefix states [1]. Causal
+convolutions prevent access to future inputs [13], and state-space models
+use structured or selective state updates [14, 3, 15]. RetNet, RWKV, and
+Hyena explore retention, recurrent formulations of linear attention, and long-
+convolution/gating mechanisms, respectively [16, 17, 18].
+Their different
+computational forms motivate examining the causal structure of state ag-
+gregation and temporal mixing beyond the attention mask. Our controlled
+violations concern the auxiliary implementations specified in the experiments,
+rather than a claim that these cited architectures are non-causal.
+4
+
+
+Adaptive computation. Mixture-of-experts models route tokens to selected
+experts [19, 20]. Expert-choice routing assigns tokens to experts by rank-
+ing across sequence positions, so a position’s assignment can depend on later
+positions [21]. Expert threshold routing addresses causal routing and compu-
+tation allocation [22], while Mixture-of-Depths allocates computation across
+tokens and layers [2]. These works make the information available to routing
+decisions a relevant implementation concern.
+Testing, verification, and residual routing. Differential and whitebox testing
+detect behavioral inconsistencies [23], whereas certified robustness methods
+derive provable bounds under specified perturbations [24], and formalization
+frameworks express semantic contracts [9]. Our behavioral audit requires ac-
+cess to position-wise outputs, and layer-wise localization additionally requires
+access to the monitored hidden states; compatibility with arbitrary check-
+points is not assumed. Attention Residuals provides the residual-aggregation
+setting for our follow-up CDR implementation [5]. The case concerns the full-
+sequence query correction added in that implementation.
+3. Problem Definition
+We consider a decoder-only autoregressive sequence model f operating
+on an input sequence
+x = (x1, x2, . . . , xT).
+Causal correctness requires that, for any two inputs x and x′ with x1:t = x′
+1:t,
+the outputs satisfy f(x)1:t = f(x′)1:t. This requirement concerns the complete
+computation of f, including auxiliary operations as well as attention.
+We use hidden future-token leakage to denote a violation of this condition
+mediated by an auxiliary operation outside masked self-attention, while the
+attention mask itself is causal.
+The term “hidden” refers to a forbidden
+dependency that is not visible in the attention mask.
+This notion should be clearly distinguished from ordinary train/test leak-
+age or benchmark contamination in machine learning [4, 6]. In conventional
+train/test leakage, the main problem is that evaluation data, labels, or bench-
+mark content improperly overlaps with the training process, which leads to
+overoptimistic performance estimates at the dataset or protocol level. By
+contrast, hidden future-token leakage is an intra-model causal violation. The
+training and validation split may be entirely correct, yet the model can still
+behave non-causally at inference time because suffix information flows into
+5
+
+
+prefix computation through internal modules. In other words, ordinary leak-
+age concerns whether the model has seen the wrong data, whereas hidden
+future-token leakage concerns whether the model computes the wrong de-
+pendency structure.
+Our audit examines which auxiliary operations violate this contract, how
+strongly their outputs depend on suffix perturbations, and where that depen-
+dence first becomes detectable. We use the maximum prefix-output discrep-
+ancy, denoted LeakScore, together with complementary behavioral metrics
+and layer-wise profiles.
+4. Audit Methodology
+To detect hidden future-token leakage in a module-agnostic way, we use a
+simple causal auditing principle based on prefix invariance. The core idea is
+that, for a causally correct autoregressive model, changing only the suffix of
+an input sequence should not affect the model outputs on the shared prefix.
+4.1. Prefix-Invariance Criterion
+Let x and x′ be two input sequences such that
+x1:t = x′
+1:t,
+xt+1:T̸ = x′
+t+1:T.
+If the model f is causally correct, then its outputs on the shared prefix should
+remain unchanged up to numerical tolerance:
+f(x)1:t ≈f(x′)1:t.
+This is the criterion used throughout the paper. The prefix is held fixed
+and the suffix is perturbed. A discrepancy exceeding a suitably calibrated
+numerical tolerance, with other sources of variation controlled, is evidence of
+suffix-to-prefix influence. Because this test is defined only in terms of input-
+output behavior, it can be applied uniformly across a wide range of sequence
+modules, regardless of their internal implementation.
+4.2. LeakScore
+We summarize the discrepancy between the two prefix outputs induced by
+suffix perturbation using the following maximum-difference statistic, which
+we denote LeakScore:
+LeakScore(f; x, x′, t) = max
+i≤t ∥fi(x) −fi(x′)∥∞.
+6
+
+
+This quantity measures the largest absolute output deviation over all prefix
+positions and output coordinates. For language models, the output coordi-
+nates are vocabulary logits. A score exceeding the numerical tolerance indi-
+cates detectable suffix-to-prefix influence for the tested pair; an undetected
+dependency may still exist for other inputs or below the tolerance.
+For completeness, one may also consider an averaged version,
+LeakScoremean(f; x, x′, t) = 1
+td
+t
+X
+i=1
+∥fi(x) −fi(x′)∥1 ,
+where d is the output dimension (vocabulary size for logits). This is the
+elementwise mean absolute difference reported as Mean diff; batches are
+additionally averaged over examples.
+LeakScore determines the pair-level
+verdict, while the mean discrepancy summarizes the overall perturbation
+magnitude. We also report the top-1 flip rate (the fraction of prefix posi-
+tions whose highest-scoring token changes) and the affected-token rate (the
+fraction whose maximum coordinate difference exceeds ϵ). The normalized
+maximum divides LeakScore by the maximum absolute reference-prefix logit
+plus 10−12; mean Jensen–Shannon (JS) divergence compares the two softmax
+distributions and is averaged over prefix positions. These auxiliary metrics
+characterize the discrepancy but do not replace the absolute-tolerance ver-
+dict.
+4.3. Audit Procedure
+Algorithm 1 summarizes the audit procedure. We construct a pair of
+sequences with the same prefix and different suffixes, evaluate both with
+the same model parameters and runtime settings, and compare their prefix
+outputs. Dropout is disabled and other stochastic effects are controlled so
+that input perturbation is the intended source of variation.
+Figure 2 illustrates the test: x = (p, s) and x′ = (p, s′) have the same
+prefix p = x1:t, and only the shared-prefix logits are compared. The score S
+in the figure is LeakScore(f; x, x′, t) defined above. A passing verdict applies
+only to the tested inputs and execution conditions.
+7
+
+
+Algorithm 1 Prefix-invariance audit procedure used throughout this work.
+Require: model f, sequence pair (x, x′), prefix index t, tolerance ϵ, with
+x1:t = x′
+1:t and xt+1:T̸ = x′
+t+1:T
+Ensure: audit outcome: pass or fail
+1: Compute y = f(x) and y′ = f(x′)
+2: Extract prefix outputs y1:t and y′
+1:t
+3: Compute LeakScore(f; x, x′, t) = maxi≤t ∥yi −y′
+i∥∞
+4: if LeakScore(f; x, x′, t) > ϵ then
+5:
+report fail
+6: else
+7:
+report pass
+8: end if
+Input x
+Input x′
+p = x1:t
+s
+p = x1:t
+s′
+Model f
+Model f
+shared
+weights
+Compare prefix logits only
+S = LeakScore = max
+j≤t ∥fj(x) −fj(x′)∥∞
+f(x)1:t
+f(x′)1:t
+Same prefix, different suﬀixes (s̸ = s′).
+S
+>
+ϵ: fail
+S
+≤
+ϵ: pass
+Passing applies only to the tested conditions.
+Figure 2: Prefix-invariance audit. Two inputs share a prefix p = x1:t but have different
+suffixes s and s′. Both are evaluated by the same model under the same evaluation settings,
+with stochastic effects controlled. LeakScore is the largest absolute prefix-logit difference
+across positions and vocabulary entries. A score above the numerical tolerance ϵ indicates
+an audit failure; passing provides evidence only for the tested inputs and conditions.
+8
+
+
+In practice, the two sequences can be generated by sampling a base se-
+quence and replacing only the suffix segment after position t.
+The same
+procedure applies to logits, hidden states, or other position-wise model out-
+puts, as long as the compared quantity is the object whose autoregressive
+causality we wish to audit.
+4.4. Tolerance and Numerical Robustness
+Because the test compares floating-point outputs, a small numerical tol-
+erance is necessary even for causally correct implementations. In our exper-
+iments, we use
+ϵ = 10−5
+as the default threshold.
+This choice is appropriate for our toy auditing
+setup in standard float32 evaluation and provides a stable separation be-
+tween causal and non-causal modules.
+As shown later in the robustness
+checks, our main conclusions are unchanged when the tolerance is varied over
+{10−6, 10−5, 10−4}: causally repaired variants remain near numerical zero,
+whereas non-causal variants consistently yield LeakScore values far above
+this range. Thus, the observed separation is not an artifact of a particular
+threshold choice.
+4.5. Generation Diagnostics
+In the CDR checkpoint case study, audit verdicts are compared with
+open-ended generation diagnostics. The reference-model perplexity pplref is
+computed using a fixed GPT-2 medium reference LM. The frozen evaluation
+code scores the saved text, including the prompt and generated continuation,
+in windows of at most 1024 tokens with stride 512. For each sample, it ex-
+ponentiates the token-count-weighted mean window negative log-likelihood;
+the reported value is the arithmetic mean of these sample perplexities over
+the 50 prompts. Higher perplexity means the reference model assigns lower
+likelihood to the text. This is a model-dependent diagnostic of generation
+quality, not a direct measure of semantic coherence or a human evalua-
+tion. The text is re-encoded with the reference tokenizer. Sampling entropy
+H = −P
+v pv log pv is measured in nats from the distribution after temper-
+ature scaling and top-k truncation, averaged over generated steps and then
+prompts. Distinct-2 is the proportion of unique bigrams, and Repeat-3 is the
+proportion of trigram occurrences belonging to repeated trigrams; both are
+computed on whitespace-separated units of the saved prompt-inclusive text.
+Bootstrap intervals quantify uncertainty in the prompt-averaged perplexity.
+9
+
+
+5. Synthetic Auditing Experiments
+We next use the prefix-invariance test to audit a set of synthetic sequence
+modules beyond masked attention.
+The goal of these experiments is not
+to maximize task performance, but to isolate whether representative auxil-
+iary components can introduce hidden future-token leakage under controlled
+conditions. We construct causally repaired and non-causal counterparts for
+each module family and evaluate them under the same auditing procedure
+described in Section 4.
+5.1. Experimental Design
+Our synthetic audit covers six implementation pairs across five module
+families: pooling (two pairs), temporal convolution, linear attention, dynamic
+routing, and cross-time normalization. Each pair contains one non-causal im-
+plementation and one causally repaired counterpart, giving twelve implemen-
+tations in total. The selected families are intended to span several common
+ways in which future information may re-enter prefix computation, includ-
+ing sequence-level summary broadcast, temporal mixing, full-sequence state
+aggregation, routing based on global context, and cross-time normalization.
+The synthetic modules are randomly initialized and audited without
+training. Input token IDs are sampled uniformly from the vocabulary; each
+pair shares the same sampled prefix and has independently sampled suffixes.
+These experiments test whether the implemented computation respects prefix
+invariance, rather than evaluating learned language-model quality. For each
+audited module, we compare outputs on the shared prefix. We then compute
+the LeakScore on prefix outputs using the default tolerance ϵ = 10−5. A
+model is considered to fail the audit if the resulting LeakScore exceeds the
+tolerance, and to pass otherwise.
+5.2. Audited Modules
+Table 1 summarizes the audited modules and their main results. The six
+non-causal variants all yield strictly positive LeakScore values, whereas all
+six causally repaired counterparts produce zero leakage under the test.
+5.3. Main Findings and Interpretation
+All six non-causal implementations fail the audit, while their paired causal
+repairs have zero discrepancy under the same conditions (Table 1). The fail-
+ures span summary broadcast, temporal mixing, full-sequence KV aggrega-
+tion, routing, and normalization, showing that the tested risk is not confined
+10
+
+
+Table 1: Six synthetic non-causal/causal implementation pairs. Score before and score af-
+ter denote LeakScore for the non-causal implementation and its causal repair, respectively,
+under the same audit (ϵ = 10−5). Scores are reported on each module’s own output scale
+and should not be used to rank different modules.
+Module
+Non-causal operation
+Causal repair
+Before
+After
+Pooling
+Full-sequence mean
+Token-wise routing
+0.0755 0.0000
+Pooling
+Last-token broadcast
+Prefix-mean routing
+0.3232 0.0000
+Conv1d
+Symmetric padding
+Left-only padding
+0.6625 0.0000
+Linear attention
+Full-sequence KV
+aggregation
+Prefix-only KV
+aggregation
+0.1168 0.0000
+Dynamic routing Full-sequence context
+Prefix-only context
+0.0033 0.0000
+Normalization
+Full-sequence
+statistics
+Prefix-only statistics
+0.0255 0.0000
+to pooling.
+LeakScore ranges from 0.0033 to 0.6625 across modules with
+different output scales, so these values should not be read as a cross-module
+severity ranking. The relevant comparison is within each implementation
+pair: every non-causal implementation lies well above the tolerance, and
+every causal repair is exactly zero.
+These controlled comparisons connect the dependency criterion to con-
+crete implementations without conflating causal validity with learned language-
+model quality. They also provide a check that the same behavioral test sep-
+arates the evaluated failures from their causal counterparts. The following
+robustness checks vary the split, random seed, and tolerance; the real-model
+experiments then examine clean controls, injected violations, and runtime
+effects.
+5.4. Robustness Checks
+We further verified that these conclusions do not depend on a particular
+experimental setting. We consider three sources of variability: the prefix
+length used to define the split, the random seed controlling both model ini-
+tialization and input sampling, and the tolerance used to decide pass or fail.
+Unless stated otherwise, the following checks use the same default configu-
+ration as the main experiments above (sequence length 32, prefix length 16,
+random seed 42, ϵ = 10−5).
+11
+
+
+Table 2: LeakScore of non-causal modules under different prefix lengths (sequence length
+80, random seed 42, ϵ = 10−5).
+All causally repaired variants remain at 0.0 and are
+omitted for clarity.
+Module
+8
+16
+32
+64
+noncausal_pool_mean
+0.0484
+0.0425
+0.0328
+0.0212
+noncausal_pool_last
+0.6819
+0.5959
+0.6969
+0.6041
+noncausal_samepad_conv1d
+0.8203
+0.7067
+0.9781
+0.9717
+noncausal_fullkv_linear_attn
+0.1343
+0.1134
+0.0958
+0.0711
+noncausal_global_route
+0.00421
+0.00466
+0.00359
+0.00217
+noncausal_global_norm
+0.0358
+0.0306
+0.0199
+0.0178
+Varying the prefix length.. Table 2 reports the LeakScore of each non-causal
+module under prefix lengths of 8, 16, 32, and 64. In order to accommodate
+prefix length 64, this check uses a longer sequence length of 80; this is why
+the numbers in Table 2 differ from those in Table 1, which used sequence
+length 32.
+Under all four split points, every non-causal module remains
+clearly above the tolerance, while every causally repaired variant remains at
+zero. The prefix-invariance failure is therefore not an artifact of a particular
+split position.
+Varying the random seed.. We repeated the audit with three random seeds
+(0, 1, 2) under the default configuration.
+Table 3 summarizes the mean
+and population standard deviation of the LeakScore over the three seeds,
+together with the number of passing runs. All non-causal modules fail in all
+three runs (0/3), whereas every causally repaired variant passes in all three
+runs (3/3).
+The exact LeakScore values fluctuate with the seed, but the
+categorical conclusion is fully stable, and no module lands near the decision
+boundary.
+Varying the tolerance.. Finally, we repeated the audit with tolerance values
+of 10−6, 10−5, and 10−4. The pass/fail classification is identical across all
+three thresholds: every causally repaired variant passes and every non-causal
+module fails. Moreover, the weakest non-causal signal in our experiments
+remains above 10−4 (e.g., the non-causal global-routing variant at ≈0.0033),
+which remains well above all three tested tolerances and the observed zero
+baseline of the repaired controls. The observed separation is therefore not
+an artifact of the tolerance choice.
+12
+
+
+Table 3: Seed stability of the audit over three random seeds (sequence length 32, prefix
+length 16, ϵ = 10−5).
+All causally repaired variants achieve 3/3 pass with LeakScore
+0.0 ± 0.0.
+Module
+Passed runs LeakScore (mean ± std)
+noncausal_pool_mean
+0/3
+0.0760 ± 0.0211
+noncausal_pool_last
+0/3
+0.5104 ± 0.1420
+noncausal_samepad_conv1d
+0/3
+0.6173 ± 0.0175
+noncausal_fullkv_linear_attn
+0/3
+0.1269 ± 0.0213
+noncausal_global_route
+0/3
+0.00347 ± 0.00008
+noncausal_global_norm
+0/3
+0.0316 ± 0.0104
+6. Real-Model Auditing
+The synthetic experiments establish that the audit has high specificity on
+controlled modules. We now ask whether the same test remains useful on real
+pretrained models, where implementations are black boxes and numerical
+noise is a practical concern. This section reports four additional layers of
+evidence: negative controls on trusted models, fault injection to establish
+sensitivity, cache and precision consistency across runtime paths, and layer-
+wise leakage localization of the first leak layer.
+Together they address a
+limitation of the toy setup: a behavioral test that works on synthetic modules
+might, in principle, either fire spuriously on real implementations or become
+difficult to interpret once runtime-path and precision effects introduce non-
+zero clean discrepancies.
+6.1. Experimental Setup
+We use three publicly released decoder-only models: the Transformers
+GPT-2 and Qwen2.5-0.5B, and the selective state-space model Mamba-
+130M [3].
+The suffix-perturbation and localization audits use float32 in-
+ference with dropout disabled; the cache-consistency experiment separately
+evaluates float32, float16, and bfloat16.
+The perturbation protocol follows the same fixed-prefix principle as the
+synthetic audit, with a separate evaluation grid.
+We set sequence length
+T = 64, prefix lengths t ∈{16, 32, 48}, random seeds {0, 1, 2}, and generate
+8 suffix-perturbed pairs per combination of prefix length and seed, giving 72
+pairs per model. Perturbations operate directly on token IDs, so the two
+inputs share exactly the same prefix tokens and differ only in the suffix,
+13
+
+
+avoiding tokenizer boundary artifacts. For each pair we report the max and
+mean prefix-output discrepancy, the top-1 flip rate, the affected-token rate,
+and the pass/fail verdict under tolerance ϵ = 10−5.
+6.2. Clean Negative Controls
+GPT-2, Qwen2.5-0.5B, and Mamba-130M each pass all 72 tested input
+pairs in float32 with ϵ = 10−5; maximum and mean prefix-logit discrepancy
+and top-1 flip rate are all exactly zero. No false positives are observed under
+this same-path protocol. Exact zero does not imply that floating-point in-
+ference is generally noise-free: comparing different execution paths can yield
+non-zero discrepancies, as Section 6.4 shows. The clean controls support the
+chosen tolerance for this protocol, rather than a universal threshold for other
+precisions or runtime paths.
+6.3. Fault Injection and Sensitivity
+A clean negative control only establishes specificity. To verify that the
+audit can actually detect a hidden leak when one is present, we inject a causal
+violation into the same models without touching the pretrained weights. Fol-
+lowing the failure pattern found in the CDR case (Section 7), the wrap-
+per first pools the full hidden-state sequence h1:T into a single summary
+s = Mean(h1:T), then produces a correction ∆z = α g(s) broadcast back to
+every position, i.e. zi ←zi + ∆z for all i. This is exactly the sequence-level
+summary-to-broadcast pattern that our synthetic pooling routers instanti-
+ate, and it is applied identically to all three model families. We sweep the
+injection strength α ∈{0.01, 0.05, 0.10}; GPT-2 and Qwen are tested at all
+three strengths, and Mamba at α = 0.05, using the same 72-pair protocol.
+Table 4 shows the results. Two findings stand out. First, sensitivity is
+high: at every tested non-zero injection strength, every evaluated model fails
+the audit and the pass rate drops from 1.0 to 0.0, while the affected-token
+rate stays at or above 0.993, i.e. the shared correction reaches essentially
+every prefix position. Second, the continuous diagnostics behave differently
+from the binary verdict. The max discrepancy increases monotonically with
+α (approximately linearly for Qwen: 1.6 × 10−3, 7.9 × 10−3, 1.6 × 10−2),
+yet even the smallest tested injection α = 0.01 already fails the binary test.
+The audit is therefore both sensitive at the decision level and quantitative
+in the diagnostic scores, which is exactly the combination needed for the
+multi-metric diagnosis emphasized throughout this paper.
+14
+
+
+Table 4: Fault-injection sensitivity with a sequence-level summary-broadcast wrapper and
+unchanged pretrained weights. Max diff and Norm. max are maxima over 72 pairs; JS
+divergence and affected-token rate are per-pair means, and pass rate is the fraction of
+passing pairs (ϵ = 10−5).
+Model
+α
+Max diff Norm. max JS div Affected-token rate Pass rate
+GPT-2
+0.01
+2.1e-4
+1.3e-6
+1.9e-8
+0.993
+0.000
+GPT-2
+0.05
+1.0e-3
+6.3e-6
+1.8e-8
+1.000
+0.000
+GPT-2
+0.10
+2.1e-3
+1.3e-5
+2.0e-8
+1.000
+0.000
+Qwen2.5-0.5B 0.01
+1.6e-3
+7.1e-5
+1.1e-8
+1.000
+0.000
+Qwen2.5-0.5B 0.05
+7.9e-3
+3.5e-4
+9.9e-8
+1.000
+0.000
+Qwen2.5-0.5B 0.10
+1.6e-2
+7.0e-4
+3.9e-7
+1.000
+0.000
+Mamba-130M 0.05
+3.0e-3
+3.7e-5
+2.0e-8
+1.000
+0.000
+6.4. Cache and Precision Consistency
+Cache consistency tests whether full-prefix evaluation and token-by-token
+decoding produce comparable logits for the same input and checkpoint. A
+discrepancy between these paths can arise from numerical precision, kernel
+differences, or cache implementation errors; it does not by itself demonstrate
+future-token leakage. We compare the two paths for GPT-2 and Qwen2.5-
+0.5B over a prefix of length 32 in float32, float16, and bfloat16. Mamba is
+outside the scope of this KV-cache experiment because it uses recurrent state
+rather than a Transformer key-value cache.
+Table 5: Cache-consistency audit between full-prefix forward and incremental decoding,
+summarized over the 32 prefix steps by the discrepancy distribution of the per-step max-
+imum logit difference. The key calibration quantities are the clean-control P50/P95/max
+values for each runtime setting.
+Model
+Precision P50 max diff P95 max diff
+Max diff
+Top-1 agreement
+GPT-2
+fp32
+1.9 × 10−4
+4.5 × 10−4
+7.6 × 10−4
+32/32
+GPT-2
+fp16
+0.125
+0.25
+0.625
+32/32
+GPT-2
+bf16
+0.75
+2.0
+4.0
+31/32
+Qwen2.5-0.5B fp32
+2.5 × 10−5
+3.9 × 10−5
+8.1 × 10−5
+32/32
+Qwen2.5-0.5B fp16
+0.0313
+0.0476
+0.1475
+32/32
+Qwen2.5-0.5B bf16
+0.2461
+0.3703
+0.5
+32/32
+As Table 5 shows, the clean-control discrepancy distribution broadens
+sharply as precision is reduced. In fp32, the two runtime paths remain close
+15

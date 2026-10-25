@@ -1,0 +1,712 @@
+WORLDFORGE V2
+1
+WorldForge V2: Eliciting Camera-Trajectory
+Alignment in Video Diffusion Models
+Chenxi Song, Yanming Yang, Tong Zhao, Ruibo Li,
+Joey Tianyi Zhou, Senior Member, IEEE, and Chi Zhang, Member, IEEE
+Abstract—Video diffusion models have learned rich 3D/4D
+priors, making them promising for scene generation and video
+re-rendering. However, their use in these spatial tasks is limited
+by imprecise camera control, spatial and temporal inconsis-
+tencies, and the entanglement of camera motion with scene
+dynamics. Existing approaches, such as task-specific fine-tuning
+and post-process warping, often introduce visual artifacts, gen-
+eralize poorly, or incur high computational costs. We propose
+WorldForge V2, which aims to achieve accurate camera control
+while preserving the generative capabilities of pretrained video
+models. We first develop a training-free guidance framework
+using warped references to iteratively refine generation along
+a target camera path. Optical-flow analysis identifies motion-
+related latent channels for selective guidance, helping separate
+motion control from appearance. A dual-path strategy further
+compares guided and unguided predictions to correct artifacts
+from imperfect references. Together, these components guide
+viewpoint changes while preserving scene appearance and object
+motion. To reduce refinement costs, v-cache approximates the
+correction using the preceding denoising prediction, avoiding an
+additional model evaluation. We further extend motion local-
+ization from latent channels to network blocks and introduce
+Trajectory LoRA, which concentrates adaptation on blocks most
+responsive to trajectory guidance. A two-stage training strategy
+teaches these adapters to denoise the states encountered during
+guided generation, using limited supervision effectively. This
+enables reliable camera control with very little training data,
+with a single training scene already supporting generalization
+to unseen scenes. Quantitative and qualitative evaluations across
+multiple datasets show that our method achieves state-of-the-art
+generation quality and trajectory accuracy in camera-controlled
+video generation.
+Index Terms—Camera control, video diffusion models, 3D/4D
+generation.
+I. INTRODUCTION
+R
+ECENT video diffusion models (VDMs) can synthesize
+videos with coherent motion, consistent scene content,
+and plausible viewpoint changes over time [1]–[3]. Trained
+on large-scale video data, these models acquire strong spa-
+tiotemporal priors, making them powerful backbones for
+spatial-intelligence tasks such as 3D/4D generation, video re-
+rendering, and world modeling [4]–[11]. In these applications,
+the camera trajectory determines how a scene is observed
+over time, which regions become visible, and how viewpoint
+changes relate to scene geometry. Effective trajectory control
+is therefore essential. The generated video should follow a
+C. Song, Y. Yang, T. Zhao, and C. Zhang are with Westlake University,
+Hangzhou, China. R. Li is with Beihang University, Beijing, China. J. T.
+Zhou is with Singapore Management University, Singapore. Corresponding
+author: Chi Zhang (e-mail: chizhang@westlake.edu.cn).
+PSNR ↑
+SSIM ↑
+LPIPS ↓
+Vis-LPIPS ↓
+Disocc-LPIPS ↓
+ATE ↓
+RPE-T ↓
+RPE-R ↓
+Ours
+UniWorld-View
+TrajectoryCrafter
+SymphoMotion
+Warp-as-History
+Fig. 1.
+Comparison with existing methods. With limited training data and
+iterations, our method achieves state-of-the-art visual quality and trajectory
+accuracy in camera-controlled video generation.
+specified camera path while preserving scene content, object
+motion, temporal coherence, and visual quality.
+To realize such control, existing approaches broadly follow
+two directions. One direction adapts VDMs for camera control
+through additional trainable modules, pose-aware conditioning
+interfaces, or model fine-tuning [5], [12]–[16]. These meth-
+ods provide explicit camera control but often require large-
+scale trajectory–video supervision or careful fine-tuning. With
+limited supervision, such adaptation may weaken the visual
+and temporal priors of the pretrained model. Recent work
+has therefore explored training-free alternatives that keep the
+pretrained VDM fixed and inject trajectory cues only during
+inference [6], [17], including the zero-shot variant of Warp-as-
+History [18]. A representative route is warping-and-repainting,
+which warps already observed content along the target camera
+path and uses the pretrained video model to synthesize newly
+revealed regions. This route enables direct camera control at
+inference time while preserving the pretrained model, making
+it well suited to downstream spatial-intelligence tasks.
+Despite these advantages, warping-and-repainting can intro-
+duce a denoising-state mismatch during diffusion sampling.
+When warped visible regions are directly combined with
+model-generated regions in a noisy latent, the two parts
+may correspond to different noise states. The warped regions
+are associated with externally sampled noise, whereas the
+arXiv:2610.31640v1  [cs.CV]  22 Oct 2026
+
+
+WORLDFORGE V2
+2
+generated regions follow the model’s own denoising trajectory.
+We refer to this mismatch as a denoising-state domain gap.
+It can lead to boundary discontinuities, geometric artifacts,
+noisy patches, and texture degradation. The key challenge
+is therefore to inject useful trajectory evidence from warped
+references while reducing the denoising-state gap introduced
+by their fusion.
+To address this problem, we propose WorldForge V2, a
+camera-trajectory-control framework that helps VDMs use
+imperfect warped trajectory signals more effectively while
+preserving generation quality. WorldForge V2 follows the
+warping-and-repainting route. First, it addresses the incom-
+patibility introduced by warped-reference fusion: direct fusion
+in noisy latents mixes externally noised warped regions with
+generated regions following the model’s current denoising
+state. WorldForge V2 reduces this mismatch by fusing the
+warped reference into the model-predicted clean estimate and
+mapping the fused result back to the current denoising state,
+enabling training-free trajectory-aligned video generation. Sec-
+ond, clean-estimate fusion provides a reliable way to inject
+warped references into the denoising process by reducing
+noisy-state mismatch. To further improve its sampling effi-
+ciency, we introduce v-cache, which approximates the clean-
+estimate correction directly in noisy latents. In this way,
+warped-reference guidance can retain the benefit of clean-
+estimate fusion while reducing the extra sampling overhead.
+Finally, full-model fine-tuning and large trainable control mod-
+ules involve optimizing a large number of parameters, making
+it difficult to use limited training data efficiently. To address
+this problem, we build on our pipeline and further investigate
+an optimization-based approach to camera-trajectory control.
+Since different layers in VDMs specialize in different func-
+tions, we extend the motion-channel localization used in FLF
+to model adaptation. We identify trajectory-sensitive blocks
+and apply LoRA only to these blocks. This selective adaptation
+provides a data-efficient alternative to broad model tuning.
+First, we address the denoising-state incompatibility caused
+by warped-reference fusion. In direct noisy-space fusion, the
+warped visible regions and the model-generated regions may
+follow different denoising states, causing geometric artifacts,
+boundary discontinuities, and noisy patches. To mitigate this
+mismatch, Intra-Step Recursive Refinement (IRR) fuses the
+warped reference with the model-predicted clean estimate
+under the visibility mask and then re-noises the fused estimate
+to the current timestep. This fuse-then-renoise process asso-
+ciates all regions with the same Gaussian noise realization,
+thereby reducing their denoising-state gap. Camera-trajectory
+control also faces a typical motion–appearance disentangle-
+ment problem, as enforcing camera motion may inadvertently
+alter object and scene appearance. To address this problem,
+Flow-Gated Latent Fusion (FLF) uses optical-flow cues to
+locate channels that are highly correlated with motion and
+injects trajectory guidance only into these channels, thereby
+reducing appearance distortion. Finally, artifacts or misalign-
+ment in the warped reference may degrade the quality of the
+generated video. To mitigate this issue, we propose Dual-
+Path Self-Corrective Guidance (DSG). Inspired by classifier-
+free guidance [19], DSG compares the trajectory-guided and
+unguided denoising directions. Their difference captures the
+update introduced by trajectory guidance, which DSG uses to
+suppress unreliable deviations while retaining useful trajectory
+constraints. Together, IRR, FLF, and DSG enable training-
+free trajectory-aligned video generation while reducing the
+adverse effects of incompatible denoising states and unreliable
+reference signals.
+Second, the fuse-then-renoise process in IRR provides an
+effective way to reduce the denoising-state gap introduced by
+warped-reference fusion. We further improve the efficiency of
+this process with v-cache. Our key observation is that the cor-
+rection induced by clean-estimate fusion can be approximated
+directly in noisy latent space from a denoising prediction
+already available during sampling. Based on this observation,
+v-cache applies the approximated correction during warped-
+reference fusion, allowing trajectory guidance to remain on
+the original denoising path. This avoids an additional model
+evaluation and reduces inference latency.
+Finally, we further develop an optimization-based exten-
+sion of our pipeline for camera-trajectory control. Existing
+optimization-based methods often fine-tune the full model
+or introduce large trainable control modules, making ineffi-
+cient use of limited supervision. Since camera control mainly
+depends on motion-related representations, we extend the
+motion-channel localization idea of FLF to model adaptation.
+Leveraging the functional specialization of different VDM lay-
+ers [20], we identify trajectory-sensitive blocks, apply LoRA
+only to these blocks, and train the adapters with a two-stage
+optimization strategy tailored to our pipeline. This selective
+adaptation provides a data-efficient alternative to broad model
+tuning. In our experiments, we find that training data from
+a single scene is sufficient to enable effective trajectory
+following.
+Our main contributions are summarized as follows:
+• To address denoising-state mismatch, motion–appearance
+entanglement, and unreliable warped references, we de-
+velop a training-free guidance pipeline with IRR, FLF,
+and DSG, enabling trajectory-aligned video generation
+with fewer artifacts and less appearance distortion.
+• To retain the benefit of clean-estimate correction with
+lower sampling cost, we introduce v-cache, which ap-
+proximates the correction in noisy latent space and avoids
+an additional model evaluation, thereby reducing infer-
+ence latency.
+• To avoid data-inefficient full-model tuning, we identify
+trajectory-sensitive blocks, adapt only these blocks with
+LoRA, and optimize them using a two-stage strategy
+tailored to our pipeline; training data from a single scene
+is sufficient to enable effective trajectory following.
+• Comparative experiments on multiple public datasets
+demonstrate accurate camera-path control and high-
+quality video generation.
+A preliminary version of this work was published at CVPR
+2026 [21]. The source code is available at https://github.com/
+Westlake-AGI-Lab/WorldForge.
+
+
+WORLDFORGE V2
+3
+Output
+Single Image
+Video Frame
+3D/4D Foundation Model
+“A truck…“
+/“A girl…“
+Rendering
+Warped Frames (with Masks)
+Models with Frozen Weights
+Noise Interpolation
+Single-Step Denoised output
+Reshaped Mask 𝑀with Hole 
+Fused Latent by FLF
+Unguided Velocity Field v𝑜𝑟𝑖
+Features Concatenation
+Corrected Velocity Field v𝑐𝑜𝑟𝑟
+Guided Prediction (Noisy)
+OR
+3D/4D Point Cloud
+Target 
+Trajectory
++
+Video 
+VAE
+Video 
+VAE
+x𝑡𝑟𝑎𝑗
+M
+Mask Reshape
+C
+Get Depth & Pose
+Input
+Input
+ොx0
+𝑁
+x𝑁
+FLF
+IRR
+…
+x1
+x0
+Output
+IRR
+DSG
+DSG
+v𝑜𝑟𝑖
+(ොx0
+𝑁)
+FLF
+N
+Route 1: Clean Latent Space (ො𝐱𝟎
+𝑵) Inference-Time Guidance
+x𝑡𝑟𝑎𝑗
+M
+IRR
+DSG
+Flow-based 
+Gate
+VDM’s Denoising Process
+Trajectory 
+LoRA
+Input
+x𝑁
+…
+x1
+x0
+Output
+Route 2: Noisy Latent Space (𝐱𝑵) Fusion
+…
+x𝑡𝑟𝑎𝑗
+M
+Add
+Noise
+x𝑁
+Directly 
+Fuse
+V-cache 
+Corrector Δ
+Δ = 1 −M ⊙𝜎𝑖{𝜖𝑖−x𝑖+ 1 −𝜎𝑖തv𝑖}
+V-Cache
+V-Cache
+Two-stage Training
+Trajectory LoRA
+LoRA
+LoRA
+Image-to-Video 
+Diffusion Model
+Inference 
+Results
+…
+…
+Inject
+…
+Video Diffusion Model (VDM)
+Intra-Step Recursive Refinement 
+Dual-Path Self-Corrective Guidance
+Flow-Gated Latent Fusion
+Video Latent x𝑡𝑟𝑎𝑗with Trajectory
+LLM for Generating Scene Prompt
+Trajectory-Guided Velocity Field v𝑡𝑟𝑎𝑗
+Initial Prediction (Uncontrolled)
+Corrected Prediction (Controlled & High-Quality )
+The Single-Step Denoising Process
+x𝑁
+vc
+N
+ොx0
+𝑁
+(ොx0
+𝑁)
+FLF
+C
+IRR
+DSG
+FLF
+V-Cache-corrected latent
+Trajectory-Sensitivity Probe
+Trajectory-Sensitivity Blocks
+x𝑁
+vc
+Stage I: Anchor Warm-up
+Stage II: Anchor-derived Training
+Trainable Modules
+Fig. 2.
+Overview of WorldForge V2. Given a single image or video frame and a target camera trajectory, the scene geometry is reconstructed and rendered
+into trajectory-aligned warped frames. WorldForge V2 first performs training-free trajectory guidance in the predicted clean latent space using IRR, FLF, and
+DSG. Building on this framework, we further introduce an efficient route that directly fuses trajectory information in the noisy latent space with V-Cache,
+together with a trajectory-sensitive lightweight LoRA scheme for camera trajectory control using only limited training data. The resulting video follows the
+specified camera path while preserving the generative capability of the pretrained video diffusion model.
+II. RELATED WORK
+We review four lines of work closely related to WorldForge
+V2: video diffusion priors for spatial generation, camera
+control in video diffusion models, guidance and correction
+strategies in generative models, and parameter-efficient adap-
+tation for camera control.
+A. Video Diffusion Priors for Spatial Generation
+Video diffusion models (VDMs) learn rich priors of real-
+world appearance, motion, temporal continuity, and viewpoint
+change from large-scale video data [1]–[3], [22]. Recent
+studies have transferred these priors to spatial generation tasks,
+including 3D/4D scene generation, novel-view video synthesis,
+and world modeling [4]–[6], [8]–[10], [14], [23]–[30]. This
+scene-level use of video priors complements explicit scene
+reconstruction based on NeRFs, Gaussian splatting, multi-view
+and light-field synthesis [31]–[37], as well as scene generation
+from panoramic images [38] and object-centric 3D generation
+based on diffusion models [39]–[43]. While reconstruction
+methods recover scene structure from observed views, VDMs
+can use their learned priors to generate plausible content
+beyond the observed regions. However, VDM pretraining does
+not explicitly align camera trajectories with scene content. As
+a result, these models can generate high-quality videos but
+cannot reliably follow a prescribed camera path, motivating
+growing research on trajectory-controlled video generation.
+WorldForge V2 combines warped geometric evidence with the
+generative prior of a pretrained VDM to control viewpoint
+changes.
+B. Camera Control in Video Diffusion Models
+Existing camera-control methods broadly follow two di-
+rections. Training-based methods introduce pose-aware condi-
+tioning interfaces, additional control modules, or model fine-
+tuning to learn camera-controlled generation [5], [12]–[16],
+[44], [45]. These methods provide explicit camera control
+but usually require substantial trajectory–video supervision;
+when training data are limited, model adaptation may weaken
+the visual and temporal priors learned during pretraining.
+Recent work has therefore increasingly explored training-free
+inference-time control and lightweight adaptation, which pre-
+serve most or all of the pretrained model and inject trajectory
+cues through initial noise, latent transformations, rendered
+references, or history frames [6], [8], [17], [18], [46]–[48].
+Across training-based and training-free methods, warping-and-
+repainting warps observed content along the target camera path
+and uses a VDM to generate newly revealed regions [49],
+[50]. This route provides explicit geometric correspondence
+and integrates naturally with depth estimation, point-based
+rendering, and visibility masks. WorldForge V2 adopts this
+route and studies how warped references can be used more
+effectively for camera-trajectory control while reducing the
+artifacts introduced during denoising. Related motion-control
+work also uses entity-specific 3D trajectories to control object
+motion [51].
+C. Guidance and Correction Strategies in Generative Models
+Guidance methods steer diffusion or flow models to-
+ward desired outputs by modifying their sampling directions.
+Classifier-free guidance (CFG) combines conditional and un-
+conditional predictions to improve alignment with seman-
+tic conditions [19]. Subsequent methods further adjust the
+guidance direction through negative or auxiliary branches,
+differential predictions, adaptive rescaling, resampling, and
+iterative repainting [52]–[58]. In 3D/4D generation, guidance
+is also widely used to enforce viewpoint consistency from
+rendered or warped observations [6], [8], [17], [59], [60].
+
+
+WORLDFORGE V2
+4
+However, conventional guidance does not directly address the
+artifacts introduced by noisy warped references. WorldForge
+V2 explores correction strategies for warping-guided gener-
+ation, including correcting warped-reference fusion in noisy
+latent space and using the difference between guided and
+unguided predictions to refine the denoising process. Together,
+these strategies improve the quality of trajectory-controlled
+videos generated under warping guidance.
+D. Parameter-Efficient Adaptation for Camera Control
+Model adaptation commonly uses trainable control branches
+or parameter-efficient fine-tuning. ControlNet and T2I-Adapter
+introduce lightweight conditioning modules, while LoRA
+adapts pretrained models through low-rank parameter up-
+dates [61]–[63]. These lightweight adaptation strategies have
+also been applied to motion learning, sparse-view synthe-
+sis, and trajectory-controlled generation with limited training
+data [18], [45], [64], [65]. Related studies further show that
+motion- and camera-related representations are concentrated
+in particular latent channels or network layers [20], [66].
+Based on these findings, WorldForge V2 uses optical-flow
+cues in FLF to localize motion-related latent channels and
+reduce appearance interference. We further extend this idea
+to model adaptation by identifying trajectory-sensitive blocks
+and applying lightweight LoRA only to these blocks, enabling
+effective trajectory alignment with very limited training data.
+III. METHOD
+WorldForge V2 (Fig. 2) aims to control camera trajectories
+while preserving the video priors of pretrained generation
+models. Given a source image or video and a target camera
+path, geometric warping first produces a trajectory reference
+and its visibility mask. WorldForge V2 then uses these sig-
+nals to guide denoising and generate videos that follow the
+target path. Sec. III-A introduces the required notation and
+background. Sec. III-B presents the training-free guidance
+pipeline: IRR reduces the denoising-state gap through clean-
+estimate fusion, FLF restricts trajectory injection to motion-
+related latent channels, and DSG corrects the guided pre-
+diction using the model’s original denoising path. Sec. III-C
+derives a noisy-latent correction that reduces the denoising-
+state gap with fewer model evaluations. Finally, Sec. III-D
+identifies trajectory-sensitive network blocks and adapts them
+with LoRA using limited supervision, enabling data-efficient
+trajectory control for VDMs.
+A. Preliminaries
+We introduce the notation and background required by
+WorldForge V2, including flow-based denoising, sampling-
+time guidance, low-rank adaptation, and geometry-based tra-
+jectory guidance.
+Flow-Based Denoising. Diffusion and flow-based models both
+generate videos by iteratively transforming a noisy latent into
+a clean sample. A diffusion process has a corresponding
+probability-flow ODE and can be written in flow form through
+reparameterization [67]–[70]; the detailed relationship is pro-
+vided in the supplementary material.
+Our implementation uses flow-based video models [2], [71],
+so we describe sampling in velocity form. Let xi be the noisy
+video latent at noise level σi, and let ℓdenote the model
+condition. The pretrained model fθ predicts vi = fθ(xi, σi, ℓ).
+A first-order solver updates the latent as
+xi−1 = xi + (σi−1 −σi)vi,
+σi−1 < σi.
+(1)
+The same velocity also gives the one-step clean estimate
+ˆx0,i = xi −σivi.
+(2)
+Thus, xi is the current noisy state, whereas ˆx0,i is the clean
+content predicted from it. WorldForge V2 injects trajectory
+evidence by modifying either of these states before the next
+solver update.
+Classifier-Free
+Guidance.
+Classifier-free
+guidance
+(CFG) [19] strengthens conditioning by comparing conditional
+and unconditional predictions. In the velocity formulation,
+˜vi = fθ (xi, σi, ℓ)+ωCFG [fθ (xi, σi, ℓ) −fθ (xi, σi, ∅)] , (3)
+where ωCFG is the guidance weight and ∅denotes the
+unconditional input. The prediction difference measures the
+update introduced by the condition. DSG later follows this
+principle by comparing denoising predictions with and without
+trajectory guidance.
+Low-Rank Adaptation. Low-Rank Adaptation (LoRA) [63]
+keeps a pretrained weight W ∈Rdout×din fixed and represents
+its trainable update with two low-rank matrices:
+W′ = W + λLBA,
+(4)
+where A ∈Rr×din and B ∈Rdout×r are trainable, r ≪
+min(din, dout), and λL controls the adapter scale. LoRA
+therefore adapts a model with far fewer trainable parameters
+than full-model fine-tuning. Sec. III-D applies LoRA only to
+trajectory-sensitive network blocks.
+Geometry-Based
+Warping
+and
+Trajectory
+Guidance.
+WorldForge V2 converts a target camera path into explicit
+trajectory evidence through geometric warping. Given a source
+image or video, we obtain depth and camera poses using avail-
+able geometry estimators, such as VGGT and UniDepth [72],
+[73]. For source frame Isrc, source depth Dsrc, source pose
+Psrc, and target pose Ptar, the warping operator W produces
+a partial target view and its visibility mask:
+(I′
+tar, Mtar) = W(Isrc, Dsrc, Psrc, Ptar).
+(5)
+We denote the VAE-encoded warped reference by xtraj and
+its latent-space mask by M. This partial reference follows
+the target path but contains holes, disocclusions, and depth-
+boundary errors.
+A common way to use this reference is to noise it to the
+current level and insert it into the visible region of xi. Let
+ϵi be the Gaussian noise used at level σi. Direct noisy-latent
+insertion is
+xdir
+i
+= (1 −M) ⊙xi + M ⊙[(1 −σi)xtraj + σiϵi] .
+(6)
+This operation combines an externally re-noised visible
+region with a model-generated region that follows the current
+denoising path. Their different noise states may create a
+
+
+WORLDFORGE V2
+5
+denoising-state gap. Sec. III-B reduces this gap through clean-
+estimate fusion, while Sec. III-C derives a more efficient noisy-
+latent approximation.
+Camera trajectories can also be injected through other
+interfaces. Warp-as-History provides warped frames through
+the model’s history interface [18], whereas Go-with-the-Flow
+injects warped trajectory signals into the initial noise or initial
+denoising state [16]. We later use these interfaces to evaluate
+whether the trained LoRA transfers to different trajectory
+signals without additional fine-tuning.
+B. Inference-Time Trajectory Guidance
+Geometric warping explicitly indicates how observed con-
+tent should move along the target camera path. However,
+directly inserting the noised reference mixes the externally
+re-noised visible region with the model-generated region,
+producing a denoising-state gap that can cause noisy patches
+and structural errors. We therefore inject the reference through
+the model-predicted clean estimate and re-noise the fused
+result with a unified noise sample. We further restrict guidance
+to motion-related channels and calibrate the guided prediction
+against the model’s original denoising path. Together, these
+designs enable training-free trajectory control while preserving
+visual quality.
+Intra-Step Recursive Refinement (IRR). Direct noisy-latent
+insertion assigns newly sampled noise to the warped visible
+region while retaining the model’s current denoising state
+elsewhere. To avoid directly combining these incompatible
+states, IRR first fuses the warped reference in the model-
+predicted clean space and then re-noises the fused result with
+one Gaussian noise sample.
+At denoising step i, IRR obtains the one-step clean estimate
+ˆx0,i from Eq. (2) and fuses the warped reference under the
+visibility mask:
+˜x0,i = M ⊙xtraj + (1 −M) ⊙ˆx0,i.
+(7)
+The visible region follows the warped reference, while the
+remaining region retains the model-predicted clean content.
+IRR then samples ϵi, maps the fused estimate back to the
+current noise level, and predicts the corresponding velocity:
+xirr
+i
+= (1 −σi)˜x0,i + σiϵi,
+virr
+i
+= fθ
+ xirr
+i , σi, ℓ
+
+.
+(8)
+Because all regions of xirr
+i
+are re-noised with the same
+ϵi, the warped and generated regions no longer come from
+directly stitched noisy states. IRR therefore preserves the
+trajectory evidence while reducing their denoising-state gap.
+Flow-Gated Latent Fusion (FLF). Camera-trajectory control
+should separate camera-induced motion from object appear-
+ance and intrinsic motion. However, VAE channels encode
+different types of information, so replacing all channels with
+the same trajectory signal may also distort appearance. This
+channel specialization is supported by MOFT, which uses
+PCA to identify motion-related channels [20]. Based on this
+observation, FLF uses optical flow to select channels whose
+temporal motion agrees with the target trajectory, requiring no
+gradient-based optimization during inference.
+For denoising step i and channel c, FLF estimates optical
+flow between adjacent frames of ˆx c
+0,i and x c
+traj. We use
+Farneback by default and evaluate RAFT as an alternative [74],
+[75]. Within the visible region, normalized endpoint error Ec
+i ,
+angular error Ac
+i, and outlier ratio Oc
+i measure displacement,
+direction, and reliability differences. We combine them as
+Sc
+i = γE(1 −Ec
+i ) + γA(1 −Ac
+i) + γO(1 −Oc
+i ),
+(9)
+where a higher Sc
+i indicates stronger agreement with the
+warped trajectory.
+FLF selects Ci = {c | Sc
+i ≥δi} with adaptive threshold
+δi = µS
+i −λiσS
+i , where µS
+i
+and σS
+i
+are the mean and
+standard deviation of channel scores. The schedule keeps more
+channels during early noisy steps to establish coarse motion
+and gradually tightens the selection as appearance details
+emerge. Detailed normalization, weights, and schedules are
+provided in the supplementary material.
+FLF replaces full-channel fusion with
+˜x c
+0,i =
+(
+M ⊙x c
+traj + (1 −M) ⊙ˆx c
+0,i,
+c ∈Ci,
+ˆx c
+0,i,
+c /∈Ci.
+(10)
+The selected estimate ˜x c
+0,i is substituted for ˜x0,i in Eq. (8)
+and then re-noised. Thus, trajectory evidence is injected into
+channels with clear motion agreement, while the remaining
+channels continue to follow the pretrained model, reducing
+texture and appearance distortion.
+Dual-Path Self-Corrective Guidance (DSG). Warped trajec-
+tory references may contain distortions caused by depth errors,
+occlusions, or misalignment, and these errors can degrade the
+generated video. Inspired by CFG and AutoGuidance [19],
+[52], DSG compares a trajectory-guided prediction with the
+model’s original prediction and uses their difference to refine
+the guidance, allowing the result to follow the trajectory
+constraint while improving visual quality.
+At step i, the base velocity vi = fθ(xi, σi, ℓ) follows the
+pretrained denoising path and preserves visual fidelity, but
+does not enforce the target camera path. The guided velocity
+virr
+i
+follows the trajectory but may inherit errors from the
+warped reference. DSG therefore uses vi as a quality reference
+to correct virr
+i .
+We empirically find that the cosine similarity between the
+two velocities is typically 0.3–0.6, corresponding to an angle
+of about 50◦–70◦, whereas the two branches in standard CFG
+are nearly parallel. This larger difference arises because IRR
+and FLF modify the latent itself rather than only the condition.
+Direct CFG extrapolation can therefore produce excessive
+updates. DSG instead matches the two velocity magnitudes
+and uses the trajectory-guided component orthogonal to the
+base direction, following the principle of APG [54]:
+vcorr
+i
+= virr
+i
++ ρ βi
+"
+virr
+i
+−αi
+virr
+i
+
+2
+∥vi∥2 + εvi
+#
+.
+(11)
+Here, αi = ⟨virr
+i , vi⟩/(∥virr
+i ∥2∥vi∥2) measures directional
+agreement, βi =
+p
+1 −α2
+i reflects angular difference, and ρ
+controls the correction strength. When the two paths agree, the

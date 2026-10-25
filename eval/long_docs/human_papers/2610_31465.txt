@@ -1,0 +1,728 @@
+RheOPT: Few-Shot Non-Newtonian Flow Prediction
+via Newtonian Pretraining of RheOFormer
+Maedeh Saberi,1 Amir Barati Farimani,2 and Safa Jamali1, ∗
+1Department of Mechanical and Industrial Engineering, Northeastern University, Boston, Massachusetts 02115, USA
+2Department of Mechanical Engineering, Carnegie Mellon University, Pittsburgh, Pennsylvania 15213, USA
+Despite the advances in numerical simulations, non-Newtonian flow simulations have remained
+computationally expensive because the velocity and stress fields must be advanced together through
+rate- and history-dependent constitutive dynamics. Neural-operator surrogates can reduce infer-
+ence cost after training, but their training data often require the same expensive simulations they
+are intended to replace. This makes data efficient learning especially important in regimes where
+only a small number of non-Newtonian simulations can be afforded. Here, we introduce the Rheo-
+logical Operator Pretrained Transformer (RheOPT), a neural-operator framework that pretrains a
+transformer-based operator on inexpensive Newtonian simulations and then fine-tunes it on a small
+number of non-Newtonian samples. Rather than transferring the Newtonian constitutive response
+itself, RheOPT reuses geometry-conditioned transport structure that remains useful after the stress
+model changes. We evaluate RheOPT in two geometry-matched settings: a 4:1 contraction channel
+for Giesekus, Oldroyd-B, and Bingham fluids, and the oscillatory wake behind a triangular obstacle
+for Oldroyd-B flow. In the contraction geometry, Newtonian pretraining substantially improves few-
+shot prediction, and a model fine-tuned on four target samples can match or exceed a from-scratch
+model trained on four times as many. This benefit is reliable under reversible instance normalization
+(RevIN) but dataset dependent under Global normalization, a difference we trace to the dynamic
+range of each fluid’s velocity and stress fields. In the oscillatory wake, relative L2 error provides a
+useful first comparison but cannot by itself verify that vortex shedding is recovered. We therefore
+complement it with phase-insensitive diagnostics based on shedding frequency and wake fluctuation
+amplitude. These diagnostics show that pretraining recovers the shedding frequencies, spatial struc-
+tures, and the wake fluctuation amplitude that are suppressed by the model trained from scratch in
+the few-shot regime. Overall, RheOPT establishes Newtonian simulation as a physically grounded
+pretraining source for data efficient non-Newtonian operator learning.
+I.
+INTRODUCTION
+Predicting non-Newtonian flow is essential in polymer
+manufacturing [1], biological systems [2], soft materi-
+als [3], and additive manufacturing [4, 5], but it remains
+among the most computationally demanding problems
+in continuum mechanics because the stress field is it-
+self a dynamic unknown [6].
+Unlike Newtonian fluids,
+whose stress response is fixed by a viscosity, complex flu-
+ids couple the momentum balance to a rate- and history-
+dependent constitutive model. The internal stress must
+therefore be evolved together with the velocity field. Re-
+solving this coupling with finite-element or finite-volume
+solvers is expensive, and the cost must be paid again
+whenever the geometry, boundary condition, or consti-
+tutive parameter changes, since each scenario requires a
+full re-computation [7, 8].
+This cost has motivated the development of machine-
+learning surrogates, and neural operators in particu-
+lar [9–12], which learn solution maps between function
+spaces and can therefore predict flow fields for new condi-
+tions at inference cost rather than solver cost. Our prior
+work, RheOFormer [13], established that a transformer-
+based neural operator can reproduce spatio-temporal
+stress and velocity fields in viscoelastic and viscoplastic
+∗s.jamali@northeastern.edu
+flows with complex geometries. Reaching this accuracy,
+however, comes with a large data requirement, as neu-
+ral operators are data-hungry and typically require many
+training simulations spanning the range of conditions the
+model must later predict.
+This creates a practical bottleneck. If many expensive
+non-Newtonian simulations are needed before the surro-
+gate can be trained, the main computational burden is
+shifted from inference to data generation rather than re-
+moved. A learned model is therefore most valuable in
+the regime where it is also hardest to train: the data-
+scarce setting in which only a handful of non-Newtonian
+simulations can be afforded.
+Newtonian simulations offer a physically motivated
+way to address this limitation. They are typically easier
+and more robust to generate than non-Newtonian simu-
+lations since they avoid the additional constitutive evo-
+lution and numerical stiffness associated with complex-
+fluid stresses. Meanwhile, they share important structure
+with non-Newtonian flows as the geometry, boundary
+conditions, and momentum balance organize the velocity
+gradients and transport pathways in both cases. These
+structures provide the kinematic scaffold on which vis-
+coelastic or viscoplastic stresses evolve. This motivates
+the central question of this work: can a neural operator
+pretrained on Newtonian simulations be fine-tuned, us-
+ing only a few non-Newtonian samples, into an accurate
+surrogate for complex-fluid flow?
+arXiv:2610.31465v1  [cs.LG]  22 Oct 2026
+
+
+2
+This transfer is not guaranteed. Pretraining and fine-
+tuning are separated by a change in the constitutive law
+itself.
+That change is the defining difference between
+Newtonian and non-Newtonian flow, and it is not ob-
+vious that a representation learned under a Newtonian
+stress response survives the transition and remains use-
+ful for viscoelastic or viscoplastic prediction.
+Our hy-
+pothesis is that Newtonian pretraining transfers not the
+Newtonian constitutive response itself, but representa-
+tions of momentum transport, velocity gradients, and
+boundary-driven flow organization that remain relevant
+after the stress model changes. Prior studies for partial
+differential equation (PDE) surrogates have transferred
+representations across coefficients, fidelities, and Newto-
+nian equation families [14–17], while data-driven mod-
+els of non-Newtonian flow have generally been trained
+on data from the target constitutive model [18–20]. To
+the best of our knowledge, Newtonian to non-Newtonian
+transfer across a constitutive law boundary has not been
+systematically examined, and it is an open question that
+RheOPT is designed to answer.
+Different factors may determine when this transfer can
+be relied upon.
+One thing that should be considered
+is that non-Newtonian datasets can span wide ranges
+of velocity and stress magnitudes across flow regimes.
+The normalization used before training can therefore af-
+fect whether the pretrained representation remains useful
+during fine-tuning or is obscured by scale mismatch be-
+tween the Newtonian source data and the non-Newtonian
+target data [21]. Second, many complex-fluid flows are
+unsteady, so pointwise error alone may not determine
+whether the relevant dynamics have been recovered. In
+oscillatory regimes such as vortex shedding, a prediction
+with the correct shedding structure can be penalized by
+a phase shift, while a nearly steady prediction can ap-
+pear deceptively accurate if it remains close to the time-
+averaged field. Such cases require diagnostics that test
+the temporal content of the flow, not only the total field
+error [22, 23]. These issues are not separate from transfer.
+They determine whether transferred structure is both vis-
+ible in the trained model and physically meaningful in the
+predicted flow.
+We
+introduce
+RheOPT,
+a
+Newtonian-pretraining
+framework for few-shot non-Newtonian neural-operator
+prediction. We evaluate the framework in two canonical
+geometries: a 4:1 contraction channel and a flow past a
+triangular obstacle. The 4:1 contraction channel provides
+a controlled test of physical constitutive transfer across
+Giesekus, Oldroyd-B, and Bingham fluids, while the tri-
+angular obstacle wake tests whether the pretrained rep-
+resentations remain useful for recovering complex vortex-
+shedding dynamics.
+The main contribution of this work is a controlled
+test of Newtonian to non-Newtonian transfer for neural-
+operator prediction. In the 4:1 contraction geometry, we
+show that geometry-matched Newtonian pretraining im-
+proves few-shot prediction across Giesekus, Oldroyd-B,
+and Bingham fluids, especially in the strict two snap-
+shot input setting.
+We then show that the reliabil-
+ity of this transfer depends on field normalization: re-
+versible instance normalization (RevIN) [21] gives con-
+sistent gains across datasets with wide field-magnitude
+variation, whereas Global normalization is more dataset
+dependent. Finally, we extend the analysis from quasi-
+steady contraction flow to the oscillatory wake flow past a
+triangular obstacle and use phase-insensitive diagnostics
+to show that pretraining helps recover vortex-shedding
+dynamics that are suppressed in the from-scratch model.
+II.
+RELATED WORK
+Data-driven modeling of complex fluids has developed
+rapidly, driven by the difficulty of characterizing rate-
+and history-dependent rheology from limited measure-
+ments. A substantial line of work embeds constitutive
+physics directly into the learning objective. Rheology-
+informed neural networks and related extensions recover
+velocity and stress fields, and can identify constitutive
+parameters, from sparse rheometric or flow data [24, 25].
+Other frameworks such as ViscoelasticNet use learned
+models to select among candidate viscoelastic constitu-
+tive laws and reconstruct the stress field from an observed
+velocity field [18]. Related approaches learn constitutive
+response from deformation history [26], and data-driven
+surrogates have also been used for more complex stress
+prediction tasks [27]. However, across these methods the
+model is usually trained for a specific fluid, constitutive
+family, or flow configuration, and a change in constitu-
+tive model or geometry requires a new target dataset and
+retraining.
+Operator learning addresses a different part of this
+challenge. Rather than approximating one solution, neu-
+ral operators learn the mapping between input and out-
+put functions. They can therefore predict solutions for
+new conditions without retraining, provided those condi-
+tions lie within the learned distribution [9–11]. This idea
+has been used to learn families of rheological constitu-
+tive models and to generalize across parameters within a
+given family [20]. Attention-based and geometry-aware
+operator architectures further improve expressivity and
+support irregular meshes in complex geometries [28–
+31].
+RheOFormer extended this direction to rheology
+by learning full spatio-temporal stress and velocity evo-
+lution in viscoelastic and viscoplastic flows in irregular
+geometries [13]. These models reduce inference cost af-
+ter training and can generalize within the distribution
+represented by their training data. However, their train-
+ing sets are still drawn from the target physics, so data
+generation remains a central cost when high-fidelity non-
+Newtonian simulations are scarce.
+Pretraining has emerged as a central strategy for
+large language models and has recently become an ac-
+tive direction in scientific machine learning for reducing
+downstream data requirements.
+Prior work has trans-
+ferred neural-operator representations across coefficients,
+
+
+3
+boundary conditions, and equation families [15, 17]. A
+systematic study of pretraining strategies for neural op-
+erators found that transfer learning is consistently among
+the most effective approaches, and it is most beneficial
+when downstream data are scarce [32].
+Large multi-
+physics models extend the idea further by pretraining
+on heterogeneous PDE systems using shared embeddings
+and normalization strategies that accommodate variation
+across physics domains [14, 33–35].
+Recent work has
+also explored pretraining on cheaper lower-dimensional
+data before transferring to more expensive target prob-
+lems [36]. RheOPT follows this data-efficiency motiva-
+tion, but uses a different and physically grounded source
+of cheaper data.
+Transfer learning has also been studied in physics-
+informed neural networks.
+In this setting, a network
+trained on one problem can initialize training on another
+through lightweight adaptation [37]. These methods can
+accelerate optimization and convergence when source and
+target tasks are related, but they are usually confined to
+instances of a single physical problem, such as changes of
+parameters [38], boundary conditions [39], or fidelity [40].
+These methods can reduce optimization cost, but they
+generally still require target-specific re-optimization.
+Across these directions, a common gap remains. Ex-
+isting non-Newtonian learning methods generally train
+on data from the same target fluid, constitutive family,
+or flow configuration. Neural operators can be geometri-
+cally flexible and generalizable across input families, but
+their training data are still drawn from the target physics.
+PDE pretraining studies demonstrate transfer across sev-
+eral forms of distribution shift, but they have not sys-
+tematically tested whether a representation learned from
+Newtonian flow can be transferred and remain useful for
+viscoelastic and viscoplastic prediction. This is exactly
+the gap that RheOPT is designed to address by using
+Newtonian simulations as a physically grounded pretrain-
+ing source for few-shot non-Newtonian operator learning.
+III.
+METHODS
+A.
+Problem setup and transfer design
+We consider the data-efficient prediction of incom-
+pressible, two-dimensional non-Newtonian flows on irreg-
+ular domains. Each domain is represented by an unstruc-
+tured mesh with node coordinates (x, y). At each node,
+the flow state contains the velocity components (vx, vy)
+and the independent components of the symmetric stress
+tensor (σxx, σxy, σyy).
+The model receives a short in-
+put sequence of these five physical fields, together with
+the node coordinates, and predicts the remaining spatio-
+temporal trajectory.
+The input window and prediction horizon depend on
+the geometry.
+For the contraction experiments, the
+model receives two snapshots over t ∈[0, 0.2] s, sampled
+at ∆t = 0.2 s, and predicts the subsequent evolution
+up to t = 5 s. For the triangular-obstacle experiments,
+the model receives ten snapshots over t ∈[0, 1.8] s, also
+sampled at ∆t = 0.2 s, and predicts the remaining trajec-
+tory up to t = 10 s. These two settings provide comple-
+mentary tests: the contraction geometry evaluates con-
+stitutive transfer in a short observation regime, while the
+triangular-obstacle geometry evaluates transfer in an un-
+steady wake with vortex shedding.
+RheOPT
+is
+formulated
+as
+a
+geometry-matched
+transfer-learning problem. For each geometry, the source
+task is Newtonian flow prediction and the target task is
+non-Newtonian flow prediction in the same domain. The
+non-Newtonian targets are Giesekus and Oldroyd-B flu-
+ids for viscoelastic flow and a Bingham fluid for viscoplas-
+tic flow.
+The source and target tasks therefore share
+the geometry, boundary-driven transport structure, and
+momentum balance, while differing in the constitutive
+relation that determines the stress response.
+This de-
+sign tests whether geometry and transport constrained
+structures, such as recirculation zones, stress concentra-
+tions near walls and corners, and wake formation, can be
+reused after the constitutive closure changes. Figure 1
+summarizes this workflow. RheOFormer is first trained
+from a random initialization, θrand, on Newtonian simu-
+lations of a given geometry, which yields the pretrained
+weights θNewt. The same few non-Newtonian target sam-
+ples are then used in two ways: RheOPT is initialized
+with θNewt and fine-tuned on the target data, whereas
+the baseline trains the same architecture from θrand on
+the target data only.
+All fluids considered here satisfy the incompressibility
+constraint and momentum balance
+∇· u = 0,
+ρ
+∂u
+∂t + u · ∇u
+
+= ∇· σ,
+(1)
+where u = (vx, vy) and σ is the total Cauchy stress ten-
+sor. The stress can be decomposed as σ = −pI+τ, where
+p is the pressure and τ is the non-hydrostatic stress con-
+tribution. For a Newtonian fluid, τ = 2ηD, with η the
+constant viscosity and D = (∇u + ∇uT )/2 the rate-of-
+deformation tensor.
+Equation (1) is common to every
+fluid considered here; the fluid models differ in the con-
+stitutive relation governing τ and, consequently, the re-
+sulting total stress σ. For the non-Newtonian targets, τ
+is governed by the corresponding Giesekus, Oldroyd-B, or
+Bingham constitutive relation. Thus, the transfer stud-
+ied here is not across unrelated governing equations, but
+across constitutive closures within the same momentum-
+conservation framework. The full constitutive relations
+are provided in the Supplementary Information (S1).
+The geometry-matched design isolates constitutive
+transfer from geometric transfer. The pretrained model
+is not asked to adapt to a new domain during fine-tuning;
+instead, it must adapt representations learned from New-
+tonian flow to the target viscoelastic or viscoplastic stress
+dynamics. Table I summarizes the source and target con-
+figurations used to test this transfer. For each geometry,
+the source dataset consists of 200 Newtonian simulations
+
+
+4
+FIG. 1. Overview of RheOPT. (1) RheOFormer is trained from a random initialization, θrand, on Newtonian simulations
+of the target geometry, yielding the pretrained weights θNewt. (2) The same few-shot non-Newtonian target data are used to
+fine-tune the pretrained model (RheOPT, initialized with θNewt) and to train an otherwise identical RheOFormer from scratch
+(initialized with θrand). The fields illustrate the triangular-obstacle wake: a Newtonian snapshot used for pretraining (gray),
+an Oldroyd-B target snapshot (left), and the fine-tuned and from-scratch predictions (right).
+spanning inlet velocities corresponding to Re ∈[0.4, 80]
+for the contraction and Re ∈[10, 100] for the triangu-
+lar obstacle.
+The Newtonian and non-Newtonian sim-
+ulations share the same domain but are discretized on
+different unstructured meshes. Because the encoder and
+decoder operate directly on the node coordinates, no
+interpolation between these meshes is required.
+The
+downstream non-Newtonian models are fine-tuned us-
+ing small target-data budgets and compared with from-
+scratch models trained on the same target samples.
+The contraction geometry is the primary test case and
+is evaluated for all three target fluids. In the Giesekus
+and Oldroyd-B datasets, the inlet velocity is varied, caus-
+ing the Reynolds and Weissenberg numbers to change to-
+gether. In the Bingham dataset, the inlet velocity and
+yield stress are varied independently, so the data span
+both Reynolds and Bingham numbers. For the contrac-
+tion datasets, these dimensionless numbers are defined
+with the downstream scales, Re = ρUL/η0, Wi = λU/L,
+and Bi = τyL/(µpU), where U = 4Uin is the mean ve-
+locity in the downstream channel, Uin is the mean inlet
+velocity, L = 0.01 m is the half-width of the downstream
+channel, η0 is the zero-shear viscosity (or plastic viscos-
+ity µp for the Bingham fluid), λ is the relaxation time,
+τy is the yield stress, and µp is the plastic viscosity. The
+triangular-obstacle geometry is evaluated for Oldroyd-B
+flow, with Re ∈[10, 100] and Wi = 0.01 Re, and pro-
+vides a more demanding dynamical case involving wake
+formation and periodic vortex shedding. Exact parame-
+ter ranges, sampled values, mesh statistics, dataset par-
+titions, and numerical-solver settings are provided in the
+Supplementary Information (S2).
+B.
+RheOPT architecture, inputs, and training
+Realizing this transfer design requires an architecture
+that can operate on irregular meshes and propagate dy-
+namics over long horizons.
+RheOPT builds upon the
+RheOFormer architecture [13, 28] as its neural-operator
+backbone. RheOFormer is a transformer-based encoder–
+decoder architecture designed for complex-fluid flow pre-
+diction on irregular meshes.
+The encoder applies self-
+attention to capture spatial dependencies across all mesh
+nodes, producing a discretization-invariant latent rep-
+resentation of the observed flow state.
+The decoder
+uses cross-attention between this latent representation
+and query-point coordinates to predict the output fields
+at arbitrary locations, decoupling the output discretiza-
+tion from the input mesh.
+Temporal evolution is per-
+formed in latent space through a recurrent propagator,
+zt+1 = zt + N(zt), which advances the latent state
+without repeatedly re-encoding physical fields at every
+timestep. This allows the model to predict long trajecto-
+ries on the contraction and triangular-obstacle meshes
+without remeshing, interpolation, or geometry-specific
+architectural changes.
+Architectural hyperparameters
+follow RheOFormer [13] and are provided in the Sup-
+
+
+5
+TABLE I. Summary of the RheOPT experimental design.
+Fluid model Geometry
+Varied
+target
+controls
+Fine-tuning samples Input window Prediction horizon
+Giesekus
+4:1 contraction
+Inlet velocity
+4, 8, 12, 16
+t ∈[0, 0.2] s
+t ∈[0.4, 5] s
+Oldroyd-B
+4:1 contraction
+Inlet velocity
+4, 8, 12, 16
+t ∈[0, 0.2] s
+t ∈[0.4, 5] s
+Bingham
+4:1 contraction
+Inlet velocity & yield stress
+4, 8, 12, 16
+t ∈[0, 0.2] s
+t ∈[0.4, 5] s
+Oldroyd-B
+Triangular obstacle
+Inlet velocity
+4, 8, 12, 16, 24, 32
+t ∈[0, 1.8] s
+t ∈[2, 10] s
+plementary Information.
+At each mesh node, the input feature vector consists of
+the five observed physical fields and the node coordinates,
+xin = [vx, vy, σxx, σxy, σyy, x, y] .
+(2)
+The coordinates identify the node locations on the ir-
+regular mesh, while the physical channels provide the
+observed initial trajectory. Reynolds, Weissenberg, and
+Bingham numbers are not appended as additional node
+features.
+We compare two input-scaling formulations:
+Global
+normalization
+and
+reversible
+instance
+normalization
+(RevIN) [21].
+Global normalization uses fixed per-
+channel statistics computed from the training dataset.
+Each physical channel is standardized using its training-
+set mean and standard deviation, and the same statis-
+tics are used to normalize the inputs and targets and to
+transform predictions back to physical space.
+For the
+pretrained models, these statistics are computed from
+the Newtonian pretraining dataset and are retained dur-
+ing fine-tuning, whereas the from-scratch models use the
+statistics of their non-Newtonian training samples.
+RevIN instead computes normalization statistics sep-
+arately for each sample and physical channel from the
+observed input sequence. For sample b and channel c, let
+µb,c and sb,c denote the corresponding mean and stan-
+dard deviation. These statistics are computed over all in-
+put snapshots and mesh nodes of the sample. The input
+fields are normalized using these sample-specific statis-
+tics and transformed with learnable channel-wise affine
+parameters γc and βc:
+efb,t,n,c = γc
+fb,t,n,c −µb,c
+sb,c
++ βc.
+(3)
+The affine parameters are optimized jointly with the
+RheOFormer weights during pretraining and fine-tuning.
+These affine parameters act only on the model input, and
+the target trajectory is normalized with the same input
+statistics, (fb,t,n,c −µb,c)/sb,c, without the affine trans-
+form.
+After the model predicts the normalized future
+trajectory, the transformation is inverted using the same
+statistics computed from the input sequence,
+bfb,t,n,c = bef b,t,n,c sb,c + µb,c.
+(4)
+Thus, RevIN removes the sample-specific offset and scale
+before the trajectory is processed by the neural operator
+and restores them after prediction. This formulation re-
+duces sample-to-sample shifts in the magnitude and offset
+of the physical fields while retaining a reversible mapping
+to the original representation. In contrast, Global nor-
+malization transforms every sample using a single set of
+fixed, per-channel statistics computed from the training
+dataset.
+Following
+prior
+neural-operator
+pretraining
+stud-
+ies [32], we use transfer learning with the same field pre-
+diction objective during Newtonian pretraining and non-
+Newtonian fine-tuning, rather than introducing a sepa-
+rate self-supervised pretraining task. The loss is a rela-
+tive error averaged over samples and output channels,
+L =
+1
+B · C
+B
+X
+b=1
+C
+X
+c=1
+∥ˆfb,:,:,c −fb,:,:,c∥2
+∥fb,:,:,c∥2 + ϵ
+,
+where
+∥fb,:,:,c∥2 =
+qPT
+t=1
+PNnode
+n=1
+f 2
+b,t,n,c.
+(5)
+Here, bf and f are the predicted and ground-truth trajec-
+tories, B is the batch size, C is the number of output
+channels, T is the number of predicted frames, Nnode is
+the number of mesh nodes, and ϵ is a small constant used
+for numerical stability.
+The norm is computed jointly
+over the temporal and spatial dimensions for each chan-
+nel.
+For each downstream experiment, the fine-tuned model
+is initialized from the corresponding geometry-matched
+Newtonian-pretrained weights.
+All model parameters
+are updated during fine-tuning; no encoder, decoder, or
+latent-propagator layers are frozen. Full fine-tuning al-
+lows the complete representation to adapt to the tar-
+get constitutive behavior rather than restricting adap-
+tation to a predetermined subset of layers.
+Each fine-
+tuned model is compared with an otherwise identical
+from-scratch model trained from random initialization.
+The pretrained and from-scratch models use the same
+RheOFormer architecture, the same non-Newtonian fine-
+tuning samples, the same normalization formulation, op-
+timizer, learning-rate schedule, batch size, number of
+optimization steps, and validation set. Thus, initializa-
+tion from the Newtonian-pretrained weights is the only
+intended difference between the pretrained and from-
+scratch models.
+For each target fluid and data budget, the fine-tuning
+samples are disjoint from the validation and evaluation
+sets. The same validation and evaluation sets are used
+for the corresponding pretrained and from-scratch mod-
+els. All models are trained using the AdamW optimizer
+with a maximum learning rate of 10−4 and a one-cycle
+learning-rate scheduler with a warm-up over the first 30%
+
+
+6
+of the optimization steps, an initial division factor of 104,
+and a final division factor of 106. During fine-tuning, the
+batch size is set to 4.
+Each model is trained for 500
+epochs in the contraction experiments and 2000 epochs
+in the triangular-obstacle experiments, so that the num-
+ber of optimization steps is identical for the pretrained
+and from-scratch models at a given N. Each condition
+is repeated using four independent training seeds, and
+results are reported as the mean and standard deviation
+across these runs.
+C.
+Evaluation metrics and dynamical diagnostics
+All reported errors are computed in physical space af-
+ter reversing the normalization associated with either
+Global normalization or RevIN. This ensures that the
+two input scaling formulations are compared using the
+same physical variables rather than formulation depen-
+dent normalized coordinates.
+Unless otherwise stated,
+errors are accumulated over the full predicted time hori-
+zon, averaged over the fixed validation set, and reported
+as the mean and standard deviation across three inde-
+pendent training seeds.
+The principal evaluation metric is the real-space rela-
+tive L2 error. For a scalar field f, the error is computed
+over all predicted timesteps and mesh nodes as
+EL2(f) =
+PTpred
+t=1
+PNnode
+n=1
+
+ˆft,n −ft,n
+21/2
+hPTpred
+t=1
+PNnode
+n=1
+f 2
+t,n
+i1/2
++ ϵ
+.
+(6)
+Here, Tpred is the number of predicted timesteps, Nnode is
+the number of mesh nodes, and ϵ is a small constant used
+for numerical stability. The velocity error is obtained by
+evaluating Eq. (6) jointly over (vx, vy), and the stress er-
+ror by evaluating it jointly over (σxx, σxy, σyy), so that
+the sums also run over the components of each group.
+These errors are computed for each validation sample and
+then averaged over the validation set. This separation
+prevents the different numerical scales and physical be-
+havior of velocity and stress from obscuring field-specific
+effects of pretraining.
+To quantify the benefit of Newtonian pretraining rela-
+tive to the from-scratch baseline, we define the percent-
+age improvement as
+Improvement(%) = 100Lscratch −Lpretrained
+Lscratch
+,
+(7)
+where Lscratch and Lpretrained are the corresponding real-
+space relative L2 errors.
+Positive values indicate that
+Newtonian pretraining reduces the prediction error rela-
+tive to training from random initialization.
+For the triangular-obstacle wake, relative L2 error is
+complemented by phase-insensitive diagnostics that di-
+rectly measure vortex shedding dynamics. This is nec-
+essary because a prediction with the correct oscillatory
+structure can be penalized by phase or spatial offsets,
+while a smoother prediction can appear accurate if it
+remains close to the time-averaged wake. We therefore
+evaluate the dominant shedding frequency and the wake-
+fluctuation amplitude.
+The dominant shedding frequency is extracted from
+the temporal spectrum of the predicted wake signal and
+compared with the ground-truth frequency across valida-
+tion samples with different Reynolds numbers. For each
+wake node n ∈W, the temporal mean of the streamwise
+velocity is removed and its discrete Fourier transform is
+computed over the predicted horizon,
+ˆvx,n(fk) =
+Tpred
+X
+t=1
+[vx(xn, t) −vx(xn)] e−2πifkt∆t,
+and
+fk =
+k
+Tpred ∆t,
+(8)
+where W is the set of NW wake nodes with x > 1 and
+|y| < 0.5, and x is measured from the channel inlet. The
+wake power spectrum and the dominant shedding fre-
+quency are then
+P(fk) =
+1
+NW Tpred
+X
+n∈W
+|ˆvx,n(fk)|2 ,
+and
+fpeak = arg max
+fk, k≥1
+P(fk).
+(9)
+With Tpred = 41 snapshots at ∆t = 0.2 s, the frequency
+resolution is 1/(Tpred∆t) ≈0.12 Hz, so fpeak at the lowest
+non-zero frequency indicates the absence of a resolved
+oscillation rather than a physical low-frequency shedding
+mode. This diagnostic tests whether the model recovers
+the characteristic time scale of vortex shedding.
+To measure the strength and spatial persistence of the
+oscillation, we also compute the root-mean-square fluc-
+tuation amplitude of the transverse velocity in the wake,
+v′
+y,rms(x) =
+
+
+1
+Tpred
+Tpred
+X
+t=1
+(vy(x, t) −vy(x))2
+
+
+1/2
+,
+(10)
+where vy(x) is the temporal mean at each downstream
+location. In practice, v′
+y,rms is evaluated in streamwise
+bins of width 0.1 by averaging the temporal variance of vy
+over all nodes in each bin before taking the square root.
+Together, the shedding-frequency and RMS-fluctuation
+diagnostics evaluate whether the predicted wake con-
+tains the correct temporal scale and fluctuation strength,
+rather than only a low pointwise error.
+IV.
+RESULTS AND DISCUSSION
+We organize the results around one central question:
+does Newtonian pretraining transfer reusable flow struc-
+ture to few-shot non-Newtonian prediction, and under

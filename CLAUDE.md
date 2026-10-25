@@ -6,13 +6,14 @@ This file is the official entry point and comprehensive system index for Claude 
 
 ## 1. Repository Purpose & Architecture Overview
 
-**Core Mission:** Enterprise-grade and academically rigorous detection of AI-generated academic text, research papers, and essays, with robust defense against humanizer/paraphrase evasion and citation hallucination verification.
+**Core Mission:** Open-source detection and forensic analysis of AI-generated academic manuscripts and student essays, combining sentence-level syntax classification with surrounding-window context modeling.
 
 ### Dual-Scale Ensemble Architecture:
-- **Micro-Syntax Engine (RoBERTa):** Evaluates local sentence syntax, token distributions, and stylistic burstiness using a fine-tuned RoBERTa model (`models/roberta-sentence-academic-v2`).
-- **Macro-Context Engine (ModernBERT):** Captures long-range document cohesion, discourse transitions, and semantic consistency up to 8,192 tokens (`models/modernbert-academic`).
-- **Adaptive Pooling:** Non-linear combination of local 3-sentence sliding window context with Top-K pooling, yielding 98.72% Accuracy and 99.87% ROC-AUC on topic-held-out benchmarks.
-- **Reference Guardrail:** Automated bibliographic reference segmentation and CrossRef API DOI lookup to detect hallucinated academic citations.
+- **Micro-Syntax Engine (RoBERTa):** Evaluates local sentence syntax and token distributions up to 512 tokens using fine-tuned `roberta-sentence-academic-v2`. **`[IMPLEMENTED]`**
+- **Surrounding-Window Context Engine (ModernBERT):** Evaluates surrounding 3-sentence paragraph windows ($s_{i-1}, s_i, s_{i+1}$) truncated to 512 tokens using fine-tuned `modernbert-academic` (`src/highlighter.py:170`). **`[IMPLEMENTED]`**
+- **Full 8,192-Token Document Processing:** Single-pass evaluation of full multi-page documents up to 8,192 tokens natively. **`[NOT IMPLEMENTED — inference currently truncates to 512 tokens on a 3-sentence window]`**
+- **Adaptive Pooling & Gating:** Production inference applies gated max-pooling (`max(prob_rob, prob_mb)`) with heuristic transition regex indicators and document-level burstiness bonuses (`src/highlighter.py:187-197`). Empirical metrics for Raw, Smoothed, Top-$k$, and Mean-Pool configurations are documented programmatically in [results/EVAL_SUMMARY.md](results/EVAL_SUMMARY.md) and [results/ensemble_metrics.csv](results/ensemble_metrics.csv). **`[IMPLEMENTED]`**
+- **Reference Guardrail:** Automated bibliographic reference segmentation and CrossRef API DOI lookup (`src/doi_verifier.py`). **`[IMPLEMENTED; empirical hallucination benchmark NOT IMPLEMENTED]`**
 
 ---
 
@@ -26,12 +27,12 @@ AI_Text_Checker/
 ├── install.bat / install.sh       <- Automated environment setup scripts
 ├── start_all.bat / start_all.sh   <- Single-click launchers for backend & frontend
 ├── stop_all.bat / stop_all.sh     <- Single-click process cleanup
-├── ieee_paper.tex                 <- Publication-ready IEEE conference manuscript
+├── ieee_paper.tex                 <- Working IEEE conference manuscript draft (under revision)
 │
 ├── src/                           <- Core Backend & Inference Engine
 │   ├── app.py                     # FastAPI REST API with WebSocket streaming & report exports
 │   ├── highlighter.py             # Dual-model inference, heuristic rules, and token pooling
-│   ├── document_parser.py         # Multi-format document parser (PDF, DOCX, DOC, TXT)
+│   ├── document_parser.py         # Multi-format document parser (PDF, DOCX, DOC)
 │   ├── citation_parser.py         # Bibliography segmenter and citation extractor
 │   ├── doi_verifier.py            # Automated CrossRef DOI verification for hallucinations
 │   ├── report_generator.py        # PDF report generator with forensic highlighting
@@ -106,7 +107,7 @@ AI_Text_Checker/
   - Adaptive Non-Linear Pooling: Combines ModernBERT and RoBERTa via gated max-pooling.
 
 ### 2. Document Parsing (`src/document_parser.py`)
-- Handles `.pdf`, `.docx`, `.doc`, `.txt`.
+- Handles `.pdf`, `.docx`, and legacy `.doc` (via background LibreOffice conversion). Raw text inputs are ingested directly via the web UI and REST API.
 - Masks LaTeX math formulas (`$...$`, `$$...$$`, `\[...\]`) to prevent sentence split distortion.
 - Extracts body text separately from the `References` / `Bibliography` section.
 

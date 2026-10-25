@@ -1,0 +1,631 @@
+F2G-Pose: Geometry-Aware
+Foundation Feature Lifting for Direct RGB-D
+Category-Level Object Pose Estimation
+Jinyu Zhang1,2∗Haitao Lin1∗Jiashu Hou1∗
+Xiangyang Xue1
+Yanwei Fu1,2†
+1Fudan University
+2Shanghai Innovation Institute
+Abstract
+This paper studies category-level RGB-D object pose estimation, which recovers
+an object’s 3D rotation and translation without instance-specific CAD models
+or reference views. This task is highly ambiguous due to intra-class variations,
+symmetries, and partial observations. Current solutions struggle to balance re-
+liability and efficiency: methods based on intermediate structures are prone to
+error propagation, while diffusion models suffer from high inference latency and
+complex post-hoc candidate extraction. To address this, we present F2G-Pose, a
+real-time direct, single-pass framework that predicts category-level pose, metric
+size, and camera-frame completed shape from a single RGB-D observation in one
+feed-forward pass. F2G-Pose lifts dense visual foundation features to partial point
+clouds, encodes local geometry with DGCNN tokenization, and integrates object-
+level structure with a Mixture-of-Experts Transformer. Joint size prediction and
+camera-frame shape completion encourage metric consistency through dense geo-
+metric supervision. With its task-specific network trained only on pose-annotated
+synthetic SOPE data and its frozen RADIO backbone externally pretrained, F2G-
+Pose achieves state-of-the-art accuracy on SOPE and ROPE while running at
+28 FPS for pose-only inference, and further demonstrates strong camera-frame
+geometry on HouseCat6D and real-object transfer on HANDAL. Analyses of la-
+tency, robustness, shape completion, and GenPose++ candidate behavior further
+demonstrate the efficiency and reliability of F2G-Pose, with real-world manipu-
+lation experiments demonstrating deployment potential under segmented RGB-D
+inputs. The project page, code, and pretrained models are made available at
+https://jrryzh.github.io/F2G-Pose/.
+1
+Introduction
+Category-level 6D object pose estimation recovers an object’s 3D rotation and translation without
+requiring an instance-specific CAD model or reference views at test time. In practical RGB-D
+perception, this estimate is often coupled with metric size and usable object geometry for benchmark
+evaluation [9, 42, 51], physical interaction [6, 37, 38], and robotic control [14, 15, 24, 25, 44, 45].
+This setting is inherently challenging because partial observations from a single crop or segmented
+point cloud provide incomplete evidence: symmetries induce rotational ambiguity, occlusions hide
+discriminative geometry, and intra-class variations alter shape, size, and appearance. Consequently,
+category-level perception must produce reliable metric predictions from ambiguous, incomplete, and
+noisy observations.
+∗Equal contribution. Contact: zhangjinyu25@sii.edu.cn.
+†Corresponding author. Contact: yanweifu@fudan.edu.cn.
+Preprint.
+arXiv:2610.31623v1  [cs.CV]  22 Oct 2026
+
+
+Previous work has addressed this problem from two complementary directions. Deterministic
+category-level methods estimate pose and size through canonical coordinates [42], correspon-
+dences [2], shape priors [16], deformation models [39], alignment procedures [23], or direct re-
+gression [17, 26, 43]. While these methods enable efficient inference, reliance on intermediate
+structures can lead to compounding errors. Under occlusion, missing depth, intra-class variation, and
+domain shift, the final metric estimate can become sensitive to the reliability of these intermediate
+structures. Direct regression can avoid some post-hoc alignment steps, but reliable direct prediction
+still requires representations that preserve local geometric cues and global object structure under
+partial observations.
+A complementary line of work models pose ambiguity explicitly. GenPose [50] and GenPose++ [51]
+formulate category-level pose estimation as conditional pose distribution modeling, sampling multiple
+hypotheses and converting them into a prediction through scoring, filtering, clustering, or aggregation.
+This is principled for uncertainty representation, but it introduces a candidate-to-decision gap:
+deployed accuracy depends not only on the sampled hypotheses, but also on whether post-hoc
+extraction can select or aggregate a reliable representative. Moreover, this conversion must operate
+under a practical inference budget as in Fig. 3, so sampling quality, candidate extraction, and
+computational cost become coupled. Joint-RegDiff [20] and RFMPose [32] improve generative pose
+inference through joint regression–diffusion learning with score-scaling sampling and Riemannian
+flow-matching trajectories, respectively, but both still rely on iterative generative inference to produce
+the prediction, so prediction quality remains coupled with sampling dynamics, candidate extraction,
+and inference cost.
+We introduce F2G-Pose, a direct RGB-D framework that jointly estimates category-level pose, size,
+and camera-frame completed geometry in a single feed-forward pass. By leveraging geometry-aware
+foundation feature lifting and dense geometric supervision, it bypasses intermediate canonical shape
+alignment and avoids the sampling and candidate extraction used by sampling-based pose estimators.
+Specifically, we lift dense visual foundation features [13] to the partial point cloud for semantic cues,
+encode local geometry via DGCNN tokenization, and integrate object-level structure using a Mixture-
+of-Experts Transformer that provides conditional capacity across diverse shape regimes. Then, the
+pose-size head predicts the final metric estimate, while the shape head reconstructs camera-frame
+geometry as both auxiliary supervision and a usable output. This joint design encourages the shared
+representation to encode visible local evidence, object extent, and visible-to-complete geometric
+structure for consistent direct prediction under partial observations.
+To evaluate the effectiveness of this design, we train the task-specific network only on pose-annotated
+synthetic data from 149 SOPE categories [51] and test on SOPE [51], ROPE [51], HANDAL [10],
+and HouseCat6D [17]. These benchmarks cover synthetic benchmark accuracy, synthetic-to-real
+transfer, additional real-object evaluation, and camera-frame shape reconstruction. F2G-Pose achieves
+state-of-the-art accuracy while running at 28 FPS for pose inference. Beyond benchmark accuracy,
+we evaluate latency, robustness to perturbations and occlusion, shape reconstruction, GenPose++
+candidate behavior, and real-world robotic manipulation. These results demonstrate the efficiency
+and reliability of direct feed-forward prediction, while robotic experiments demonstrate deployment
+potential under segmented RGB-D inputs.
+Contributions. Our contributions are threefold: (1) We present F2G-Pose, a real-time direct RGB-D
+framework that predicts category-level 6D pose, metric size, and camera-frame completed shape
+in a single feed-forward pass, sharing its representation across pose, size, and shape learning.
+(2) We introduce geometry-aware foundation feature lifting to map dense visual features onto
+partial point clouds. DGCNN encodes local geometry, a Mixture-of-Experts Transformer integrates
+object-level structure, and camera-frame shape completion provides dense geometric supervision for
+metric prediction. (3) Extensive evaluations across synthetic benchmarks and real-world datasets
+demonstrate that F2G-Pose achieves state-of-the-art accuracy, real-time inference, and high-quality
+shape completion. Furthermore, physical manipulation experiments demonstrate pick-and-place
+success, timely decision readiness, and deployment feasibility under segmented RGB-D inputs.
+2
+Related work
+Category-Level 6D Pose Estimation. Category-level methods aim to generalize pose estimation
+across unseen object instances within a category [17, 42, 43]. Early works such as NOCS [42]
+introduced the notion of canonical space to enable pose alignment without requiring CAD models.
+2
+
+
+Follow-up approaches [2, 23, 26, 50] leveraged point cloud geometry and symmetry-aware losses to
+improve generalization. Some methods further incorporate shape-aware modeling [16, 39] to jointly
+predict object size and shape. While these methods remove the need for object-specific models, many
+rely on intermediate canonical coordinates, correspondences, deformation fields, or shape priors
+whose reliability can degrade under occlusion, missing depth, and strong intra-category variation.
+Recent works have attempted to scale category-level 6D learning using larger and more diverse
+datasets [18, 53], making representation quality and inference efficiency increasingly important.
+Diffusion-based methods such as GenPose [50] and GenPose++ [51] model pose and size as multi-
+modal distributions, but often rely on auxiliary scoring networks to filter outlier samples. Joint-
+RegDiff [20] eliminates the need for such scoring networks through time-dependent score scaling, and
+RFMPose [32] formulates generative category-level pose estimation with Riemannian flow matching;
+however, both remain limited to 6D pose estimation and still require iterative generative inference,
+which generally increases inference cost and can limit real-time throughput.
+SecondPose [3] also combines foundation-model features with geometry for direct category-level
+pose and size estimation through an SE(3)-consistent representation. F2G-Pose additionally predicts
+complete camera-frame shape to provide dense supervision for the shared pose-size representation,
+and uses MoE encoding to provide conditional capacity across diverse categories.
+Instance-Level Novel Object Pose Estimation. Another line of work estimates pose for novel object
+instances using CAD models [19, 30], single-view references, or multi-view references [11, 21, 27].
+They often reconstruct object geometry, either explicitly via 3D modeling [22, 28] or implicitly
+through image-based retrieval [12, 29]. FoundationPose [46] supports either CAD or reference
+images, combining model-based and model-free paradigms. Recent foundation reconstruction models
+such as SAM 3D [35] reconstruct object geometry, texture, and layout from masked single images,
+targeting image-to-3D asset reconstruction in natural scenes. Together, these methods broaden object-
+centric 3D perception, but generally target instance-specific reconstruction or reference-conditioned
+alignment rather than category-level pose-size estimation under a fixed taxonomy. F2G-Pose targets
+this complementary category-level setting: it uses category-level canonical supervision during training,
+but requires only a segmented RGB-D observation at inference time for the evaluated taxonomy.
+3
+Method
+Problem Formulation and Overview Given an RGB image crop I ∈RH×W ×3 and a segmented
+partial point cloud P ∈RN×3, F2G-Pose predicts the object’s 6D pose T = (R, t) ∈SE(3), metric
+size s ∈R3, and completed camera-frame shape Pdense ∈RNd×3 in a single feed-forward pass,
+without requiring instance-specific CAD models, reference images, or explicit category labels. Here,
+R ∈SO(3) and t ∈R3 denote the object rotation and translation, respectively.
+The framework directly predicts the outputs, avoiding the test-time sampling and candidate extraction
+of sampling-based estimators, as shown in Fig. 1. Instead, it lifts dense visual foundation features
+onto observed 3D points, encodes local geometric structure with DGCNN, aggregates object-level
+context with a MoE Transformer, and uses parallel decoder branches for pose-size prediction and
+camera-frame shape completion. The pose-size branch directly outputs the metric object state used for
+evaluation and downstream applications, while the shape branch provides dense geometric supervision
+for the shared RGB-D representation and produces approximate completed geometry in the camera
+frame.
+3.1
+Geometry-Aware Foundation Feature Lifting
+F2G-Pose uses RADIOv2.5 [13] to provide dense visual evidence for the partial RGB-D observation.
+RADIOv2.5 distills complementary 2D vision models [7, 31, 33, 34], combining dense feature
+extraction from SAM [34] with semantic features from DINOv2 [31]. Prior work has shown that
+DINOv2-style local features can support pose-consistent correspondences across object appearance
+and shape variation [52, 54]. We use these features not as a standalone image prior, but as point-wise
+appearance and semantic cues attached to metric 3D observations. Given an RGB crop I, we fuse
+RADIOv2.5 layers l ∈{8, 16, 23} as Frgb = R
+  P
+l αlCl(ERADIO(I)l)
+
+∈Rh×w×1024. Each 1 × 1
+convolutional block Cl compresses its map to 512 channels; learned softmax-normalized weights αl
+combine the maps, and a 3 × 3 convolutional block R refines the sum to 1024 channels.
+3
+
+
+RADIO
+n Feature Extraction
+Point-wise
+Fusion
+ ...
+PointCloud
+RGB
+RADIO
+V2.5
+❄
+DGCNN
+🔥
+MLP
+X8
+Layer Norm
+MoE Layer
+FFN
+Softmax
+FFN1
+Router
+ ...
+MLP
+MLP
+tokens
+n Multi-task Heads
+n Transformer Encoder
+R
+t
+s
+…
+FFN2
+FFN7
+FFN8
+Layer Norm
+Self Attention
+1024×3
+MLP
+2048×3
+Repeat N=512
+c
+MLP
+Pool
+512×3
+c
+512×(3+1024)
+1×1024
+×3
+512×3
+…
+Probability
+…
+Probability
+Multiply
+Add
+c Concatenate
+Multi-layer
+feature
+(256+512)
+Figure 1: F2G-Pose Overview. Given a cropped RGB image and segmented partial point cloud, F2G-Pose
+extracts dense RADIOv2.5 features [13] and lifts them onto 3D points by projection. DGCNN tokenization
+produces fused RGB-D object tokens, and a MoE Transformer encodes a global object representation. Two
+parallel decoder branches directly predict (i) 6D pose and metric size and (ii) camera-frame completed shape
+through coarse-to-fine refinement. The pipeline produces a pose-size-shape estimate in one feed-forward pass.
+We then lift the dense image features onto the partial point cloud. For each point Pi, we gather
+fi = Frgb[⌊π(Pi)/16⌋] at its patch-grid index, where π(·) gives crop-pixel coordinates and 16 is the
+patch size. Following the point-wise fusion spirit of DenseFusion [41], we concatenate each 3D
+point with its lifted visual feature (denoted by ⊙) and process the fused point set with a Dynamic
+Graph Convolutional Neural Network (DGCNN) encoder EGCN(·). This yields the fused embedding
+Ffuse = EGCN({Pi ⊙fi}N
+i=1) ∈Rn×d, which serves as local geometry-aware input tokens for the
+Transformer encoder, where n = 128 and d = 512 denote the number of tokens and the embedding
+dimension, respectively.
+3.2
+MoE-Based Object Encoding
+The DGCNN tokens encode local surface neighborhoods and point-wise visual cues. We process
+these tokens with a stack of Transformer blocks with multi-head self-attention [40], following the use
+of Transformers for point cloud completion and geometry modeling [48, 49]. This stage integrates
+local evidence across the object crop to form an object-level representation for metric prediction.
+To increase representation capacity with conditional expert aggregation, we replace the standard
+feed-forward layers in each Transformer block with Mixture-of-Experts (MoE) layers [4, 5, 8]. Each
+MoE layer contains an independent set of experts and uses a linear gating network to compute softmax
+probabilities over Ne = 8 experts. For each token, we select the top-2 experts according to the gating
+scores, route the token to these experts, and aggregate their outputs using the selected probabilities
+renormalized to sum to one. A soft load-balancing penalty encourages balanced gate probabilities
+during training [36]. Finally, the encoded tokens are aggregated by global pooling to produce a
+compact object representation for direct 6D pose, size, and shape prediction.
+3.3
+Direct Pose-Size and Shape Decoding
+F2G-Pose uses two lightweight decoding branches on top of the shared object representation. The
+pose-size branch predicts the metric state directly, while the shape branch predicts complete geometry
+in the camera frame. Both branches are trained jointly, so dense geometric supervision can regularize
+the representation used for direct pose and size prediction without adding any test-time optimization
+or candidate extraction.
+Pose and Size Estimation. The pose-size branch regresses rotation, translation, and metric size
+directly from the global object representation. For rotation, we adopt the continuous 6D representa-
+tion [56], which uses the first two columns of the rotation matrix R ∈SO(3) and reconstructs a valid
+matrix via orthogonalization. This parameterization improves optimization stability while keeping the
+prediction deterministic and feed-forward. The branch outputs the final pose-size estimate directly,
+without sampling pose candidates or applying post-hoc aggregation.
+4
+
+
+Camera-Frame Shape Completion. From the extracted global feature vector, we first regress a
+coarse complete object shape Pcoarse ∈R512×3 using a lightweight MLP. Since the input partial
+point cloud P contains observed metric geometry, we concatenate Pcoarse with farthest-point-sampled
+observations from P to form a combined point set, which is then processed through another MLP
+with a Sigmoid activation to produce a confidence score for each point. This selects reliable points
+for fusion, producing the refined fused point cloud Pfuse ∈R512×3. Finally, each point in Pfuse is
+augmented with the global feature vector and passed through an MLP to predict four local offsets per
+point, yielding Pdense ∈R2048×3. The shape is reconstructed directly in the camera frame, providing
+a geometry output and a dense auxiliary signal for learning metric-consistent object representations.
+3.4
+Training Objectives
+Pose and Size Regression Loss. We supervise pose and size with Smooth L1 losses. For rotation, we
+account for object symmetries following the benchmark treatment in [51], so symmetry-equivalent
+rotations are treated as valid targets rather than arbitrary errors. Specifically, for each axis, an object’s
+symmetry is categorized as no symmetry, 90-degree rotational symmetry, 180-degree rotational
+symmetry, or arbitrary-angle rotational symmetry. Based on this classification, we generate a set of
+valid ground-truth rotation matrices and compare the predicted rotation against all candidates. The
+loss is computed with respect to the closest ground-truth rotation. The pose and size estimation losses
+are defined as:
+Lrot =
+min
+Rgt
+i ∈GR
+SmoothL1(ˆr, rgt
+i ),
+(1)
+Ltrans = SmoothL1(t, tgt),
+(2)
+Lsize = SmoothL1(s, sgt).
+(3)
+Here, ˆr ∈R6 is the rotation head’s raw output, and rgt
+i stacks the first two columns of Rgt
+i . The
+translation and size targets are tgt and sgt. The set GR = {Rgt
+i }M
+i=1 contains symmetry-equivalent
+target rotations; the minimum is taken over their 6D representations before orthogonalization.
+Reconstruction Loss. For camera-frame shape completion, we adopt the Chamfer Distance with L1
+norm, following [48], to supervise both the coarse and dense point cloud outputs. Specifically, we
+define two reconstruction losses: one for the selected coarse point cloud Pfuse and another for the
+final dense reconstruction Pdense. The Chamfer Distance measures the average closest-point distance
+between the predicted and ground-truth point sets, encouraging accurate geometry at different stages
+of the pipeline.
+The reconstruction losses are formulated as follows:
+Lrecon = Chamfer(Pfuse, Pgt) + Chamfer(Pdense, Pgt).
+(4)
+Here, Pgt is the same ground truth complete point cloud for both terms. These losses jointly guide
+the model to generate increasingly accurate shapes from coarse to fine resolution.
+MoE Balancing Loss. To encourage balanced expert usage in the MoE layers, we incorporate a
+load-balancing auxiliary loss, following the Switch Transformer design [8]. For each MoE layer with
+Ne experts, the gating network produces a probability distribution over the experts. The auxiliary
+loss Laux is defined to encourage a uniform distribution of tokens across experts:
+Laux = 1
+L
+L
+X
+l=1
+ 
+Ne ·
+Ne
+X
+i=1
+f (l)
+i
+· P (l)
+i
+!
+,
+(5)
+Here, L is the number of MoE layers and P (l)
+i
+is the mean gating probability over all tokens for
+expert i in layer l. We use the soft variant f (l)
+i
+= P (l)
+i , so each layer contributes Ne
+P
+i(P (l)
+i )2.
+All Losses. Our final objective integrates direct pose-size prediction, camera-frame shape completion,
+and MoE load balancing:
+L = Lrecon + Lrot + Ltrans + Lsize + λLaux,
+(6)
+where λ is a balancing coefficient. In practice, we set λ = 0.01.
+5
+
+
+Table 1: Category-level pose-size estimation on ROPE and SOPE under the shared SOPE/ROPE category
+taxonomy. ‘–’ indicates unavailable or non-hardware-normalized metrics. Joint-RegDiff and RFMPose are
+report-only comparisons from their papers. * indicates our pose-only inference mode (shape head disabled); the
+full model runs at 23.7 FPS including shape completion.
+Dataset
+Method
+AUC ↑
+VUS ↑
+Mean error ↓
+FPS ↑
+IoU25 IoU50 IoU75 5◦2cm 5◦5cm 10◦2cm 10◦5cm rot(◦) trans(cm)
+ROPE
+NOCS [42]
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+–
+–
+5
+SGPA [1]
+10.5
+2.0
+0.0
+4.3
+6.7
+9.3
+15.0
+60.2
+2.81
+6
+IST-Net [26]
+28.7
+10.6
+0.5
+2.0
+3.4
+5.3
+8.8
+78.4
+3.40
+35
+HS-Pose [55]
+31.6
+13.6
+1.1
+3.5
+5.3
+8.4
+12.7
+63.3
+3.02
+50
+GenPose [50]
+–
+–
+–
+6.6
+9.6
+13.1
+19.3
+42.2
+2.05
+6
+GenPose++ [51]
+39.0
+19.1
+2.0
+10.0
+15.1
+19.5
+29.4
+30.7
+1.28
+4
+Joint-RegDiff [20]
+–
+–
+–
+10.9
+–
+20.8
+–
+–
+–
+–
+RFMPose [32]
+42.1
+21.0
+2.2
+10.4
+15.7
+21.0
+30.8
+–
+–
+–
+Ours
+46.5
+27.8
+5.8
+11.3
+15.9
+21.8
+31.1
+27.5
+1.19
+28∗
+SOPE
+NOCS [42]
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+–
+–
+5
+SGPA [1]
+13.3
+3.2
+0.0
+7.7
+10.1
+15.0
+20.4
+33.8
+2.09
+6
+IST-Net [26]
+36.5
+16.9
+1.4
+3.6
+5.1
+8.6
+11.4
+60.4
+3.72
+35
+HS-Pose [55]
+40.1
+21.7
+3.2
+6.3
+8.0
+13.6
+17.3
+39.9
+2.46
+50
+GenPose [50]
+–
+–
+–
+11.9
+14.4
+21.2
+26.3
+26.1
+1.62
+6
+GenPose++ [51]
+50.1
+31.9
+6.4
+18.4
+23.0
+31.9
+40.2
+19.9
+1.14
+4
+Ours
+59.6
+43.7
+16.5
+20.5
+24.2
+35.2
+42.1
+15.7
+0.88
+28∗
+4
+Experiments
+Datasets. We use SOPE [51] as the training source for F2G-Pose; it contains 5K synthetic object
+instances from 149 categories with category-level canonical pose, metric size, and complete shape
+supervision. Pose-size evaluation uses SOPE and ROPE [51]: SOPE measures synthetic benchmark
+performance, while ROPE evaluates transfer to scanned real objects under the same category taxon-
+omy. For camera-frame geometry evaluation, we use SOPE and HouseCat6D [17], where complete
+object geometry is available. For additional real-world transfer, we evaluate selected HANDAL
+objects [10], including hammers, mugs, pans, and wrench-like tools. The 92 instances from seven
+HANDAL categories map to six SOPE categories; selection follows taxonomy correspondence. Thus,
+ROPE and this HANDAL subset evaluate seen-category, unseen-instance transfer (Appendix B.4).
+Baselines and metrics. For category-level pose-size estimation, we compare with NOCS, SGPA,
+IST-Net, HS-Pose, GenPose, and GenPose++ using the SOPE/ROPE benchmark results reported
+by Omni6DPose [51]. Joint-RegDiff [20] and RFMPose [32] are report-only comparisons from
+their papers, using public metrics available under the SOPE/ROPE taxonomy. For reference-based
+comparisons on real datasets, we additionally report FoundationPose [46] and Any6D [21]. For
+runtime comparison, we benchmark executable methods under a unified inference protocol using the
+same segmentation masks, RGB-D crops, depth preprocessing, batch size 1, and GPU-synchronized
+timing on one RTX 4090; accuracy results follow the evaluation sources specified above. Pose-size
+accuracy is evaluated with AUC of 3D bounding-box IoU at thresholds 25/50/75, VUS under joint
+rotation-translation thresholds, and mean rotation/translation error. Shape completion is evaluated
+using Chamfer-L1 distance.
+4.1
+Comparison with State-of-the-Art Methods
+Pose-size accuracy and latency. Table 1 shows that F2G-Pose improves the accuracy-latency
+operating point of category-level RGB-D pose estimation. On SOPE, F2G-Pose improves GenPose++
+from 31.9 to 43.7 AUC at IoU50 and reduces mean rotation error from 19.9◦to 15.7◦; on ROPE, it
+improves AUC across all IoU thresholds and matches or exceeds the available high-precision VUS
+results. This gain is not only a speedup from removing iterative sampling. The larger improvement on
+IoU and rotation-sensitive metrics indicates that direct prediction benefits from stronger conditioning:
+dense image features preserve category and part cues, local point neighborhoods preserve observed
+surface evidence, and global token interactions integrate these cues into a metric pose-size estimate.
+6
+
+
+Figure 2: Qualitative results on ROPE. We show the input RGB image, ground-truth pose, poses from GenPose++
+and F2G-Pose, and the predicted camera-frame shape.
+Table 2: GenPose++ candidate diagnostics on ROPE. The sampled set can contain accurate hypotheses, but
+deployed accuracy depends on candidate extraction.
+Analysis
+Rotation Error (degrees)
+Mean ↓
+Median ↓
+> 45◦↓
+≤5◦↑
+All candidates
+39.3
+8.2
+26.9%
+34.0%
+Best-of-50 oracle
+9.0
+1.78
+6.1%
+79.3%
+Final pipeline
+30.7
+5.2
+19.1%
+48.3%
+At the same time, F2G-Pose runs at 28 FPS in pose-only mode and 24 FPS in full-model mode,
+compared with 4 FPS for GenPose++, yielding a single-pass estimate without candidate scoring,
+filtering, or clustering. More qualitative examples are provided in Appendix A.7.
+Candidate-to-decision and time-budget analysis. Table 2 examines the candidate behavior of
+GenPose++ as a strong generative baseline. Its candidate distribution is heavy-tailed: although the
+median rotation error is only 8◦, the mean rises to 39◦, with 26.9% of sampled candidates exceeding
+45◦. With K = 50 samples, an oracle selects a candidate within 5◦for 79.3% of instances, achieving
+a median error of 1.78◦. However, a deployed pipeline must still score, filter, cluster, or aggregate
+these candidates, so its final prediction can be substantially worse than the oracle. This highlights
+the candidate-to-decision gap discussed in the introduction: candidate-set quality and deployed
+prediction quality are related but not equivalent. Candidate quality also varies with object structure;
+no-symmetry objects have the largest mean rotation error, suggesting that sampling difficulty is
+driven not only by pose ambiguity but also by distinctive yet partially observed geometry. Additional
+candidate diagnostics by symmetry are provided in Appendix A.4.
+Figure 3 evaluates the same issue under a real-time budget. Reducing diffusion candidates improves
+responsiveness but lowers final accuracy because candidate extraction becomes less reliable. F2G-
+Pose avoids this trade-off by optimizing the final pose-size decision directly.
+Geometry output and shape completion. Table 3 evaluates camera-frame geometry output. The
+point-completion baselines are trained on the SOPE training split with the same partial-to-complete
+camera-frame targets. Compared with these geometry-only baselines [47–49], F2G-Pose achieves
+substantially lower Chamfer-L1 error on both SOPE and HouseCat6D. The qualitative results in
+Fig. 2 show that F2G-Pose successfully reconstructs complete object geometries. Unlike these
+geometry-only completion baselines, F2G-Pose predicts shape from a shared RGB-D representation:
+7

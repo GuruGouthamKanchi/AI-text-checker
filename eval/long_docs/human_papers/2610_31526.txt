@@ -1,0 +1,651 @@
+Direct Inference on Admissible Sets (Diona)
+Lorenzo Sabug Jr.∗, Eric Kerrigan
+Abstract
+We propose a new regression method named Direct Inference on Admissible Sets
+(Diona) that directly uses samples to estimate the state and its derivatives at
+a query point, along with their admissible bounds, without long global training.
+By casting the values and derivatives at the query and neighbouring samples
+as latent variables in a constrained optimisation problem, the burden of long
+training loops becomes one of on-demand local solves. We establish Diona’s
+theoretical properties including finite-sample coverage and, in the noiseless case,
+convergence to the true state and derivatives under dense sampling. In a nonlin-
+ear regression benchmark on six functions of three to eight dimensions, Diona
+was more accurate than a Gaussian process (GP) on noiseless data especially
+with denser data sets. Furthermore, as with GP, it produced uncertainty bounds
+that contained the true value at more than 95% of query points in four func-
+tions. Diona’s time to a first prediction after a data set update was three to
+four orders of magnitude shorter than that of the GP, and two to three orders
+shorter than that of a neural network, which was more accurate but offers no un-
+certainty quantification. This low latency is paid for by on-demand predictions,
+so this latency advantage applies when relatively few predictions are needed
+between data updates.
+∗Corresponding author.
+A preliminary version of this work was presented at the 23rd
+IFAC World Congress 2026, Busan, Republic of Korea.
+This work was supported by the
+UKRI EPSRC Grant EP/Z533816/1 “Concurrent Learning and Control of Uncertain Large-
+Scale Phenomena”.
+Email addresses: l.sabug21@imperial.ac.uk (Lorenzo Sabug Jr.),
+e.kerrigan@imperial.ac.uk (Eric Kerrigan)
+arXiv:2610.31526v1  [math.OC]  22 Oct 2026
+
+
+1. Introduction
+The reconstruction of a hidden function from existing samples is a long-
+standing problem across science and engineering, especially when acquiring sam-
+ples proves expensive and/or challenging, e.g., in computational fluid dynam-
+ics, wireless sensor networks-based data gathering, or robot-based exploration.
+Such a problem, referred to as “data-driven regression” or “interpolation”, is a
+well-investigated topic [1], addressing the need for fast, accurate, and reliable
+estimates.
+There have been many previous works on data-driven regression, with clas-
+sical methods relying on basis function fitting [2, 3], kernel functions [4, 5],
+training parametric surrogate models, e.g., neural networks [6]. However, there
+is need to choose/build a function library, kernel, and/or an architecture, which
+is consequential for the resulting accuracy and computational burden. Another
+class of methods rely on direct samples weighting [7, 8], which however do
+not account for quadratic and/or curvature-related trends, affecting prediction
+accuracy for reconstructing nonlinear functions from sparse samples. Other ap-
+proaches do not assume nor fit an a priori known/designated function form,
+and choose their estimates from an admissible set. Examples include nonlinear
+set membership (NSM) methods [9, 10], Lipschitz-based interpolation [11], and
+kinky inference [12], whose heritage we take for our proposed method. Aside
+from point-value estimates, uncertainty quantification is investigated in different
+forms in [9, 12, 5, 2], among others, a relevant quantity for exploration-based
+sampling.
+In many compelling applications like emergency response and robotic explo-
+ration, rapidly accumulated samples and evolving data sets must influence the
+next decisions, e.g., to take an action or select the next sampling points. For ex-
+ploration in particular, the uncertainty measure is also a mission decision metric,
+rather than a post hoc reported quantity. Therefore, there is demand for ap-
+proaches that balance accurate predictions, informative and tight uncertainty
+bounds, and computational efficiency: in particular, a low latency between a
+2
+
+
+data set update and a prediction.
+This paper proposes a new formulation to use local information to estimate
+the state at a prediction point (also referred to in this paper as ‘query point’).
+Without assuming a functional form nor parametrised model, we use regular-
+ity assumptions on the underlying functions and draw the Taylor relationships
+between the query point and neighbouring samples, computing the admissible
+set of state values and derivatives. Our method builds on NSM, kinky infer-
+ence, and Lipschitz interpolation, but they only exploit a first-order regularity
+assumption, so their uncertainty bounds grow linearly with distance from the
+closest sample. Our method, on the other hand, uses a Lipschitz-continuous Hes-
+sian with latent gradients and Hessians; these account for the local curvature
+leading to uncertainty that shrinks with the cube of the sample neighbourhood
+radius in the noiseless case. Our contributions are the following:
+• We cast the regression problem as a joint set estimation of admissible
+values and derivatives, using only (zeroth-order) function value samples,
+and regularity assumptions. As a result, we arrive at a point estimate,
+and the uncertainty bounds on the state and its derivatives.
+• We derive the information radius—not just on the value estimate at the
+query point, but also its derivatives—for the function smoothness class we
+consider. Furthermore, in the noiseless case, we establish consistency on
+the value and derivatives as the samples set becomes dense.
+• We use our results to build a practical regression algorithm which, given a
+samples set and a query point, solves small linear programs to simultane-
+ously estimate the state and derivatives, as well as their corresponding un-
+certainty bounds. Our new Direct Inference on Admissible Sets (Diona)
+needs no offline training: every prediction is a per-query, on-demand solve,
+and therefore does not require any retraining in face of evolving (appended,
+changed) data sets.
+We tested Diona in a nonlinear regression benchmark involving six functions
+3
+
+
+of three to eight dimensions against a Gaussian process (GP), a neural network
+(NN), nonlinear set membership (NSM), radial basis functions and inverse dis-
+tance weighting. In the noiseless cases, Diona had lower errors than the GP
+especially with the densest data sets. It also gave tighter uncertainty bounds
+than NSM while covering the true value within those bounds at more than 95%
+of query points in four functions, similar to GP. In noisy cases, Diona’s accuracy
+advantages were swept away, although it remained competitive with the other
+methods. Furthermore, in the time that the GP needs to train, Diona pro-
+duced around 104 predictions (102–103 predictions within the training time of
+a GPU-trained NN). Diona’s timing advantage pays off in regimes where data
+sets change often and relatively few predictions are needed between updates.
+A preliminary version of this work appeared as Direct Constraints Based
+Regression (DCBR) in [13].
+In relation to that work, we have significantly
+simplified the formulation, treated uncertainty quantification, investigated the
+theoretical properties, discussed implementation-related aspects, and performed
+a more exhaustive and detailed benchmark. The pertinent code base for Diona,
+along with the benchmark scripts, is available on GitHub under the following
+URL: https://github.com/lorenzosabugjr/Diona.
+Notation
+In this paper, we denote x′ ∈RD (D is the dimensionality) as the query
+point, at which we estimate a state value u′ from existing samples and other
+a priori information. We use “sample” to refer to the tuple (x(i), z(i)), where
+x(i) ∈RD is the sampled location, and z(i) is the (possibly noisy) measurement
+at x(i); we may refer to a sample just by x(i), as appropriate to the context.
+For any x(i), we define a displacement vector ai = x′ −x(i).
+For brevity, we use the following shorthands for the value, gradient, and
+Hessian of u at the query point: u′ = u(x′), g′ = ∇u(x′), H′ = ∇2u(x′); ac-
+cordingly, we use u(i), g(i), and H(i) to refer to u(x(i)), ∇u(x(i)), and ∇2u(x(i)),
+respectively.
+The Hessian H′ (resp. H(i)) is used only in the intermediate Taylor-based
+4
+
+
+relations of Section 2.2; however, in most of our mathematical development, we
+use its symmetric half-vectorisation h′ .= vech(H′) ∈RDh, Dh .= D(D+1)
+2
+(and
+likewise h(i) .= vech(H(i))). We define the state triple at the query point as the
+column vector
+θ′ .= col(u′, g′, h′) ∈R1+D+Dh.
+For a sample x(i), the corresponding triple is θ(i) .= col(u(i), g(i), h(i)).
+We reserve an undecorated θ (with numeric subscripts θ1, θ2, . . . where more
+than one is needed) to denote a generic, arbitrary element of an admissible set,
+e.g. inside a sup, inf, or ∀quantifier.
+On the other hand, ˜· denotes a spe-
+cific, named admissible triple, e.g. ˜θ′ .= col(˜u′, ˜g′, ˜h′) for a nominal admissible
+triple used internally by the method described in this paper. All norms ∥·∥
+are 2-norms, unless specified by a subscript. Lastly, σ(·) denotes the minimum
+singular value of a matrix.
+2. Theoretical Framework
+2.1. Preliminaries
+We consider the estimation of an a priori unknown state function u(x),
+u : R →R, where R ⊂RD is a closed and compact D-dimensional convex
+region. While we do not have access to any closed-form expression of u(x), i.e.,
+it is “black-box”, we take an assumption on its continuity, which we state as
+follows:
+Assumption 1 (Lipschitz Hessian continuity). The latent value function u(x)
+has a Lipschitz-continuous Hessian with an a priori known constant LH > 0,
+∇2u(x1) −∇2u(x2)
+
+∞≤LH∥x1 −x2∥, x1, x2 ∈R.
+Furthermore, we can access individual values at discrete sampling points x(i) ∈
+R, i ∈N through sampling, for which we state another assumption:
+5
+
+
+Assumption 2 (Sampling with finite noise bound). For a discrete point x(i),
+it is possible to acquire the corresponding function value u(x(i)), subject to noise
+with a priori known finite bound ¯ϵ ∈[0, ∞):
+z(i) = u(x(i)) + ϵi, |ϵi|≤¯ϵ.
+The above assumption is commonly taken in practical settings, where evalua-
+tions are subject to (additive) sensor or process noise. However, we also cover
+the noiseless case: Assumption 2 only assumes that the noise bound is a priori
+known. Note that we only have access to the function values, and not to any
+first- nor higher-order derivatives, i.e., we are only given zeroth-order informa-
+tion.
+Consider a data set X⟨n⟩composed of n (possibly noise-injected) samples
+X⟨n⟩.=
+n
+(x(1), z(1)), . . . , (x(n), z(n))
+o
+.
+To tackle the estimate of state u′ at an unsampled point (henceforth referred
+to as the “query point”) x′ ∈R, we use our a priori information as provided
+by the existing samples X⟨n⟩and Assumptions 1-2. We now formally state our
+problem:
+Problem 1 (State triple estimation). Let X⟨n⟩be a data set composed of state
+value samples satisfying Assumptions 1-2. Design a method that, for an interior
+query point x′ ∈R, reports a state triple estimate ˜θ′, and its corresponding
+bounding set T ′⟨n⟩satisfying the finite-sample coverage on the true triple,
+θ′ ∈T ′⟨n⟩.
+In the noiseless case, both ˜θ′ and T ′⟨n⟩shall converge to the true triple θ′ as
+sampling becomes dense in the sense defined later in Definition 2.
+We introduce in this paper a simple approach to solve Problem 1, using a
+combination of Taylor series expansion and set membership approaches.
+6
+
+
+2.2. Taylor-based uncertainty quantification and estimation
+We express u′ with respect to (w.r.t.) an existing sample u(i) and its (un-
+known) derivatives up to the second order, with a truncation error δi
+u′ = u(i) + g(i)⊤ai + 1
+2a⊤
+i H(i)ai + δi, |δi|≤LH
+6 ∥ai∥3.
+(1)
+Invoking kinematic relations of the gradients and Hessians at x′ and x(i),
+g′ = g(i) + 1
+2
+
+H′ + H(i)
+ai + ωi, ∥ωi∥∞≤LH
+4 ∥ai∥2
+(2)
+H′ = H(i) + Γi, ∥Γi∥∞≤LH∥ai∥.
+(3)
+Using h′ = vech(H′) and with DD as the duplication matrix, we denote λi =
+1
+2D⊤
+D(ai ⊗ai) such that (s.t.)
+1
+2a⊤
+i H(i)ai = λ⊤
+i h(i), and ci = 1
+2D⊤
+D(ai ⊗ID)
+s.t.
+1
+2H(i)ai = c⊤
+i h(i). (1)-(3) then become
+u′ = u(i) + a⊤
+i g(i) + λ⊤
+i h(i) + δi, |δi|≤LH
+6 ∥ai∥3
+(4)
+g′ = g(i) + c⊤
+i (h′ + h(i)) + ωi, ∥ωi∥∞≤LH
+4 ∥ai∥2
+(5)
+h′ = h(i) + γi, ∥γi∥∞≤LH∥ai∥.
+(6)
+We consider the neighbouring samples set w.r.t. x′, denoted as N ⟨n⟩⊂X⟨n⟩
+with cardinality N. Adding the backward value expansions1, and recasting all
+1The backwards gradient and Hessian relations only duplicate the original ones.
+7
+
+
+the previous equations as inequalities, we arrive at:
+u′ −
+
+u(i) + a⊤
+i g(i) + λ⊤
+i h(i) ≤LH
+6 ∥ai∥3
+(7a)
+u(i) −
+ u′ −a⊤
+i g′ + λ⊤
+i h′ ≤LH
+6 ∥ai∥3
+(7b)
+g′ −
+
+g(i) + c⊤
+i (h′ + h(i))
+
+∞≤LH
+4 ∥ai∥2
+(7c)
+h′ −h(i)
+∞≤LH∥ai∥
+(7d)
+|u(i) −z(i)| ≤¯ϵ.
+(7e)
+We collect the unknown state values and derivatives from the inequalities above,
+and organise as triples at the query point x′ and its N neighbours
+ψ .= col
+
+θ′, θ(i1), θ(i2), . . . , θ(iN)
+,
+(8)
+and the inequalities can be expressed in the form of
+Ξψ ≤b.
+with the matrices Ξ and b composed of terms pertaining to the displacements
+ai and the Hessian Lipschitz constant LH.
+Since the samples are fixed, ai
+are constants and the inequality above is linear w.r.t. the unknowns, despite
+describing quadratic Taylor relations. Let us define the admissible set of state
+triples
+A = {ψ : Ξψ ≤b} .
+(9)
+Since ψ is the collection of the admissible triples at the query point and the
+neighbouring samples, we finally have
+T ′⟨n⟩= projθ′A,
+8
+
+
+x
+-2
+-1.5
+-1
+-0.5
+0
+0.5
+1
+1.5
+2
+u(x)
+-2
+-1
+0
+1
+2
+true function u(x)
+existing samples
+NSM bounds
+Dංඈඇൺ bounds
+Figure 1: 1-dimensional visualisation of Hessian Lipschitz-based Diona uncertainty
+bounds from noiseless samples, with u(x) = sin(2x) + 0.3x2, in comparison with
+a value Lipschitz-based NSM bounds.
+and the upper- and lower bounds for u(x′) are
+u′ =
+max
+θ∈T ′⟨n⟩u
+(10a)
+u′ =
+min
+θ∈T ′⟨n⟩u.
+(10b)
+Consequently, the state value estimate is the midpoint
+˜u′ = u′ + u′
+2
+,
+(11)
+and the uncertainty measure is the difference
+w = u′ −u′.
+(12)
+Similar bounds and central estimates on g′ and h′ are readily available from
+T ′⟨n⟩, using the same approach. Fig. 1 shows a visual of curvature-aware un-
+certainty bounds on a 1-dimensional function given noiseless samples and an a
+priori known LH, compared to nonlinear set membership (NSM)-based bounds
+with a known Lipschitz constant γ.
+2.3. Neighbour samples
+For a candidate sample x(i) at trial radius r, we denote ˆai .= ai
+r and ˆλi .= λi
+r2 ,
+and build a row ϕi .= [1 −ˆa⊤
+i
+ˆλ⊤
+i ]⊤, following the Taylor expansion at (7b).
+9
+
+
+For a candidate set N, let Φ be the stacked rows ϕ⊤
+i , x(i) ∈N.
+Definition 1 (µ0-poised neighbour set). A neighbour set N with N ≥1+D +
+Dh is µ0-poised if for a given µ0 > 0, σ(Φ) ≥µ0
+√
+N.
+Assumption 3. For a query point x′ in the interior of R, the data set X⟨n⟩
+(with n large enough) and 0 < µ0 < ¯µD2, we have access to its corresponding
+minimum-radius µ0-poised neighbour set
+N ⟨n⟩∗= arg min
+M⊂X⟨n⟩,
+µ0-poised
+max
+x(i)∈M∥x′ −x(i)∥
+with radius r⟨n⟩∗
+N
+.
+In the succeeding theoretical discussions, we consider an interior query point
+x′ with a corresponding poised neighbour set N, indicating the richness of
+information to estimate g′ and H′.
+3. Theoretical properties
+Here we introduce theoretical properties of our proposed method, whose
+proofs are all delegated to the Appendix.
+Lemma 1 (Containment). Given the query point x′, the data set X⟨n⟩, and
+under Assumptions 1-2, the true query triple θ′ is contained in T ′⟨n⟩.
+Proof. See Appendix.
+With Lemma 2, the true triples at the query point θ′ and its neighbours
+are admissible for any number of samples by construction. This result therefore
+relies on the validity or a priori knowledge of LH and ¯ϵ: resorting to their
+(under)estimates (as in Section 4.1) voids this guarantee.
+2¯µD is the supremum of σ(Φ)/
+√
+N over all point sets, i.e. the square root of the E-optimal
+design value for second-order regression on the unit ball, obtained as in [14] with the scaling
+of Φ: ¯µD = (16D + 1)−1/2 for D ≤4 and ¯µD = ((D + 4)2 + 1)−1/2 for D ≥4.
+10
+
+
+Lemma 2 (Worst-case diameter of admissible states and derivatives). For the
+query point x′ and data set X⟨n⟩, consider two admissible triples θ1, θ2 ∈T ′⟨n⟩,
+and denote the differences in their latent states and derivatives as ∆u = u1 −
+u2, ∆g = g1 −g2, ∆h = h1 −h2. Then, under Assumptions 1-2, and with any
+µ0-poised neighbour set N,
+|∆u| ≤du = 1
+µ0
+
+2¯ϵ + LH
+3 r3
+N
+
+(13a)
+∥∆g∥2 ≤dg = 1
+µ0
+ 2¯ϵ
+rN
++ LH
+3 r2
+N
+
+(13b)
+∥∆h∥2 ≤dh = 1
+µ0
+ 2¯ϵ
+r2
+N
++ LH
+3 rN
+
+(13c)
+where rN = maxx(i)∈N ∥x(i) −x′∥.
+Proof. See Appendix.
+In the noiseless setup, going from u′ to g′ to h′ costs the bounds by one power
+of the neighbourhood radius (r3
+N , to r2
+N and rN ): considering a neighbourhood
+with half the radius tightens the u′ bound eightfold. With noise, du tends to
+a floor of
+2ϵ
+µ0 as rN →0. In contrast, dg and dh grow again when considering
+neighbourhoods with rN <
+
+3ϵ
+LH
+1/3
+and rN <
+
+12ϵ
+LH
+1/3
+, respectively.
+Remark 1 (Information radius). When the state triple estimate ˜θ′ is taken as
+the centroid3 of the componentwise minimum bounding box of T ′⟨n⟩, then the
+∞-norm information radii (as in [9]) on u, g, and h are bounded by 1
+2du, 1
+2dg,
+and 1
+2dh, respectively, since ∥·∥∞≤∥·∥2.
+Definition 2 (Dense sampling). Let X⟨n⟩denote the set of sampled points after
+n samplings. We say that a sampling regime is dense in R if
+max
+x′∈R
+min
+x(i)∈X⟨n⟩
+x′ −x(i) −−−−→
+n→∞0.
+3which is not required to be in the feasible triples set, see [9]
+11
+
+
+Lemma 3. Given a query point x′ ∈R, and under Assumptions 1-3 and dense
+sampling, r⟨n⟩∗
+N
+−−−−→
+n→∞0.
+Proof. See Appendix.
+Theorem 1 (Convergence to the true triple). Under Assumptions 1-3 and
+¯ϵ = 0, the admissible set of triples at x′ shrinks to the true one, i.e.,
+sup
+θ∈T ′⟨n⟩∥θ −θ′∥−−−−→
+n→∞0
+(14)
+as the samples set densely covers the search space.
+Proof. See Appendix.
+The result in Theorem 1 relies on ϵ = 0, a known LH, and a poised neighbour
+set with radius that shrinks with sampling (Lemma 3). Given Theorem 1 and
+Remark 1, the estimated triple converges to the true one, ∥˜θ′ −θ′∥→0.
+4. Implementation notes
+We tackle here practical workarounds for settings where we do not satisfy
+Assumptions 1-3. We use a combination of samples-based estimation of ϵ, LH
+and a greedy poised neighbours selection approach.
+4.1. Parameter estimation
+In many applications, the Hessian Lipschitz constant LH, and the noise
+bound ¯ϵ are not a priori known, and must be estimated from the data set
+X⟨n⟩. To estimate ¯ϵ, any preferred method can be used, and here we use the
+set membership-based approach from [15], to which we refer the reader for more
+information.
+We estimate LH by solving an LP over the active points set P = x′ ∪N,
+˜LH =
+min
+LH, ψP LH
+s.t.
+ΞPψP ≤bP,
+12
+
+
+where ΞP, bP are assembled similarly as in Section 2.2, but with LH rear-
+ranged/cast as a decision variable (stacked with θ′, θ(i1), . . . , see (8)).
+Resorting to LH and ¯ϵ estimates invalidates the formal theoretical guaran-
+tees. Nevertheless, we show in the results that Diona still performs competi-
+tively even with estimated constants.
+4.2. Practical neighbour selection
+Selecting a minimum-radius µ0-poised neighbour set to satisfy Assumption 3
+is combinatorial w.r.t. the samples, and can be computationally prohibitive.
+Therefore, we have built a simple greedy method to collect the neighbours set.
+This involves starting from a nearest samples set as initial candidates for se-
+lection, and building a neighbours set achieving a full-rank feature matrix ΦC.
+From this neighbours set, we then iteratively add further samples to achieve the
+µ0-poisedness.
+Upon empirical testing, we opted for three passes of Algorithm 1 (each suc-
+cessive pass excludes previously selected samples), and use the union of all such
+neighbour samples to provide redundancy for computing ˜LH and u′, and u′.
+This is to achieve a more informative ˜LH estimate4 and more reliable bounds
+especially under noise. With a priori known ϵ and LH, Lemma 2 still holds for
+the first neighbour set as the succeeding neighbour “layers” only serve to add
+more constraints.
+5. Direct Inference on Admissible Sets (Diona)
+We build on our theoretical results and use our practical workarounds to
+build a practical nonparametric regression method called Direct Inference on
+Admissible Sets (Diona), summarised in Algorithm 2. Diona picks neighbour-
+ing samples of the query point x′, and assembles the joint linear constraints on
+their corresponding triples (collected in the decision variable ψ), leading to an
+4This is because having only one neighbour “layer” will almost always fit a quadratic,
+corresponding to ˜LH ≈0.
+13
+
+
+Algorithm 1: Practical µ0-poised neighbour selection
+Input: query point x′, poisedness threshold µ0 > 0,
+maximum selected neighbours N
+Data: samples set X⟨n⟩
+Output: ˜
+N, poisedness µ( ˜
+N), radius rN
+1 m ←1 + D + D(D+1)
+2
+; fetch at least m closest samples to x′
+2 while true do
+3
+Retrieve the current nearest-candidate pool C
+4
+Build [1, −ˆa⊤
+i , ˆλ⊤
+i ]⊤for x(i) ∈C, build feature matrix ΦC
+5
+Build proposed full-rank m-point set ˜
+N with column-pivoted QR on Φ⊤
+C ,
+expanding C as necessary
+6
+if ˜
+N rank-deficient and all samples exhausted then
+7
+return NeighbourFailure
+8
+while | ˜
+N|≤N do
+9
+rN ←maxi∈˜
+N ∥x(i) −x′∥
+10
+Rebuild ΦN , normalised using radius r ˜
+N
+11
+Using SVD, µ( ˜
+N) ←σ(ΦN )/
+q
+| ˜
+N|
+12
+if µ( ˜
+N) ≥µ0 then
+13
+return ˜
+N, µ( ˜
+N), r ˜
+N
+14
+else
+15
+if | ˜
+N|= N or all points in C exhausted then
+16
+break
+17
+else
+18
+Add x(i) ∈C \ ˜
+N that results in maximum µ( ˜
+N ∪x(i))
+19
+if all samples exhausted then
+20
+return NeighbourFailure
+21
+else
+22
+Expand candidate pool C
+optimisation problem for local regression. This replaces a long and global model
+training process, with a per-query optimisation problem to compute the state
+estimate and its corresponding uncertainty.
+6. Comparative study
+We subject Diona to an extensive benchmark test for data-driven regression
+of benchmark functions, comparing with methods from literature and common
+practice in terms of prediction accuracy, uncertainty quantification, and compu-
+14
+
+
+Algorithm 2: Direct Inference on Admissible Sets (Diona)
+Input: query x′, samples X⟨n⟩, poisedness threshold µ0 > 0
+Output: scalar estimate ˜u′, bounds [u′, u′]
+1 Extract noise estimate ˜ϵ (if true noise bound ϵ not a priori known, see [15])
+2 N ←NeighbourSelection(x′, X⟨n⟩, µ0) (Algorithm 1)
+3 Solve for (local) Hessian Lipschitz constant estimate ˜LH (Section 4.1)
+4 Assemble the admissible triples polytope A = {ψ : Ξψ ≤b} over {x′} ∪N
+5 Solve for admissible state bounds u′ ←minψ∈A u′; u′ ←maxψ∈A u′
+6 return ˜u′ = u′+u′
+2
+, [u′, u′]
+tational burden. The Julia code base, as well as the Diona package, is available
+in https://github.com/lorenzosabugjr/Diona.
+6.1. Benchmark setup
+We consider the regression of different underlying functions (from D = 3 to
+D = 8) summarised in Table 2, taken from [16]. To present a comprehensive
+analysis, we have considered different data layouts, and with noisy samples.
+For each test function u(x), we generated data sets of increasing density (with
+500D, 1000D, 2000D samples) in a Sobol sequence layout on the respective do-
+mains. To evaluate the practical noise robustness, we tested with exact (noise-
+less) samples and with additive Gaussian noise (20 dB SNR)–a deviation from
+Assumption 2 for Diona.
+We compare all methods in terms of the (approximate) L2 relative error
+which, with U .=
+
+u(q)
+
+q∈Q and ˜U .=
+
+˜u(q)
+
+q∈Q, we measure as
+ϵL2 =
+U −˜U
+
+∥U∥
+with Q being a collection of 5000D Sobol-distributed query points q (and en-
+suring no coincidence with any training samples).
+For regressors with UQ—GP, NSM, Diona—we measure the relative uncer-
+tainty width, given for every q ∈Q as
+wr(q) = w(q)
+|u(q)|
+15

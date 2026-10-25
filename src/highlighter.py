@@ -84,8 +84,8 @@ def run_predictions(
     roberta_dir: str = "models/roberta-sentence-academic-v2"
 ) -> tuple[list[dict], bool]:
     """
-    Runs sentence-level classification using the Hybrid Ensemble Engine (ModernBERT 8k + RoBERTa 512).
-    Applies weighted soft-voting: 0.65 * ModernBERT (macro context) + 0.35 * RoBERTa (micro precision).
+    Runs sentence-level classification using the Hybrid Ensemble Engine (ModernBERT 3-sentence window + RoBERTa 512).
+    Applies adaptive max-pooling with heuristic gating and stylometric adjustments.
     """
     modernbert_exists = (
         os.path.exists(model_dir) and 
@@ -100,8 +100,13 @@ def run_predictions(
     has_models = (modernbert_exists or preloaded_model is not None or roberta_exists or preloaded_roberta_model is not None)
     
     if not has_models:
+        if os.getenv("STRICT_PRODUCTION", "0") == "1" or os.getenv("REQUIRE_MODELS", "0") == "1":
+            raise FileNotFoundError(
+                f"[Fatal] Missing model weights: '{model_dir}' or '{roberta_dir}' not found. "
+                "Production mode forbids simulated or random scores (Project Rule 7)."
+            )
         print(f"\n[Warning] Fine-tuned ensemble models not found at '{model_dir}' or '{roberta_dir}'.")
-        print("[Warning] Entering SIMULATION MODE for demonstration.")
+        print("[Warning] Entering SIMULATION MODE for development/demonstration only.")
         
         import hashlib
         import random
@@ -165,7 +170,7 @@ def run_predictions(
                 next_sent = sentences[idx + 1] if idx < len(sentences) - 1 else ""
                 window_context = f"{prev_sent} {sent} {next_sent}".strip()
 
-                # ModernBERT forward pass (with window context to utilize 8k attention)
+                # ModernBERT forward pass (evaluating 3-sentence window context, truncated to 512 tokens)
                 if mb_model is not None and mb_tokenizer is not None:
                     mb_inputs = mb_tokenizer(window_context if len(window_context) > len(sent) else sent, truncation=True, max_length=512, return_tensors="pt")
                     mb_inputs = {k: v.to(device) for k, v in mb_inputs.items()}

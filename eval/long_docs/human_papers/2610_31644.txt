@@ -1,0 +1,421 @@
+Benchmarking Learnable Representations for Gigapixel Image Compression and
+Super-Resolution
+Matteo Fusconi1, Alex Costanzino1, Pierluigi Zama Ramirez2, Luigi Di Stefano1
+1 CVLab, University of Bologna
+2 Ca’ Foscari University of Venice
+Abstract
+Learnable Representations (LRs) can fit parametric fami-
+lies of functions to diverse kinds of signals. These emer-
+gent neural-native data formats are gathering interest in the
+scientific community due to their compactness, resolution-
+agnosticism and amenability to direct neural processing. On
+the other hand, gigapixel images are becoming increasingly
+widespread across a variety of scientific, cultural, and in-
+dustrial domains. In this paper, we present GIGABENCH,
+the first benchmark and experimental evaluation focused
+on deploying LRs with gigapixel imagery. GIGABENCH
+includes images collected, acquired, and synthetically ren-
+dered across diverse domains, and addresses image com-
+pression and super-resolution. We adapt a representative
+set of LRs, spanning Implicit, Hybrid, and Explicit methods,
+so as to operate reliably at the gigapixel scale on consumer
+hardware. Through systematic evaluation across reconstruc-
+tion quality, model size, compression and inference times,
+we identify consistent trends across methods and suggest
+actionable guidance for future investigation. The project
+page is available here.
+1. Introduction
+The emergence of Learnable Representations (LRs) has
+opened up a different paradigm for image storage, recon-
+struction and processing. Rather than representing an image
+as a discrete grid of pixel values, LRs enable encoding it
+as a continuous function, defined by a set of optimizable
+parameters, that maps spatial coordinates to color values.
+Prominent variants of LRs include Implicit Representations
+[12, 30, 45], which encode an image in the weights of an
+MLP; Hybrid Representations [10, 36, 48], which addition-
+ally incorporate spatially localized learnable features; and
+Explicit Representations [28, 55], which represent images
+using Gaussian primitives. LRs have attracted significant
+attention for their compactness, resolution-agnosticism and
+amenability to direct neural processing. As a matter of fact,
+several recent works [3, 15, 20, 52] have shown how the
+learned parameters can be fed into specifically designed
+meta-networks to perform downstream tasks like classifica-
+tion and retrieval, without requiring reconstruction of the
+original discrete signal. Such property positions LRs as a
+pathway to a new generation of neural-native data formats.
+On the other hand, digital imaging is undergoing a quiet
+resolution revolution, as gigapixel images are becoming in-
+creasingly common across a variety of scientific, cultural,
+and industrial domains, from whole-slide pathology imag-
+ing [7, 14] and satellite remote sensing [11] to high-fidelity
+museum digitisation and panoramic photography [24]. Yet,
+the paradigms and tools for handling images at this scale
+remain largely anchored to classical pipelines, designed in
+an era when such resolutions were inconceivable. Hence, we
+pose a timely research question concerning whether and how
+LRs can be effectively deployed for gigapixel-scale images,
+and which of their variants show the greatest promise for
+enabling adoption within this increasingly relevant regime.
+However, despite the favourable properties of LRs and the
+increasing adoption of gigapixel imagery, the current liter-
+ature lacks a comprehensive and rigorous evaluation of LR
+methods on gigapixel images. Indeed, the reported experi-
+mental findings primarily concern datasets with much lower
+and more conventional resolutions, typically ranging from
+less than one megapixel to a few megapixels, where the com-
+putational cost of fitting LRs remains easily tractable. The
+gigapixel regime, however, introduces fundamentally differ-
+ent challenges, as fitting a single image may require hours
+of training, naive partitioning strategies introduce boundary
+artifacts, and memory constraints force architectural com-
+promises that do not arise at standard resolutions. Adapting
+existing LRs to this setting is therefore a non-trivial task.
+In this paper, we introduce GIGABENCH, a benchmark
+specifically designed to address the aforementioned scien-
+tific questions and foster research into the design of LR ap-
+proaches suitable for gigapixel imagery. We curate a collec-
+tion of gigapixel images across diverse domains and evaluate
+LRs on compression and super-resolution under controlled
+settings. Our evaluation spans the three main families of ap-
+arXiv:2610.31644v1  [cs.CV]  22 Oct 2026
+
+
+proaches: Implicit, Hybrid and Explicit Gaussian-based Rep-
+resentations. Our analysis reveals several consistent trends
+across the three families. Hybrid representations achieve the
+highest reconstruction fidelity but are structurally limited to
+moderate compression ratios, as their grid-based components
+impose a memory floor that prevents compression at extreme
+rates. On the other hand, they neatly outperform other LR
+approaches when it comes to super-resolution, although a hu-
+man evaluation suggests that the merits of LR at the gigapixel
+scales are somewhat uncertain compared to classical method-
+ologies, such as bicubic interpolation. Implicit representa-
+tions, by contrast, can provide high to extreme compression
+ratios, trading fidelity for compression. Explicit represen-
+tations exhibit the most variable intra-family behaviours in
+both compression and super-resolution, with performance
+depending heavily on the chosen parametrisation. Across
+all families, no single approach dominates uniformly as the
+optimal choice depends on the target compression or super-
+resolution ratio, as well as on the quality-speed trade-off.
+Our contributions can be summarised as follows: (i) we
+introduce a curated benchmark of gigapixel images spanning
+10 scenes and different domains, released publicly to foster
+future research; (ii) we provide a systematic comparison of
+representative Implicit, Hybrid, and Explicit representations
+to gigapixel image compression and super-resolution; (iii)
+we characterise the practical trade-offs among the specific
+methods evaluated across fidelity, speed, and downstream
+usability, offering concrete guidance for researchers and
+practitioners working in this emerging regime.
+2. Related Work
+Learnable Representations are a continuous signal represen-
+tation paradigm in which a function parametrized by a set
+of weights is optimized to map coordinates to the values of
+a target signal. This abstraction is broad enough to cover
+image [9], video [8], and audio reconstruction [45], neu-
+ral radiance fields [35], SDF fitting [38], inverse problem
+solving, and more. In this work, we focus on images. Their
+main advantages include resolution agnosticism, a parameter
+count decoupled from sampling density, and full differen-
+tiability of the input domain. We divide LRs into three
+main categories, described in the following sections: Im-
+plicit Representations (IRs), Hybrid Representations (HRs),
+and Explicit Representations (ERs).
+Implicit Representations. Implicit representations [51]
+parametrize the function as a Multi-Layer Perceptron. Their
+principal drawback is the spectral bias of MLP-based ap-
+proximators, which favors low frequencies and impedes
+fitting fine-grained signal content [40]. Following the tax-
+onomy of [17], IRs differ along two axes: coordinate en-
+coding and activation design, and network architecture. On
+the first, random Fourier feature mappings lift input coor-
+dinates into a high-dimensional sinusoidal basis before a
+standard MLP [46], while a complementary line replaces
+ReLU with intrinsically high-frequency activations: peri-
+odic sinusoids [45], complex Gabor wavelets [44], Gaus-
+sians [41], variable-period sinusoids [30], and oscillator-
+based designs [12]. More recent methods select activations
+adaptively from a learned dictionary [23]. On the second,
+the inductive bias is moved into the architecture: multiplica-
+tive filter networks [18] replace additive layer composition
+with element-wise products of Fourier and Gabor filters,
+BACON [29] adds explicit per-layer bandwidth limits for
+multi-scale representation, and INCODE [25] couples the
+MLP with a conditioning sub-network that adapts activation
+parameters to the input. Beyond signal fitting, IRs are in-
+creasingly used as a data representation in their own right,
+with the network weights as the object of downstream learn-
+ing. Functa [15] treats each datum as a function, learning a
+shared prior via per-sample modulations of a meta-learned
+backbone for classification and generation in function space.
+[13] and [52] instead embed the weights of independently
+fitted IRs into a compact latent space, enabling retrieval,
+segmentation, and generation without reconstructing the sig-
+nal. Recently, [20] fits IRs end-to-end with direct classifier
+feedback, addressing the structural inconsistency of weights
+optimized without downstream supervision.
+Hybrid Representations. As the target signal grows in size
+and bandwidth, the spectral bias of pure IRs becomes increas-
+ingly difficult to overcome through activation and encoding
+design alone. This motivates hybrid representations, which
+pair a lightweight MLP decoder with a learnable explicit
+structure, such as grids, hash tables, or basis functions, that
+injects spatial diversity and localizes capacity where the sig-
+nal demands it. ACORN [34] adaptively partitions the input
+domain into blocks, each assigned a small MLP, refining the
+partition to match local signal complexity. MINER [43] rep-
+resents the signal through a Laplacian pyramid of per-block
+coordinate networks, yielding a coarse-to-fine multi-scale
+decomposition. Instant-NGP [36] couples a compact MLP
+with a multi-resolution hash grid of trainable feature vectors,
+achieving orders-of-magnitude speed-ups at the cost of hash
+collisions. NeuRBF [10] generalizes the regular-grid prior
+to adaptive radial basis functions whose centers and shapes
+follow the signal, further composed with multi-frequency
+sinusoids to recover fine details. MetricGrids [48] extends
+the grid paradigm with elementary grids defined in distinct
+metric spaces, acting as higher-order Taylor terms that ap-
+proximate strongly non-linear signals more faithfully than
+linear interpolation alone.
+Explicit
+Representations.
+Explicit
+representations
+parametrize a signal as a collection of graphic primitives
+placed directly in the signal domain, with their location
+and shape exposed as optimization variables. They have
+been investigated under a variety of primitives, including
+Gabor wavelets [50], triangles [21, 22], and anisotropic
+
+
+Gaussians [26]. Among these, Gaussians adapt most nat-
+urally to image fitting: GaussianImage [55] reduces 3D
+Gaussian Splattings [26] to eight parameters per primitive
+and a tile-based rasterizer operating at 103 FPS. Subse-
+quent work scales the paradigm to ultra-high-resolution in-
+puts via feature-aware sampling [28] and multi-scale seeded
+parametrizations [37], with further variants refining initial-
+ization and density control [53].
+Positioning. Despite the breadth and maturity of these meth-
+ods, existing evaluations most commonly rely on Kodak [27]
+and DIV2K [1], datasets originally designed for classical
+compression benchmarking rather than for assessing neural
+representations. Yet even these are not used consistently,
+as different works evaluate on different subsets, at different
+resolutions, under different compression ratio definitions,
+and with different metrics, making cross-paper comparisons
+unreliable even when the data is the same. No prior work
+has systematically evaluated these methods at a gigapixel
+scale, a regime that introduces qualitatively distinct chal-
+lenges in fitting cost, memory, and rate-distortion behaviour.
+GIGABENCH addresses that gap.
+3. Benchmark
+3.1. Data Collection
+GIGABENCH comprises 10 images, curated from publicly
+available sources according to four design principles:
+• Gigapixel Resolution. Each image meets or marginally
+exceeds the one-gigapixel threshold (in practice, 1.0–1.19
+GPx). We enforce this floor so the benchmark deliberately
+clears the symbolic gigapixel mark, and caps it both for
+uniformity across the set and to keep fitting feasible on
+consumer hardware;
+• Domain Diversity. The images span panoramas, industrial
+scans, scientific histopathology slides, satellite imagery at
+varying scales, and synthetic images. This range addresses
+several domains where gigapixel images are becoming
+increasingly relevant;
+• Lossless Appearance. Many gigapixel images distributed
+online are stored as JPEG files and thus carry compression
+artifacts. We exclude these images: since each represen-
+tation method introduces artifacts of its own, pre-existing
+ones would add up and be difficult to disentangle from
+reconstruction errors;
+• Licensing. We retain only images whose original license
+permits research use and redistribution.
+The dataset is released as a bundle under the Creative Com-
+mons Attribution-NonCommercial 4.0 license, with attri-
+bution to this work, plus the individual attributions to the
+original authors of the images. Fig. 1 depicts the images com-
+prising our benchmark, while Tab. 1 reports their metadata,
+with more details provided in the Supplementary.
+Name
+Domain
+Resolution (H,W)
+GPx
+Size [GB]
+Sub-Licence
+Attribution
+Venice
+Panorama
+(20000, 64000)
+1.19
+3.58
+CC BY-NC 4.0
+Jeffrey Martin [24]
+Statuario
+Industrial
+(34015, 33750)
+1.07
+3.21
+CC0 1.0
+Anonymous
+Calacatta Viola
+Industrial
+(50040, 22677)
+1.06
+3.17
+CC0 1.0
+Anonymous
+Breast Cancer
+Scientific
+(29474, 36430)
+1.00
+3.00
+CC BY-NC 4.0
+BRACS [7]
+Kidney
+Scientific
+(55967, 20800)
+1.08
+3.25
+CC BY 4.0
+KPIs [14, 47]
+Munich
+Satellite
+(37454, 32765)
+1.14
+3.43
+CC BY 4.0
+BVV [4]
+Andromeda
+Satellite
+(22230, 55000)
+1.14
+3.42
+CC BY 4.0
+ESA Hubble Telescope [16]
+Italy
+Satellite
+(30654, 35040)
+1.00
+3.00
+Copernicus open data
+Copernicus Sentinel [11]
+Lynxsdesign
+Synthetic
+(24588, 43712)
+1.00
+3.00
+CC BY 4.0
+Lynxsdesign [32]
+House of Chores
+Synthetic
+(24588, 43712)
+1.00
+3.00
+CC BY 4.0
+Blender Studio [6]
+Table 1. GIGABENCH Overview. List of the gigapixel images,
+together with their typology, resolution, raw size in GigaBytes, and
+original license and attribution. More in the Supplementary.
+3.2. Methods Selection
+We evaluate compression and super-resolution performance
+across several LRs drawn from Implicit, Hybrid and Ex-
+plicit Representations. As for super-resolution, we also
+compare LRs to classical interpolation methods, such as
+nearest-neighbour, bicubic, and Lanczos. We select, within
+each family, at least one seminal method alongside one rep-
+resenting the current state of the art. Moreover, the methods
+are used in different configurations, spanning three orders of
+magnitude of compression ratio (101, 102, 103). Within the
+family of Implicit Representations, we choose SIREN [45]
+as the seminal model, FINER [30] as a major advancement,
+especially in fitting sharper details, and FDHO [12] as a
+very recent improvement, yet it was tested at a very small
+scale for Image Compression. All three models come in two
+architectures, as defined by the number of hidden layers and
+hidden features, and denoted by the pair (L, F): a (5, 256)
+architecture, as proposed in [45], along with a (8, 1024) vari-
+ant, matching respectively the ∼100 and ∼1000 scales
+(skipping ∼10 as it would have been computationally un-
+feasible). As for Hybrid Representations, we consider the
+seminal Instant-NGP [36], and the two main follow-ups
+NeuRBF [10] and MetricGrids [48], each at two hash-table
+sizes, 224 and 222, denoted as (T = 24) and (T = 22), re-
+spectively. The first is the value recommended by [36, 48]
+for gigapixel fitting, while the second is recommended to fit
+images in general. These configurations address the ∼10
+scale, landing at ∼5 and ∼15 respectively. Concerning
+Explicit Representations, we choose the seminal Gaussian-
+Image [55] method and the more recent SmartSplat [28], as
+it has been trained and evaluated at the highest resolution
+(DIV16K dataset), while also being robust enough to con-
+verge at very high compression ratios. Given the possibility
+to choose the number of Gaussians, we could select config-
+urations that match 15, 100, and 3000 compression ratios.
+However, as the forward step of Gaussian splatting scales
+linearly with the number of pixels, it is unfeasible to com-
+pute it for gigapixel images on a consumer GPU. For this
+reason, we split the image into tiles and leverage gradient
+accumulation to reduce the memory footprint while main-
+taining the same theoretical accuracy. Additional details in
+Sec. I and Algorithm 1 of the Supplementary.
+
+
+Figure 1. The images in GIGABENCH. (1) Venice, (2) Kidney, (3) Calacatta Viola, (4) Andromeda, (5) House Of Chores, (6) Lynxsdesign,
+(7) Italy, (8) Munich, (9) Breast Cancer, (10) Statuario.
+3.3. Metrics
+Compression. We evaluate reconstruction quality via Peak
+Signal-to-Noise Ratio (PSNR) and Structural Similarity In-
+dex (SSIM, reported in the Supplementary) [49], which to-
+gether capture both pixel-level fidelity and perceptual struc-
+ture preservation. Compression efficiency is measured by
+the Compression Ratio (CR), defined as the ratio between
+the size in bytes of the uncompressed image and that of the
+stored Learned Representation:
+  \ t e x t { CR} = \frac {
+H \cdot W \cdot 3 \cdot \text {sizeof}(\text {uint8})}{\#\text {Params} \cdot \text {sizeof}(\text {float32})} 
+(1)
+To characterize computational cost, we report Compression
+Time (CT), the time required to fit the representation to the
+given image, and Inference Time (IT), the time required to
+decode the full image from the fitted representation. CT is
+particularly critical in the gigapixel regime, where it reaches
+several hours, and IT affects the practical adoption of the rep-
+resentation whenever the image must be fully reconstructed
+for downstream use. While PSNR and CR are intrinsic to the
+representation and thus directly comparable across methods
+regardless of codebase, CT and IT are runtime measurements
+of each method’s reference implementation.
+Super-Resolution. In the LRs setting, Super-Resolution
+consists of querying the fitted model on a coordinate grid
+finer than the one used during training, with the expecta-
+tion that the reconstructed image preserves edges and fine-
+grained patterns more faithfully than classical interpolation
+methods. To address this standard setting, we downsam-
+ple the GIGABENCH images by ×4 and ×8, then fit LRs
+on the downsampled versions and assess the reconstruction
+quality of images sampled on a finer grid relative to the
+corresponding original. Yet, it has been observed that the
+popular distortion metrics used to evaluate reconstruction
+methods, like PSNR and SSIM, may correlate poorly with
+human perceptual judgement [5]. This is particularly the
+case in super-resolution, where perceptually relevant cues
+relate to sharpness, texture fidelity, and artifact structure
+rather than pixel-level distortion. Therefore, to complement
+our experimental assessment of LRs for super-resolution, we
+designed and carried out a human evaluation study. Partici-
+pants were recruited through an open call, with the study link
+publicly released and further spread by word of mouth. Each
+was shown the outputs of four methods: the best-performing
+model from each of the Implicit, Hybrid, and Explicit LR
+families, plus the best classical algorithm, and asked to rank
+them by perceived quality, i.e., sharpness of detail, absence
+of artifacts, and overall visual fidelity. Stimuli were 20482
+crops, manually selected to be visually engaging and to span
+a diverse spectrum of low- and high-frequency content. All
+participants saw the full set, with crop order and method

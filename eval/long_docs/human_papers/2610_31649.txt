@@ -1,0 +1,676 @@
+Gate3DGen:
+A Pre-processing Model that Selectively Purifies
+Real-World Images for 3D Generation
+Xiaolin Li1,2*
+Zihao Huang2*
+Fanpeng Meng2
+Chen Yang2
+Guanjun Wu3,2
+Kai Zhang1
+Jiemin Fang2‡
+Qi Tian2
+1Tsinghua University
+2Huawei Inc.
+3Huazhong University of Science and Technology
+*Equal contribution
+‡Project lead
+Corresponding authors
+Abstract
+Single-image 3D generation has achieved high fidelity on curated benchmarks, yet degrades sharply on real-
+world images with uneven illumination, blur, and occlusions. Purifying such inputs requires deciding when
+to intervene and preserving the visual cues needed for 3D generation, while leaving clean inputs unchanged.
+We introduce Gate3DGen, a selective pre-processing model that gates image inputs to existing 3D generators
+without retraining them. A degradation-aware router bypasses inputs classified as clean and extracts features
+to guide purification of the remaining inputs. Conditioned on these features, a 3D-oriented one-step purifier
+purifies degraded inputs with spatial losses that encourage preservation of object identity, contours, and textural
+cues. To provide paired supervision, we construct a synthetic data engine that renders clean views of 3D assets
+and synthesises composite degradations. On the synthetic benchmark, the purifier improves image fidelity and
+downstream 3D geometry in only 2.3 s on average, reducing TRELLIS.2 mesh distance by 61.5% relative to de-
+graded inputs. VLM evaluation and human preferences on real photographs further support identity preservation
+and degradation correction. More demos and code are available at supra-3d.github.io/gate3dgen.
+Observed Image
+3D Generation
+Gated 3D Generation
+Observed Image
+Observed Image
+Observed Image
+𝒢
+𝒢
+𝒢
+𝒢
+𝒢
+𝒢
+𝒢
+𝒢
+3D Generation
+3D Generation
+3D Generation
+Purified Image
+Gated 3D Generation
+Purified Image
+Gated 3D Generation
+Purified Image
+Gated 3D Generation
+Purified Image
+Figure 1. Gate3DGen improves 3D generation by purifying real-world image input.
+1
+arXiv:2610.31649v1  [cs.CV]  22 Oct 2026
+
+
+Gate3DGen
+1 Introduction
+Single-image 3D generative models have achieved remarkable progress on curated benchmarks (Hong et al., 2024;
+Tochilkin et al., 2024; Xu et al., 2024; Xiang et al., 2026; Li et al., 2026; Yang et al., 2026), yet degrade sharply on
+real-world images. This vulnerability stems from restrictive assumptions about input images. Contemporary models
+assume centered, sharp, and fully visible objects under uniform studio lighting (Xu et al., 2024; Xiang et al., 2025;
+2026). In real-world scenarios, however, unconstrained photographs routinely exhibit blur, uneven illumination, or
+occlusions (Cho et al., 2025; Qu et al., 2026), corrupting visual cues and inducing severe artifacts in 3D outputs.
+Open-source image-to-3D pipelines commonly use background removal and recentering (Tochilkin et al., 2024; Xu
+et al., 2024; Xiang et al., 2025; Zhao et al., 2025), which do not directly address photometric corruptions or foreground
+occlusions. Specialized preprocessing also targets individual factors such as illumination through delighting (Li et al.,
+2025a; Zhao et al., 2025). When multiple degradations coexist, correcting one factor can leave other sources of ambiguity
+in the conditioning image. Our comparisons show that generic 2D image editing can alter object appearance or contours,
+with adverse effects on downstream geometry (Section 4.4). The objective is therefore to recover a suitable observation
+of the same object, retaining the visible structural evidence that the 3D generator uses to infer shape and appearance.
+This motivates selective input purification that preserves visual cues for 3D generation while avoiding unnecessary
+changes to already suitable clean inputs.
+We therefore introduce Gate3DGen, a selective pre-processing model that gates real-world images to existing 3D gener-
+ators (Figure 1). It routes each image through purification or an unchanged bypass, keeping the downstream generators
+frozen. Gate3DGen couples a degradation-aware router with a 3D-oriented one-step purifier. The router bypasses inputs
+classified as clean and selects the remaining inputs for purification, while extracting continuous degradation-aware fea-
+tures for the purifier. Conditioned on these features, the one-step purifier purifies degraded inputs in a single forward pass
+to reduce inference cost, with spatial losses that encourage preservation of object identity and essential geometric and tex-
+tural cues. Training requires matched ground-truth references, which are unavailable for real-world images. To provide
+paired training supervision without manual collection, we construct a synthetic data engine from 3D assets. Rendering
+multi-view anchors from 3,961 3D assets (Zhang et al., 2025) and synthesizing composite corruptions (e.g., uneven
+illumination, blur, and occlusions) yields 43,936 aligned image pairs and 1,082 held-out cases with 3D ground truth.
+We evaluate the purifier on this synthetic benchmark with two pretrained 3D generative models, TRELLIS.2 (Xiang
+et al., 2026) and Pixal3D (Li et al., 2026). For 2D purification, Gate3DGen reduces foreground LPIPS by 39.1% while
+preserving subject silhouettes, with an inference time of 2.3 s per image. In comparison, the image editing baselines
+require 15.6–100.8 s per image and can alter object identity and reduce reconstruction fidelity (Table 2). When used to
+condition these 3D generative models, the purified images consistently improve all geometry and appearance metrics
+over the original observations. Specifically, Gate3DGen achieves a 61.5% reduction in all-surface mesh distance, closes
+55.5% of the geometry gap to clean references on average (up to 83.1% on TRELLIS.2), and reduces rendering LPIPS
+by 10.9%. Evaluated separately, the degradation-aware router identifies degraded inputs with 88.45% recall and 93.47%
+specificity on clean inputs, sending inputs classified as degraded for purification. On real photographs, VLM scores and
+human preferences further support identity preservation and degradation correction, complementing the reference-based
+evaluation on synthetic inputs.
+Our contributions are as follows:
+• We formulate robust single-image 3D generation as selective input purification, improving existing 3D generators
+through purified inputs without retraining them.
+• We introduce Gate3DGen, combining a router that bypasses inputs classified as clean with a one-step purifier.
+Degradation-aware features and spatial losses guide purification toward preserving object identity, contours, and
+geometric and textural cues for downstream 3D generation.
+• We construct a synthetic data engine providing paired purification supervision from 3D assets and a benchmark
+with 3D ground truth for 3D evaluation. Our method reduces foreground LPIPS by 39.1% and TRELLIS.2 mesh
+distance by 61.5% relative to degraded inputs, demonstrating gains in image fidelity and downstream 3D geometry.
+2 Related Work
+Robustness in Single-Image 3D Generation. Modern single-image 3D methods, including feed-forward reconstruction
+and iterative diffusion or flow models, achieve high fidelity on curated inputs (Hong et al., 2024; Tochilkin et al.,
+2024; Xu et al., 2024; Boss et al., 2025; Xiang et al., 2025; Zhao et al., 2025; Li et al., 2025b; Lai et al., 2025; Xiang
+et al., 2026; Wu et al., 2026b; Li et al., 2026; Yang et al., 2026). Blur, uneven illumination, and occlusions can reduce
+their generation quality. Common input preprocessing operations include foreground segmentation and recentering,
+which do not directly correct illumination, blur, or foreground occlusions. Specialized methods address illumination
+through lighting decomposition or delighting (Li et al., 2025a; Lai et al., 2025). Related work investigates recovery
+2
+
+
+Gate3DGen
+3D Assets
+Multi-view Rendering
+“Generate a realistic photo 
+with this subject…”
+Anchor View Selection
+Clean Reference
+Degraded Image
+(A) Data Engine
+Joint Multimodal 
+Self Attention
+Joint Multimodal 
+Self Attention
+(B) Gate3DGen
+Window/Full
+Self Attention
+M
+Window/Full
+Self Attention
+N
+Causal GQA
+Self Attention
+M
+Causal GQA
+Self Attention
+Degradation-Aware Router
+M
+N
+Observed Image
+3D Object
+Multi-view RGB
+Render
+ℛ!
+𝑥"
+$𝑦
+𝑥"
+𝑥#
+𝑦
+N
+𝒞!
+𝒢
+ℰ
+𝒟
+Purified Image $𝑥#
+𝑥!
+ℎ
+#𝛾
+"𝛾= 1
+“Select the viewpoint with 
+the most geometric visibility”
+“Degrade this photo with 
+reflections / occlusions / …”
+One-Step Purifier
+Figure 2. Overview of Gate3DGen. (A) Data Engine. We render 3D assets from multi-view, select informative anchor
+views, and apply composite degradations to construct aligned observation-reference pairs (xo, xc). (B) Gate3DGen. Router
+Rϕ bypasses inputs classified as clean (bγ = 0). Otherwise (bγ = 1), its features h guide the one-step DiT purifier Cθ. bxc
+conditions the frozen 3D generator G. Clean references and spatial losses are used only in training.
+of occluded geometry through volumetric reconstruction or multi-view synthesis (Cho et al., 2025; Qu et al., 2026;
+Shi et al., 2025). Our work focuses on selective input purification before frozen 3D generators, addressing composite
+degradations involving uneven illumination, blur, and occlusions.
+2D Image Editing and Degradation Routing. Recent advances in instruction-guided editing (Black Forest Labs et al.,
+2025; Wu et al., 2025; 2026a; Liu et al., 2025; Zhang et al., 2026; Qiao et al., 2026) and all-in-one restoration (Potlapalli
+et al., 2023; Conde et al., 2024; Lin et al., 2023; Yu et al., 2024; Guo et al., 2024) synthesize visually compelling images.
+Their objectives do not explicitly measure downstream 3D fidelity. In our comparisons, generic image editing methods
+can remove visible degradations while changing object appearance or contours, with adverse effects on downstream
+geometry (Section 4.4). Editing clean photographs can introduce unwanted changes, motivating selective restoration.
+No-reference quality metrics (Mittal et al., 2013; Yang et al., 2022; Zhang et al., 2023) and general vision-language
+models (You et al., 2024; Bai et al., 2025; OpenAI, 2026a) provide candidate quality signals, but their suitability for
+routing requires evaluation (Section 4.2). Gate3DGen couples a degradation-aware router with a one-step purifier to
+preserve identity and contours while selectively purifying inputs.
+3 Method
+Gate3DGen is a selective pre-processing model that purifies real-world input images without modifying the downstream
+3D generator. It targets images degraded by uneven illumination, blur, and occlusions while encouraging preservation of
+geometric and textural cues. Figure 2 summarizes its data engine, router, and one-step purifier.
+3.1 Problem Formulation
+Let G : X →Y be a pretrained generator mapping a photograph to a 3D representation y ∈Y. A matched clean
+reference xc shows a centered, sharp, fully visible subject under uniform lighting, with G(xc) ≈y. An observed
+image xo may be clean or degraded. Uneven illumination, blur, and occlusions can violate these assumptions. These
+degradations can distort geometry (G(xo)̸ ≈y).
+We learn to purify input images under supervision from matched clean references. The purifier maps xo toward the
+matched clean reference xc using reconstruction and spatial losses that encourage preservation of object identity,
+contours, and textural cues. The objective is given by
+min
+Cθ
+E(xo,xc)
+
+ℓ
+ Cθ(xo), xc
+.
+(1)
+Here, ℓcombines the latent, photometric, perceptual, region-weighted reconstruction, and edge losses defined in
+Section 3.4. To avoid unnecessary purification of clean inputs (xo ≈xc), the degradation-aware router Rϕ predicts a
+routing decision bγ ∈{0, 1}. The routing decision determines the pre-processed image as follows
+bxc =
+(
+xo,
+bγ = 0
+(KEEP),
+Cθ(xo),
+bγ = 1
+(PURIFY), .
+(2)
+3
+
+
+Gate3DGen
+The pre-processed image bxc is either a purified image from Cθ (PURIFY) or the unchanged input (KEEP). To supervise
+this objective where matched pairs (xo, xc, γ) are unavailable for real-world images, we construct a synthetic data
+engine from 3D assets (Section 3.2) to supply training data.
+3.2 Synthetic Data Engine
+Learning Cθ requires paired images (xo
+i , xc
+i) that share identical 3D geometry and viewpoints while differing only in
+capture quality, whereas learning Rϕ requires examples labeled by whether purification is necessary. Because real
+photographs provide neither matched clean counterparts nor controlled routing labels, we use high-fidelity 3D assets to
+construct this supervision (Figure 2A).
+Anchor view selection. From about 4k high-fidelity 3D assets in TexVerse (Zhang et al., 2025), we render eight views
+under uniform lighting. A vision-language model (VLM) ranks these views by geometric visibility and self-occlusion.
+The four most informative views per asset serve as multi-view anchors and matched clean references xc
+i.
+Degradation synthesis. For each anchor, instruction-guided editing produces a matched observation xo
+i with composite
+corruptions, including uneven illumination, blur, and occlusions. Each pair is audited by Qwen3-VL (Qwen Team, 2025)
+for structural consistency, and RMBG-2.0 extracts a soft foreground mask mi from the clean reference xc
+i. This pipeline
+produces roughly 44k image pairs Dtrain = {(xo
+i , xc
+i, mi)} for Cθ and 100k routing pairs Droute = {(xj, γj)} for Rϕ,
+where γj = 1 denotes PURIFY and γj = 0 denotes KEEP. Training and evaluation assets are disjoint.
+3.3 Degradation-Aware Router
+Purifying clean inputs can introduce unwanted changes. To guide purification of images with spatially varying
+degradations, we use features extracted from the input image. We therefore design the degradation-aware router Rϕ
+based on Qwen2.5-VL (Bai et al., 2025). Trained on Droute, the router predicts whether purification is needed and
+extracts continuous degradation-aware features.
+Logit-based routing. Given input xo, the router returns (p, h) = Rϕ(xo), where p ∈[0, 1] is the predicted probability
+that purification is needed and h denotes continuous degradation-aware features. Rather than using greedy decoding, we
+derive the purification probability p directly from the unnormalized logits for the routing decisions PURIFY and KEEP,
+denoted by opurify and okeep.
+p = σ(opurify −okeep),
+(3)
+where σ(·) is the sigmoid function. We apply a threshold τ to obtain the routing indicator
+bγ = I[p ≥τ] ∈{0, 1},
+(4)
+where I[·] is the indicator function. Predicted clean inputs bypass purification unchanged.
+Degradation-aware conditioning. When purification is triggered (bγ = 1), we extract the final hidden states h ∈RN×d
+from Rϕ under a fixed editing instruction. These features condition Cθ.
+3.4 3D-Oriented One-Step Purifier
+The diffusion purifier Cθ purifies degraded inputs in a single forward pass with spatial losses that encourage preservation
+of object identity and geometric and textural cues. Let E and D denote the encoder and decoder of its frozen image au-
+toencoder. We initialize Cθ from the released FireRed-Image-Edit-1.1 (Qiao et al., 2026) checkpoint, whose architecture
+and flow-matching formulation follow the FireRed-Image-Edit-1.0 technical report (Qiao et al., 2026), and condition it
+on the observation latent E(xo) and the continuous degradation-aware features h produced by the router.
+One-step flow-matching. Standard flow-matching models (Qiao et al., 2026) define a linear probability path between
+the target latent z0 = E(xc) and Gaussian noise ε ∼N(0, I), given by
+zt = (1 −t) z0 + t ε,
+t ∈[0, 1],
+(5)
+The velocity network vθ(zt, E(xo), h, t) is trained to regress ε −z0. Standard inference integrates from t = 1 to t = 0
+over multiple network evaluations. We train and evaluate Cθ at t = 1, where z1 = ε, to reduce inference latency. One
+prediction yields the latent estimate and decoded image
+bz0 = ε −vθ
+ ε, E(xo), h, 1
+
+,
+bxc = D(bz0),
+(6)
+where D is the frozen VAE decoder. Training and inference both use Equation 6, with one evaluation of vθ followed by
+VAE decoding, avoiding iterative denoising during purification. At this endpoint, the noisy latent contains only Gaussian
+noise. The observation latent and router features provide the image-specific conditioning. The velocity network is
+supervised using the clean latent and the decoded image, without iterative sampling.
+4
+
+
+Gate3DGen
+3D-oriented spatial constraints. For a training triple (xo
+i , xc
+i, mi) ∈Dtrain, let z0,i = E(xc
+i), and let bz0,i and bxc
+i be
+obtained from Equation 6. Standard pixel reconstruction losses treat all regions uniformly. Generic image editing
+methods overwrite uncorrupted regions and blur high-frequency shading cues that 3D generators rely on. The region-
+weighted reconstruction and edge losses guide purification by supervising the subject, emphasizing degradation-affected
+regions, and encouraging preservation of edges. We obtain a soft degradation map ri by smoothing the pairwise residual
+between xo
+i and xc
+i. For an error tensor a and a nonnegative spatial weight w broadcast to the shape of a, we define the
+normalized weighted mean
+ℓ(a, w) =
+P
+j w(j)|a(j)|
+max
+P
+j w(j), 1
+,
+(7)
+where the parenthesized subscript (j) indexes channel and spatial entries within each tensor after broadcasting, while i
+indexes training samples. With δi = bxc
+i −xc
+i, the implemented losses are
+Lregion = ℓ(δi, mi) + ℓ(δi, ri),
+Ledge = 1
+2
+
+ℓ(Duδi, mu
+i ) + ℓ(Dvδi, mv
+i )
+
+,
+(8)
+The two terms in Lregion are normalized independently: the first supervises the full subject through mi, while the second
+focuses on degradation-affected regions through ri. The edge term matches finite differences along the horizontal (u)
+and vertical (v) image axes, weighted by adjacent subject-mask values. These weights guide purification, and selectivity
+refers to image-level routing. Section A details degradation-map pooling and adjacent-mask edge weights.
+Total training objective. Combining spatial constraints with the backbone objectives gives the full purifier loss:
+L = λlatLlat + λ1L1 + λlpipsLlpips + λregionLregion + λedgeLedge,
+(9)
+where Llat = MSE(bz0,i, z0,i) supervises latent reconstruction at the endpoint, L1 = mean |bxc
+i −xc
+i| is the full-image
+photometric loss, and Llpips = LPIPS(bxc
+i, xc
+i) enforces perceptual agreement. The latent term supervises the clean
+representation, while photometric and perceptual terms supervise the decoded image alongside spatial and gradient
+constraints. Loss weights appear in Section A.
+Clean references and foreground masks are used only during training. Inference uses the observed image and router
+features. Spatial losses encourage preservation of geometric and textural cues without gradients through the frozen 3D
+generator, whose output quality is evaluated in Section 4.4.
+4 Experiments
+4.1 Experimental Setup
+Benchmark and evaluation protocols. Our benchmark contains 1,082 held-out DTC cases (Dong et al., 2025) with
+3D ground truth and clean references sharing the degraded observations’ camera poses. We compare 3D outputs from
+degraded, edited, and clean-reference images against ground truth. Our purifier and all editing baselines process every
+degraded input. Routing is evaluated separately and does not affect these results.
+Baselines. We compare against 7 instruction-guided image editing methods, namely FLUX.1-Kontext (Black Forest
+Labs et al., 2025), FireRed-Image-Edit (1.1) (Qiao et al., 2026), Mage-Flow-Edit (Zhang et al., 2026), OmniGen2 (Wu
+et al., 2026a), Qwen-Image-Edit (Wu et al., 2025), Step1X-Edit (Liu et al., 2025), and GPT Image-2.5 (Flare) (OpenAI,
+2026b). We evaluate downstream 3D quality with Pixal3D (Li et al., 2026) and TRELLIS.2 (Xiang et al., 2026).
+Evaluation metrics. For degradation-aware routing, we report PURIFY-class recall, overall accuracy, and H, defined as
+their harmonic mean, all expressed as percentages (Table 1). For 2D image fidelity, we report foreground LPIPS, PSNR,
+SSIM, Sobel gradient MAE, and foreground mask IoU against the clean reference. For 3D metrics, we report all-surface
+Mesh Distance (MD) (Xiang et al., 2026) and F all
+1
+(F1@10−8), outer-surface Chamfer Distance (CD) (Fan et al., 2017)
+and F outer
+1
+(F1@10−6) after ICP alignment to the ground-truth asset, PSNR-N (Wang et al., 2004) on rendered normal
+maps, and LPIPS (Zhang et al., 2018) on four-view shaded and albedo renderings.
+4.2 Degradation-Aware Routing Results
+Table 1 reports routing results on 1, 082 degraded and 934 clean synthetic inputs and on 96 in-the-wild images. Because
+real photographs lack explicit routing labels, a GPT-5 agent assigns proxy PURIFY/KEEP labels by comparing multi-view
+renderings and no-reference metrics for 3D assets generated from the unedited and purified images by Pixal3D and
+TRELLIS.2. The router should direct degraded inputs to the purifier and leave clean inputs unchanged, as uncorrected
+degradations can introduce geometric artifacts (Table 3). On the synthetic benchmark, the router attains 88.45% recall
+and 90.77% accuracy, yielding the highest H of 89.59%, which exceeds the strongest baseline, MANIQA (Yang et al.,
+2022), by 5.55 percentage points. NIQE (Mittal et al., 2013), mPLUG-Owl2 (Ye et al., 2023), and DepictQA-Wild (You
+et al., 2024) exceed 98% recall, but their accuracies remain within one percentage point of the 53.7% obtained by
+5
+
+
+Gate3DGen
+Table 1. Degradation-aware routing on synthetic and real images (%). Recall is for PURIFY. Accuracy is overall (PURIFY
+and KEEP). H = 2 Recall × Accuracy/(Recall + Accuracy).
+Benchmark
+In-the-wild
+Method
+Recall
+Accuracy
+H↑
+Recall
+Accuracy
+H↑
+mPLUG-Owl2
+100.00
+54.12
+70.23
+0.00
+41.67
+0.00
+DepictQA-Wild
+99.54
+53.42
+69.53
+100.00
+58.33
+73.68
+LIQE-MIX
+51.66
+65.48
+57.75
+17.86
+48.96
+26.17
+NIQE
+98.52
+53.32
+69.19
+75.00
+54.17
+62.91
+Qwen2.5-VL
+83.64
+74.21
+78.64
+14.29
+43.75
+21.54
+MANIQA
+79.57
+89.04
+84.04
+12.50
+45.83
+19.64
+GPT-5
+72.27
+77.58
+74.83
+–
+–
+–
+Ours
+88.45
+90.77
+89.59
+89.29
+58.33
+70.56
+Table 2. Synthetic 2D purification. Fidelity metrics use clean references. Input is unedited, Grad. is Sobel gradient MAE,
+and IoU is foreground mask overlap. ∗denotes the commercial closed-source model.
+Method
+Time (s)↓
+LPIPS↓
+PSNR↑
+SSIM↑
+Grad.↓
+IoU↑
+Degraded (Input)
+–
+0.2262
+20.254
+0.8323
+0.0584
+0.9537
+FLUX.1
+30.2
+0.2577
+17.992
+0.7907
+0.0688
+0.9373
+OmniGen2
+84.9
+0.4166
+13.491
+0.6478
+0.1123
+0.6238
+Step1X
+100.8
+0.2426
+18.828
+0.7761
+0.0781
+0.8971
+Qwen-Edit
+81.5
+0.2389
+18.710
+0.7812
+0.0727
+0.9537
+Mage-Flow
+15.6
+0.2418
+19.175
+0.7755
+0.0835
+0.9530
+GPT Image-2.5 Flare∗
+–
+0.2710
+16.571
+0.7020
+0.1319
+0.9189
+FireRed
+83.2
+0.2258
+15.868
+0.7677
+0.0814
+0.9604
+Ours
+2.3
+0.1378
+22.514
+0.8708
+0.0488
+0.9758
+outputting PURIFY for all inputs, resulting in H values of only 69.19–70.23%. MANIQA attains 89.04% accuracy
+but only 79.57% recall. Our router improves both, indicating that its higher H reflects better detection of inputs
+needing purification alongside more accurate routing overall. Zero-shot Qwen2.5-VL, which shares the backbone of our
+router, reaches H = 78.64%. Training on Droute raises recall by 4.81 percentage points and accuracy by 16.56 points,
+improving H by 10.95 points. On the in-the-wild benchmark, the router ranks second in H (70.56%), with 89.29%
+recall and 58.33% accuracy against the proxy labels. DepictQA-Wild achieves the highest H (73.68%), but its 100%
+recall and 58.33% accuracy match the strategy of always predicting PURIFY. Thus, a high H alone does not establish
+effective preservation of KEEP inputs, and our router does not outperform this trivial strategy under the real-image proxy
+protocol. The high recall and lower accuracy are consistent with over-routing of inputs labeled KEEP to purification.
+This gap may reflect the use of clean renders for the KEEP class in Droute. Whether adding real photographs to this
+class improves routing remains to be tested.
+4.3 2D Purification Results
+Table 2 reports fidelity to clean references. All seven generic editors lower PSNR and SSIM and raise gradient MAE by
+17.8%–125.9% relative to unedited inputs. Only FireRed (Qiao et al., 2026) lowers LPIPS, by 0.0004. Degradation
+removal thus comes with reduced fidelity to clean references. OmniGen2 (Wu et al., 2026a) also reduces silhouette IoU.
+Gate3DGen alone improves all five metrics, lowering LPIPS by 39.1% and gradient MAE by 16.4% while raising IoU
+to 0.9758. The gains over the FireRed backbone support the benefit of our purification training (Section 3.4).
+Inference efficiency. Gate3DGen achieves the best fidelity across all five metrics with an inference time of 2.3 s,
+compared with 15.6–100.8 s for the 6 baselines. This corresponds to a 6.8× speedup over Mage-Flow, the fastest timed
+baseline, and a 36.2× speedup over FireRed. Our one-step purifier achieves higher image fidelity and lower inference
+time than the compared image editing methods.
+4.4 Downstream 3D Generation Results
+On TRELLIS.2 (Xiang et al., 2026) (Table 3), Gate3DGen lowers MD and CD by 61.5% relative to the degraded
+input, raises F all
+1
+and F outer
+1
+by 3.8% and 6.4%, and lowers shaded and albedo LPIPS by 10.9% and 10.6%, closing
+83.1% of the MD gap to the clean-reference oracle. The baselines reveal a trade-off, as six of the seven image editing
+6
+
+
+Gate3DGen
+Table 3. Downstream 3D metrics on TRELLIS.2. Input is degraded, and Oracle uses clean references. MD, CD, and F all
+1
+are ×10−3, and F outer
+1
+is ×10−1. PSNR-N evaluates normals. LPIPS compares four-view shaded and albedo renderings. ∗
+denotes a commercial closed-source model.
+Method
+MD↓
+F all
+1 ↑
+CD↓
+F outer
+1
+↑
+PSNR-N↑
+LPIPS↓
+Albedo LPIPS↓
+Clean reference (Oracle)
+0.517
+12.46
+0.517
+1.1586
+16.36
+0.1548
+0.1575
+Degraded (Input)
+1.984
+11.52
+1.985
+1.0531
+15.26
+0.1857
+0.1916
+FLUX.1
+1.528
+11.06
+1.528
+1.0238
+15.35
+0.1864
+0.1935
+OmniGen2
+3.485
+6.88
+3.485
+0.6407
+13.11
+0.2362
+0.2411
+Step1X
+1.228
+10.48
+1.229
+0.9637
+15.25
+0.1803
+0.1861
+Qwen-Image-Edit
+1.047
+10.81
+1.047
+1.0123
+15.69
+0.1780
+0.1859
+Mage-Flow
+1.386
+11.42
+1.386
+1.0422
+15.39
+0.1797
+0.1855
+GPT Image-2.5 Flare∗
+1.179
+10.39
+1.179
+0.9720
+15.29
+0.1792
+0.1859
+FireRed
+0.835
+10.58
+0.835
+0.9889
+15.82
+0.1701
+0.1781
+Ours
+0.764
+11.96
+0.765
+1.1205
+15.98
+0.1654
+0.1714
+Input
+GT (3D) 
+Original (3D)
+FireRed (2D/3D)
+GPT Image 2.5 (2D/3D)
+Ours (2D/3D)
+No 3D GT
+(In-the-wild)
+No 3D GT
+(In-the-wild)
+Figure 3. Comparison of images (2D) and Pixal3D outputs (3D). Original (3D) uses unedited inputs. Ours (2D) uses
+purified images. Boxes mark structure and appearance changes.
+methods reduce MD yet all seven lower both F1 scores below the unedited input. Large geometric artifacts, such as
+an occluder fused into the object (Figure 3), can increase MD, whereas F1 at a small distance threshold is sensitive to
+local geometric deviations. Generic image editing can therefore reduce large artifacts while introducing local geometric
+deviations. Only Gate3DGen improves MD and both F1 scores among the compared editors, consistent with the spatial
+constraints in Equation 8. Albedo LPIPS also improves, consistent with removing input illumination effects before they
+are incorporated into the generated material, while the residual gap to the oracle is largest for F all
+1
+(11.96 against 12.46),
+as geometry hidden by occlusion is only partially recoverable from a single view.
+Figure 3 shows Pixal3D reconstructions. Unedited inputs fuse the hand into the doll. FireRed retains the occluder or
+recolors the teapot, while GPT Image-2.5 Flare removes degradations but re-synthesizes objects (red boxes). Gate3DGen
+purifies inputs and retains the objects (green boxes).
+4.5 In-the-Wild Results
+We evaluate 96 mobile and web photographs without ground-truth meshes using VLM assessment, human preferences,
+and FD-DINOv2 (Stein et al., 2023). Qwen3.8-27B serves as the VLM judge (Chen et al., 2024), scoring Identity (object
+preservation), Purification (degradation removal), and Quality (asset quality independent of the input). Identity and
+Purification average 2D and 3D scores, while Quality averages 3D scores over four views and both frozen generators.
+7

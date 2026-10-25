@@ -1,0 +1,684 @@
+Dynamics of random recurrent neural networks:
+colored noise and sublinear activations
+Germán Mato1,2, Facundo Rigatuso1,2, Gonzalo Torroba1,2
+1 Instituto Balseiro, UNCuyo and CNEA
+2Centro Atómico Bariloche and CONICET
+S.C. de Bariloche, Río Negro, R8402AGP, Argentina
+Abstract
+We study the dynamics of recurrent neural networks with random couplings, sublin-
+ear odd activation functions, and temporally correlated noise. Using large N methods,
+we determine stationary correlations and distinguish the loss of local linear stabil-
+ity from the onset of chaos, characterized by a positive largest Lyapunov exponent.
+These thresholds delimit an intermediate regime in which local instability coexists with
+asymptotic stability under a common noise history. Their separation depends on both
+the noise correlation time and the asymptotic growth of the activation function. We
+show that internal noise with any finite correlation time cuts off the divergence of
+the network’s intrinsic correlation time τcorr at the edge of chaos; it exhibits a critical
+scaling τcorr,max ∼1/√D0, where D0 is the integrated noise strength. Static random
+input instead produces coincident thresholds and a divergent correlation time. We also
+calculate the frequency-dependent participation dimension from a four-point correla-
+tion function. Its zero-frequency value is inversely proportional to the fourth power of
+the network correlation time, predicting a smooth minimum at the weak-noise chaos
+threshold. Numerical simulations support the large-network predictions and reveal ap-
+preciable finite-size effects.
+Keywords: neural population dynamics; recurrent neural network; nonlinear dynamics;
+chaos
+arXiv:2610.31575v1  [q-bio.NC]  22 Oct 2026
+
+
+Contents
+1
+Introduction
+2
+2
+The model
+3
+2.1
+Dynamics, disorder and internal noise . . . . . . . . . . . . . . . . . . . . . .
+3
+2.2
+Activation function . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+5
+2.3
+Numerical experiments . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+5
+3
+Theoretical analysis at large N
+7
+3.1
+Path integral and the self-consistent equation
+. . . . . . . . . . . . . . . . .
+7
+3.2
+Approximate explicit solution and stability criterion . . . . . . . . . . . . . .
+9
+3.3
+Chaotic dynamics . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+11
+4
+Dynamics of RNNs in the weak-disorder expansion
+13
+4.1
+Particle picture . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+13
+4.2
+Noiseless case . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+15
+4.3
+White and colored noise
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+16
+4.4
+Quenched noise . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+18
+4.5
+Chaos and solitons
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+20
+5
+Results: theory and simulations
+22
+5.1
+Correlators
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+22
+5.2
+Phase diagram and correlation time . . . . . . . . . . . . . . . . . . . . . . .
+24
+6
+Four-point function and dimension of participation
+27
+6.1
+Setup . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+28
+6.2
+Large N results . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+30
+6.3
+Comparison with simulations
+. . . . . . . . . . . . . . . . . . . . . . . . . .
+31
+7
+Discussion
+33
+A Collective-field derivation of the self-consistent equation
+35
+B Replica derivation of the four-point function
+35
+B.1 Saddle-point equations . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+36
+B.2 On-shell effective action and Γf
+. . . . . . . . . . . . . . . . . . . . . . . . .
+37
+C Finite N effects
+37
+1
+
+
+1
+Introduction
+Recurrent neural networks (RNNs) play a key role for various computational tasks in biolog-
+ical and artificial systems [1, 2]. An important goal is to understand their dynamics, given
+that the dynamical state of the system strongly influences its computational capabilities [3].
+The seminal work of Sompolinsky, Crisanti and Sommers [4] established that large recur-
+rent networks with random, asymmetric couplings and nonlinear activation can undergo a
+transition to chaos. Crucially, networks that operate near the transition to chaos are found
+to perform optimally [5, 6, 7]. The dynamical mean-field theory of [4] characterized the ac-
+tivity correlations and largest Lyapunov exponent. Subsequent path-integral work provided
+a systematic derivation of the mean-field description and its stability properties [8]. These
+results made random recurrent networks a tractable setting for studying how microscopic
+interactions generate complex temporal activity.
+Fluctuating inputs add important modifications to this problem.
+Correlation theory for
+stochastic neural networks showed how network interactions shape temporal and cross-neuron
+correlations [9]. Additive noise was shown early to suppress chaos in random neural networks
+[10]. Deterministic periodic input can also suppress intrinsic chaos, with an effectiveness that
+depends nonmonotonically on the driving frequency [11]. For driven random networks, [12]
+found that time-dependent internal white noise can suppress chaos and shift its onset to
+stronger recurrent coupling. Their analysis also revealed the existence of an intermediate
+regime between the onset of local instability and the transition to chaos. Thus, the response
+to a small perturbation and the long-term growth of differences between trajectories describe
+distinct aspects of the dynamics. The intermediate regime is locally unstable but nonchaotic.
+These two transitions also provide a useful framework for interpreting changes in population
+covariance and effective recurrent coupling [13]. Related work on spiking circuits identified
+mechanisms for asynchronous chaotic rate fluctuations with distinct characteristic time scales
+[14].
+In this work we study two aspects of RNNs that can qualitatively affect the dynamics: the
+temporal structure of disordered input and the activation function. First, prior works have
+mostly focused on the case of internal white noise, which corresponds to a vanishingly small
+correlation time. However, realistic internal fluctuations arising from neural and synaptic
+processes can persist over a finite interval. We will model this with an Ornstein–Uhlenbeck
+(OU) input that introduces a tunable correlation time τn. Varying τn allows us to ask how
+internal colored noise affects network correlations, local instability and the onset of chaos.
+Second, the activation function affects the dynamics in key ways. Many classical analyses
+use a bounded, saturating response, but other response shapes may be relevant over the
+range of activity sampled by the network. For example, type-I excitability is associated
+with a square-root dependence of firing rate on input near onset [15, 16, 17]. Near critical
+behavior generated by linear activation functions has been found to be relevant for describing
+brain activity [18, 19]. Previous work has shown that nonlinear response properties influence
+effective recurrent coupling and population correlations [13, 20]. In this work we use a smooth
+2
+
+
+family of activation functions that spans saturating and sublinear (nonsaturating) responses
+and approaches a linear response as a limiting case.
+Our goal is to determine, both theoretically and via numerical simulations, the dynamics
+of RNNs. In particular, we seek to understand how the colored noise and the form of the
+activation function affect the unstable dynamics and the development of chaos. We derive
+the large-network correlation equations, and a matched short-/long-time solution that repro-
+duces the simulated correlators without measured input. We then examine two dynamical
+thresholds: local instability, from the local stability criterion, and chaos, from the sign of the
+largest Lyapunov exponent, which we obtain from a Schrödinger problem whose potential is
+built from the correlator of the derivative of the activation function. The two thresholds are
+distinct, with an intermediate regime that is locally unstable but not chaotic, and simula-
+tions map their separation as a function of the activation exponent and the noise correlation
+time. Near the edge of chaos, internal noise of any finite correlation time cuts off the di-
+vergence of the intrinsic correlation time with a universal exponent, τcorr,max ∼D−1/2
+0
+, valid
+in the limit D0 →0 of integrated noise strength. For weak noise the maximum sits at the
+chaos threshold. The exponent is the same for white and colored noise. We also investigate
+whether these dynamical regimes differ in the geometric organization of population activity,
+as characterized by the participation dimension [21]. Its evaluation requires a four-point
+correlation function, which captures the contribution of correlations between neurons to the
+effective dimensionality of the activity. We find that the zero-frequency participation di-
+mension is controlled by the same intrinsic time scale, DPR(0)/N = (τ/τcorr)4, so that it
+has a minimum scaling as D2
+0 in the weak disorder limit. The simulations also allow us to
+determine the relevance of finite-size effects in the different regimes.
+The paper is organized as follows.
+Section 2 introduces the random recurrent network,
+the colored-noise process, the family of activation functions, and the numerical methods.
+Section 3 develops the large-N mean-field theory, analyzes the temporal correlations, and
+derives criteria for local linear instability and chaos. Section 4 studies the dynamics in the
+weak disorder limit, obtaining explicit results for the instability and chaos thresholds and for
+the network correlation time. Section 5 compares the theoretical predictions with simulations
+and presents phase diagrams showing how both transition thresholds depend on the noise
+correlation time and activation function. Section 6 examines four-point correlations and the
+participation dimension of the network activity. Section 7 contains a discussion of the results
+and conclusions. The appendices provide details of the collective-field and replica derivations
+and discuss finite-size effects.
+2
+The model
+2.1
+Dynamics, disorder and internal noise
+We consider a network of N recurrently coupled units with continuous time and a firing-rate
+dynamics. Denoting by ϕi(t) the total input current to unit i, and by f(ϕ) a single-neuron
+3
+
+
+activation function, the network obeys the Langevin equation
+τ dϕi(t)
+dt
+= −ϕi(t) +
+N
+X
+j=1
+Wij f
+ ϕj(t)
+
++ ξi(t) ,
+i = 1, . . . , N ,
+(2.1)
+where τ is the single-neuron integration time constant.
+This is a standard model used
+throughout the random-network literature; in the linear case it reduces to a multivariate
+Ornstein-Uhlenbeck process. See e.g. [9, 18, 19, 4] for related rate-network dynamics and
+correlation theories. The model contains two independent sources of randomness, which play
+different roles: the W-disorder and the internal noise.
+The recurrent couplings Wij are quenched (time-independent) random variables, drawn once
+per network realization from a Gaussian ensemble with
+⟨Wij⟩= 0 ,
+⟨WijWkl⟩= λ2
+N δikδjl .
+(2.2)
+The parameter λ controls the strength of the recurrent coupling and is the main control
+parameter of the theory: λ →0 is the decoupled limit, while λ ≫1 is the strong-coupling
+regime. Because W does not evolve in time, its effect on the dynamics is entirely captured,
+at large N, by disorder averages ⟨· · · ⟩W; this is the noise source responsible for generating
+an effective recurrent interaction in the single-neuron dynamics.
+On the other hand, each neuron receives a time-dependent noise ξi(t), uncorrelated across
+neurons,
+⟨ξi(t)⟩= 0 ,
+⟨ξi(t) ξj(t′)⟩= δij Gξ(t −t′) .
+(2.3)
+This is a dynamical (annealed) noise, and unlike most previous literature on random net-
+works, which specializes to white noise, we keep Gξ(t −t′) general. This is what we will call
+colored noise. A convenient choice, used throughout this work, is an Ornstein-Uhlenbeck
+noise,
+dξi(t)
+dt
+= −ξi(t)
+τn
++ σn ηi(t) ,
+⟨ηi(t)ηj(t′)⟩= δij δ(t −t′) ,
+(2.4)
+whose stationary two-point function is
+Gξ(t) = Dξ e−|t|/τn ,
+Dξ ≡σ2
+nτn
+2
+.
+(2.5)
+We will denote
+D0 ≡1
+2
+Z ∞
+−∞
+dt Gξ(t) = Dξτn .
+(2.6)
+Two limits of (2.5) recover previously studied cases: the white-noise limit is τn →0, Dξ →∞
+with D0 fixed, and reduces to the case considered in [12, 13]. The quenched limit is τn →∞
+at fixed Dξ, in which each neuron sees an effectively static offset, Gξ(t) →Dξ; this was
+studied in [20]. Away from these two limits, τn defines a new time scale of the problem, to
+4
+
+
+be compared with τ and with the intrinsic correlation time generated self-consistently by
+the recurrent dynamics; one of our main goals below is to understand how this comparison
+controls the correlation structure and the onset of chaos. For a discussion of colored noise
+in the context of cortical neurons, and previous references, see [22]
+2.2
+Activation function
+We take f(ϕ) to be odd, f(−ϕ) = −f(ϕ), sublinear at large |ϕ|, and smooth. Building on
+our previous work [20], we use a Padé-type form
+f(ϕ) =
+ϕ
+(1 + β2ϕ2)
+1−p
+2
+,
+0 ≤p ≤1 , β > 0 ,
+(2.7)
+which has the asymptotic behavior
+f(ϕ) ≈ϕ , for |ϕ| ≪1/β
+f(ϕ) ≈βp−1 sgn(ϕ) |ϕ|p , for |ϕ| ≫1/β ,
+(2.8)
+and is C∞(R) everywhere. This smoothness will be convenient for perturbative expansions
+and for the numerical evaluation of f and its derivatives. The gain parameter β sets the
+scale at which the nonlinearity turns on.
+When p →0 this gives a saturating activation function, which we expect will have similar
+properties than other saturating functions such as tanh(x). In the limit p →1, we obtain
+the linear case. In between both limits, we obtain a nonlinear and nonsaturating regime.
+In realistic situations the activation function will eventually saturate; but we will assume
+that the neural activation function is well approximated by (2.7) over a range of parameters.
+As a potential application, p = 1/2 corresponds to neural dynamics that undergo a type I
+bifurcation that leads to spike generation [15, 16, 17]. One of the goals of this work is to
+explore this new parameter space. In particular, we will find an interesting interplay between
+p and the dynamical evolution of the network.
+2.3
+Numerical experiments
+In this work we will use both numerical simulations and theoretical calculations to understand
+the dynamics of nonlinear RNNs. Before proceeding to a more detailed theoretical analysis,
+let us briefly discuss how (2.1) is numerically solved.
+Eq. (2.1) together with the Ornstein-Uhlenbeck noise (2.4) is integrated with a simple Euler-
+Maruyama scheme at fixed step δt,
+ξi(t + δt) =
+
+1 −δt
+τn
+
+ξi(t) +
+√
+δt σn ηi(t) ,
+ηi(t) ∼N(0, 1) i.i.d. ,
+(2.9)
+ϕi(t + δt) = ϕi(t) + δt
+τ
+h
+−ϕi(t) +
+X
+j
+Wijf
+ ϕj(t)
+
++ ξi(t)
+i
+.
+(2.10)
+5
+
+
+The first line is the Ornstein-Uhlenbeck process discretized at step δt up to O(δt), with noise
+amplitude σn =
+p
+2Dξ/τn fixed by (2.5); we verify this normalization directly, by simulating
+a large population of independent OU processes with no recurrent coupling and measuring
+⟨ξi(t)ξi(0)⟩, which reproduces Dξe−|t|/τn to high accuracy. The couplings Wij are drawn once
+per realization from (2.2). The activation function is (2.7) at fixed gain β; the exponent p is
+treated as an external parameter of the numerical experiment, and λ is scanned over a grid
+at fixed p.
+For each realization of W (a “W-seed”) the dynamics is run for a transient of δt ntran time
+units to reach the stationary state, then for a further δt nmax time units during which the
+trajectory ϕi(t) is recorded. Repeating this for several independent noise realizations (“repli-
+cas”) at fixed W, and averaging the population autocorrelation over neurons and replicas,
+gives numerical estimates of
+Cϕ(t) = 1
+N
+X
+i
+⟨ϕi(t + t′)ϕi(t′)⟩,
+Cf(t) = 1
+N
+X
+i
+⟨f(ϕi(t + t′))f(ϕi(t′))⟩,
+(2.11)
+computed via FFT-based autocorrelation (and similarly for other correlators that will be
+needed). We have checked that after these averages and the transient, these correlators are
+independent of t′, signaling a time-translation invariant state.
+An important goal of this work will be to analyze the transition to chaos and construct a
+phase diagram distinguishing the stable, unstable, and chaotic regimes. The onset of the
+chaotic regime is defined by the largest Lyapunov exponent ΛL becoming positive. We will
+give more details of the theoretical calculations below in Sec. 3.3. The largest Lyapunov
+exponent is estimated with the standard Benettin two-replica algorithm [23]: two copies
+of the network are evolved under the same realization of W and driven by the same noise
+history ξi(t) (i.e. the same ηi(t) at every step), starting from initial conditions separated by a
+small distance d0; after each step the separation d(t) = ∥ϕ(1)(t)−ϕ(2)(t)∥is measured and the
+second trajectory is rescaled back onto the sphere of radius d0 around the first, accumulating
+log(d/d0). After discarding an initial transient, the running time-average of this quantity
+converges to ΛL.
+The scan is organized as a double loop over network size N and coupling λ at fixed p (with
+β, Dξ, τn, τ fixed); for each (N, λ) several independent W-realizations are drawn, and for
+each W several noise replicas are run. This nested structure allows the disorder-vs-noise
+decomposition of the variance of any observable X (e.g. Cϕ(0) or ΛL) into a between-W
+(quenched) component and a within-W, between-replica (annealed) component, which is
+the numerical counterpart of the self-averaging property assumed in the large-N derivation
+of Sec. 3. Additional diagnostics recorded for each (N, λ) include the spread of the time-
+averaged activity ¯ϕi across neurons (a check that no neuron is atypical), and the power
+spectrum of ϕi(t) (used to detect any oscillatory instability).
+6
+
+
+3
+Theoretical analysis at large N
+In this section we derive the large-N dynamics of (2.1) using the Martin-Siggia-Rose/De
+Dominicis-Janssen path integral; see e.g. [24] for a review.
+3.1
+Path integral and the self-consistent equation
+The random W and ξ dynamics is given in terms of appropriate Gaussian distributions; the
+neural network equations are imposed via a Lagrange multiplier ˜ϕ, and we assume an Ito-type
+discretization that leads to a trivial Jacobian determinant. The path integral representation
+in the time domain is then
+Z =
+Z
+DWDξDϕD ˜ϕ e−N
+2λ2
+P
+ij W 2
+ije−1
+2
+R
+t,t′
+P
+i ξi(t)G−1
+ξ
+(t,t′)ξi(t′)
+× ei
+R
+t
+P
+i ˜ϕi(t)[(τ∂t+1)ϕi(t)−P
+j Wijf(ϕj(t))−ξi(t)] .
+(3.1)
+Integrating over W, ξ and ˜ϕ we arrive at
+Z =
+Z
+Dϕ [Det(2πM −1)]N/2e−1
+2
+R
+t,t′
+P
+i(τ∂t+1)ϕi(t)M−1(t,t′)(τ∂t′+1)ϕi(t′)
+(3.2)
+where
+M(t, t′) = Gξ(t −t′) + λ2
+N
+X
+j
+f(ϕj(t))f(ϕj(t′)) .
+(3.3)
+Integrating by parts in the exponential, this can be written as
+Z =
+Z
+Dϕ [Det(2πM −1)]N/2e−1
+2
+R
+t,t′
+P
+i ϕi(t)G−1(t,t′)ϕi(t′) ,
+(3.4)
+and a short calculation gives the following relation between the ϕ 2-point function G(t, t′)
+and M(t, t′)
+(τ∂t + 1)(τ∂t′ + 1)G(t, t′) = Gξ(t −t′) + λ2
+N
+X
+j
+f(ϕj(t))f(ϕj(t′)) .
+(3.5)
+At large N, the expectation value of this relation gives the single-site self-consistent equation
+(τ∂t + 1)(τ∂t′ + 1)G(t, t′) = Gξ(t −t′) + λ2⟨f(ϕ(t))f(ϕ(t′))⟩G .
+(3.6)
+The single site correlators are
+G(t, t′) = ⟨ϕ(t)ϕ(t′)⟩= 1
+N
+X
+j
+⟨ϕj(t)ϕj(t′)⟩
+(3.7)
+7
+
+
+and
+⟨f(ϕ(t))f(ϕ(t′))⟩G = 1
+N
+X
+j
+⟨f(ϕj(t))f(ϕj(t′))⟩
+=
+Z
+Dϕ
+p
+Det(2πG)
+f(ϕ(t))f(ϕ(t′))e−1
+2
+R
+t,t′ ϕ(t)G−1(t,t′)ϕ(t′) .
+(3.8)
+In our numerical simulations of the neural network, we have checked that after a transient
+the network is described by a time-translation invariant configuration. Assuming this in
+the present theoretical derivation, we can look for a nontrivial self-consistent solution that
+depends only on t −t′. We denote the time-translation invariant self-consistent two-point
+functions by
+Cϕ(t −t′) ≡G(t, t′) = ⟨ϕ(t)ϕ(t′)⟩, Cf(t −t′) ≡⟨f (ϕ(t)) f (ϕ(t′))⟩Cϕ(t−t′) ,
+(3.9)
+where from now on we will keep implicit the sum over sites and the 1/N normalization as in
+(3.8). The self-consistent equation then becomes
+(−τ 2∂2
+t + 1)Cϕ(t) −λ2Cf(t) = Gξ(t) ,
+(3.10)
+which should be solved together with the initial and final conditions
+˙Cϕ(t = 0) = 0 , lim
+t→∞Cϕ(t) = 0 .
+(3.11)
+(We take Gξ(t) even in t and f(ϕ) odd in ϕ). This is one of the main theoretical results.
+It extends previous white-noise formulas [12, 24, 25, 13] to a general colored noise Gξ(t).
+Setting Gξ(t) = 2D0δ(t) recovers the white-noise self-consistent equation,1 and Gξ(t) = Dq
+recovers the static (quenched) noise.
+Eq. (3.10) can equivalently be obtained, at the same order in 1/N, from a collective-field
+representation of the disorder average. We present this alternative derivation in Appendix A,
+since it also introduces the notation needed later for the replica calculation of the 4-point
+function.
+For future use, let us give the explicit integral for Cf(t). Writing
+z1 = Cϕ(0)−1/2 ϕ(t) ,
+z2 = Cϕ(0)−1/2 ϕ(0) ,
+u(t) = Cϕ(t)
+Cϕ(0) ,
+(3.12)
+so that z1, z2 are unit-variance Gaussians with correlation u(t), their joint density is
+P(z1, z2) =
+1
+2π
+p
+1 −u(t)2 exp
+
+−z2
+1 + z2
+2 −2u(t) z1z2
+2(1 −u(t)2)
+
+.
+(3.13)
+1In this limit, ˙Cϕ(t) becomes discontinuous at t = 0.
+8
+
+
+In terms of this kernel, we have
+Cf(t) =
+Z
+dz1 dz2 P(z1, z2) f
+q
+Cϕ(0) z1
+
+f
+q
+Cϕ(0) z2
+
+,
+(3.14)
+where both z1 and z2 take values in R. If the correlator is taken at equal times, the expression
+becomes instead a single integral,
+Cf(t = 0) = ⟨f(ϕ(t))f(ϕ(t))⟩Cϕ(0) =
+Z
+dze−z2/2
+√
+2π
+
+f
+q
+Cϕ(0)z
+2
+.
+(3.15)
+Below in some formulas we will need to perform Taylor expansions and take variations
+with respect to Cϕ(t). It will then be useful to emphasize that Cf(t) is computed from
+two variables ϕ(t) and ϕ(0) with 2-point functions Cϕ(t) and Cϕ(0); we will denote this by
+Cf (Cϕ(t), Cϕ(0)).
+3.2
+Approximate explicit solution and stability criterion
+Eq.
+(3.10) is a nonlinear integro-differential equation for Cϕ(t) and cannot be solved in
+closed form. However, we will see that simple short and long time expansions are sufficient
+for capturing the main properties. We now describe how these arise.
+Let us first study the short-time behavior of (3.10), which as we shall now see, will also help
+us distinguish between the stable and unstable regime. We write
+q ≡Cϕ(0) ,
+(3.16)
+and recall that ˙Cϕ(0) = 0. By short time expansion, we mean a time window t ∈(0, t∗)
+where the following expansion is valid:
+Cϕ(t) ≈q + ˆCϕ(t) , | ˆCϕ| ≪q .
+(3.17)
+As we discuss below, the constant q will be determined globally, by matching onto the
+long-time expansion and requiring Cϕ(t →∞) = 0. Using Price’s theorem2
+∂
+∂Cϕ(t)Cf(Cϕ(t), Cϕ(0)) = Cf′(Cϕ(t), Cϕ(0))
+(3.18)
+(where f ′(ϕ) = ∂ϕf(ϕ)) we have
+Cf(t) ≈⟨f 2⟩q + ⟨(f ′)2⟩q ˆCϕ(t) .
+(3.19)
+The notation here is ⟨f 2⟩q = ⟨f(ϕ(t))f(ϕ(t))⟩q; we are suppressing the time dependence
+since in the time translation invariant state in which we are working, the expectation value
+is independent of t. Then, introducing
+Ω2 ≡λ2⟨(f ′)2⟩q −1
+τ 2
+,
+(3.20)
+2This follows by integrating by parts inside Gaussian integrals.
+9
+
+
+the self-consistent equation gives the following equation at leading order in the fluctuation
+ˆCϕ:
+−(∂2
+t + Ω2) ˆCϕ(t) = Gξ(t) + λ2⟨f 2⟩q −q
+τ 2
+.
+(3.21)
+We see that Ω2 controls the stability of linear fluctuations: for Ω2 < 0 the linear fluctua-
+tions that do not grow at infinity decrease exponentially fast, while for Ω2 > 0 we enter a
+regime where the homogeneous solutions oscillate. Once q is determined self-consistently,
+the transition Ω2 = 0 happens at a specific value of the coupling, which we denote by λc,1:
+λ2
+c,1⟨(f ′)2⟩q −1 = 0 .
+(3.22)
+The short-time solution is determined as an initial-value problem, with ˆCϕ(0) = ˙ˆCϕ(0) = 0.
+It is useful to introduce the causal kernel K(t), defined by
+¨K + Ω2K = 0 , K(0) = 0 ,
+˙K(0) = 1 .
+(3.23)
+It is given by
+K(t) = sin(Ωt)
+Ω
+(Ω2 > 0) ,
+K(t) = sinh(|Ω|t)
+|Ω|
+(Ω2 < 0) .
+(3.24)
+The short-time solution then reads
+ˆCϕ(t) = −1
+τ 2
+Z t
+0
+dt′ K(t −t′)
+h
+Gξ(t′) + λ2⟨f 2⟩q −q
+i
+.
+(3.25)
+On the other hand, at long times the correlator Cϕ(t) decays and it is convenient to expand
+Cf(t) in powers of Cϕ(t)/q.
+To obtain this, we expand the kernel (3.13) using Mehler’s
+formula,
+P(z1, z2) = e−z2
+1/2
+√
+2π
+e−z2
+2/2
+√
+2π
+∞
+X
+k=0
+u(t)k
+k! Hek(z1)Hek(z2) ,
+(3.26)
+where Hek(z) are the probabilistic Hermite polynomials. Introducing the Hermite coefficients
+of the activation function,
+fk(q) =
+Z
+dz e−z2/2
+√
+2π Hek(z) f(q1/2z) ,
+(3.27)
+we find
+Cf(t) =
+∞
+X
+k=0
+fk(q)2
+k!
+Cϕ(t)
+q
+k
+=
+∞
+X
+k=0
+1
+k! ⟨f (k)(ϕ)⟩2
+q Cϕ(t)k .
+(3.28)
+The second equality is obtained using Rodrigues’ formula and integration by parts (this
+requires C∞smoothness of f). Since f is odd, it receives contributions only from odd k.
+10

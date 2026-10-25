@@ -1,0 +1,860 @@
+Reading, Writing, Sharing, and Interacting
+with the World through Video
+A Survey Toward Unified Video World Models
+Shengqiong Wu1,∗, Meng Luo2,∗, Bobo Li2, Ziwei Liu3,
+Shuicheng Yan2, Ming-Hsuan Yang4, Philip Torr1, Hao Fei1,♠
+1University of Oxford
+2NUS
+3NTU
+4University of California, Merced
+∗Equal contribution
+♠Project lead, correspondence (haofei7419@gmail.com)
+Project: https://vid-gen.github.io/video-world-model-survey
+GitHub: https://github.com/vid-gen/awesome-video-world-model
+Abstract
+Video foundation models have advanced rapidly in understanding and generating visual
+sequences, while video world models seek to capture the underlying dynamics of the world
+they depict. Despite their different objectives, both concern the relationship between video
+observations and an evolving world. This survey adopts world modeling as a unifying lens for
+examining these developments. Viewing an observed video as a partial, lossy, and temporally
+ordered projection of a latent temporal world, we organize the literature around four com-
+plementary operations:
+Y reading infers world properties from observed video;
+Ò writing
+synthesizes video from specified or learned world conditions;
+T sharing integrates understand-
+ing and generation through common modeling mechanisms; and
+ interacting predicts and
+updates world states under actions and evolving observations. This perspective distinguishes
+temporal coherence in observed or generated sequences from consistency in the underlying
+world state. Across tasks, representations, models, datasets, and benchmarks, we trace a
+shift in emphasis from clip-level recognition and perceptual fidelity toward persistent state,
+controllable evolution, physical and causal validity, and evaluation grounded in interaction
+and downstream decisions, and we distill the open challenges that follow.
+World
+Hidden behind the wall
+St
+Reverse
+Continue
+Reading
+Video Comprehension
+Infer world state
+Writing
+Video Generation
+Generate video from conditions
+Sharing
+Unified Video Compr. & Gen.
+Couple reading and writing
+Interacting
+Video World Modeling
+Evolve state under actions
+Inferred state
+W
+V
+Identity
+Motion
+Hidden state
+Observed video
+Conditions
+V
+W
+“A car passes
+the wall”
+Render
+Generated video
+Shared model
+W
+V
+Read
+to understand
+Write
+to generate
+Observed
+Generated
+State transition
+St+1
+St
+St
+Continue
+Reverse
+Observe
+Reverse
+Continue
+arXiv:2610.31668v1  [cs.CV]  22 Oct 2026
+
+
+Video Foundation Models
+World-Modeling Lens
+Contents
+1
+Introduction
+6
+2
+The World-Modeling Lens
+9
+2.1
+World, Video, and Represented State . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+10
+2.2
+Two Forms of Consistency . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+10
+2.3
+The Four Operations . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+11
+3
+Preliminaries
+11
+3.1
+Video Scenarios . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+11
+3.2
+Video Large Language Models . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+12
+3.3
+Generative Modeling Foundations . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+13
+3.4
+Taxonomy of Video World Models
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+14
+4
+Y Video Comprehension: Reading the World
+15
+4.1
+Tasks, Data, and Evaluation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+15
+4.1.1
+Semantic Understanding . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+15
+4.1.2
+Spatial Understanding . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+16
+4.1.3
+Temporal Understanding
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+17
+4.1.4
+Physical Understanding . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+17
+4.1.5
+Causal Understanding . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+17
+4.2
+Video Representation Learning and Encoding . . . . . . . . . . . . . . . . . . . . . . . . . . .
+17
+4.2.1
+Contrastive Learning . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+18
+4.2.2
+Masked Learning . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+18
+4.2.3
+Predictive Learning
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+19
+4.2.4
+Generative Learning . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+19
+4.3
+Video-Language Foundation Modeling . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+19
+4.3.1
+Architectures . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+19
+4.3.2
+Learning Paradigms . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+21
+4.3.3
+Test-Time Scaling
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+22
+4.4
+Agentic Video Modeling . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+22
+4.4.1
+Video Agents . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+22
+4.4.2
+Tool Use and Retrieval Augmentation . . . . . . . . . . . . . . . . . . . . . . . . . . .
+24
+4.5
+Applications . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+25
+4.5.1
+Embodied and Egocentric Perception . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+25
+4.5.2
+Autonomous Driving . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+25
+4.5.3
+Domain-Specific Video Analysis . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+25
+5
+Ò
+Video Generation: Writing the World
+26
+5.1
+Tasks, Conditions, and Evaluation
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+26
+5.1.1
+Generation Tasks by Condition . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+26
+5.1.2
+Evaluation and Metrics
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+27
+5.2
+Video Latent Representation Learning . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+29
+5.2.1
+Continuous Latents . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+29
+2
+
+
+Video Foundation Models
+World-Modeling Lens
+5.2.2
+Discrete Tokens . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+31
+5.2.3
+Hybrid and Semantically Aligned Representations
+. . . . . . . . . . . . . . . . . . . .
+31
+5.3
+Generative Video Foundation Modeling
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+32
+5.3.1
+Diffusion-Based Generation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+34
+5.3.2
+Autoregressive and Masked Token Generation . . . . . . . . . . . . . . . . . . . . . . .
+35
+5.3.3
+Flow-Based Generation
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+36
+5.3.4
+LLM/MLLM-Assisted Generation
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+36
+5.3.5
+Agentic Generation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+36
+5.4
+Control Strategies
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+37
+5.4.1
+Attention-Based Control . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+37
+5.4.2
+Adapter-Based Control . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+38
+5.4.3
+Latent-Space Control
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+39
+5.4.4
+Concatenation and In-Context Conditioning . . . . . . . . . . . . . . . . . . . . . . . .
+39
+5.4.5
+Guidance-Based Control . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+39
+5.4.6
+Tuning-Based Control . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+39
+5.5
+Applications . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+40
+5.5.1
+Creative Content Production . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+40
+5.5.2
+Avatars and Character Animation
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+40
+5.5.3
+Video Plans for Embodied Agents
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+40
+5.5.4
+Synthetic Data for Embodied AI and Driving . . . . . . . . . . . . . . . . . . . . . . .
+41
+6
+T Unified Video Models: Sharing the World
+41
+6.1
+Unified Architectures . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+41
+6.1.1
+Discrete-Token Unification . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+43
+6.1.2
+Continuous Latent-Space Unification . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+44
+6.1.3
+Decoupled and Modular Unification
+. . . . . . . . . . . . . . . . . . . . . . . . . . . .
+44
+6.1.4
+Agentic and Tool-Augmented Unification
+. . . . . . . . . . . . . . . . . . . . . . . . .
+45
+6.2
+Learning Paradigms
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+45
+6.2.1
+Isolated Learning . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+45
+6.2.2
+Dual Learning
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+46
+6.2.3
+Co-learning . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+46
+6.2.4
+Synergistic Learning . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+46
+6.3
+Applications . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+47
+6.3.1
+Instruction-Driven Video Editing and Creation . . . . . . . . . . . . . . . . . . . . . .
+47
+6.3.2
+Generative Reasoning
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+47
+6.3.3
+Unified Perception-Generation-Planning Systems . . . . . . . . . . . . . . . . . . . . .
+47
+6.4
+Evaluation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+48
+6.4.1
+Per-Direction Evaluation
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+48
+6.4.2
+Unified, Interleaved, and Synergy Evaluation
+. . . . . . . . . . . . . . . . . . . . . . .
+48
+6.4.3
+Protocols and Consistency . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+49
+7
+ Video World Models: Interacting with the World
+49
+7.1
+Architectures and Training Paradigms . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+49
+7.1.1
+Observation-Space Passive Prediction
+. . . . . . . . . . . . . . . . . . . . . . . . . . .
+50
+3
+
+
+Video Foundation Models
+World-Modeling Lens
+7.1.2
+Observation-Space Action-Conditioned Prediction
+. . . . . . . . . . . . . . . . . . . .
+50
+7.1.3
+Observation-Space Interactive World Models
+. . . . . . . . . . . . . . . . . . . . . . .
+51
+7.1.4
+Latent-State Passive Prediction . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+51
+7.1.5
+Latent-State Action-Conditioned Prediction . . . . . . . . . . . . . . . . . . . . . . . .
+52
+7.1.6
+Latent-State Interactive World Models . . . . . . . . . . . . . . . . . . . . . . . . . . .
+52
+7.2
+Core Technical Challenges . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+52
+7.2.1
+Action-Conditioned Controllability . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+52
+7.2.2
+Long-Horizon Consistency and Memory . . . . . . . . . . . . . . . . . . . . . . . . . .
+53
+7.2.3
+Real-Time Responsiveness . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+54
+7.2.4
+Physical and Causal Grounding . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+55
+7.3
+Applications . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+56
+7.3.1
+Data Engines . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+56
+7.3.2
+Policy Training in Imagination . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+56
+7.3.3
+Policy Evaluation Environments
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+57
+7.3.4
+Predict-then-Act Planning . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+57
+7.3.5
+Interactive Simulation for Humans . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+57
+7.4
+Benchmarks and Evaluation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+57
+7.4.1
+Challenge-Aligned Benchmarks . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+57
+7.4.2
+Application-Aligned Benchmarks . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+59
+7.4.3
+Foundational and Comprehensive Benchmarks
+. . . . . . . . . . . . . . . . . . . . . .
+59
+8
+Open Challenges and Future Directions
+60
+8.1
+Long-Horizon World Consistency . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+60
+8.2
+Physical and Causal Grounding . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+61
+8.3
+Measurable Synergy in Unified Video Models . . . . . . . . . . . . . . . . . . . . . . . . . . .
+61
+8.4
+Standardized Evaluation of World Properties
+. . . . . . . . . . . . . . . . . . . . . . . . . . .
+62
+8.5
+Scaling Control from Unlabeled Video . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+63
+8.6
+Generalization across Scenes and Embodiments . . . . . . . . . . . . . . . . . . . . . . . . . .
+63
+8.7
+Stochastic Worlds and Rare Events . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+64
+9
+Conclusion
+65
+4
+
+
+Video Foundation Models
+World-Modeling Lens
+Reading
+Video understanding
+Video generation
+Writing 
+Sharing
+Understanding + generation
+Interacting
+Video world models
+2017–2020
+2021
+2022
+2023
+Jan–Jun
+2023
+Jul–Dec
+2024
+Jan–Jun
+2024
+Jul–Dec
+2025
+Jan–Mar
+2025
+Apr–Jun
+2025
+Jul–Sep
+2025
+Oct–Dec
+2026
+Jan–Mar
+2026
+Apr–Jun
+2026
+Jul–Sep
+2026
+Oct.
+I3D
+DeepMind · Oxford
+SlowFast
+Meta
+VideoBERT
+Google
+TimeSformer
+Meta · Dartmouth College
+ViViT
+Google
+Frozen in Time
+VGG
+Video Swin
+MSRA · USTC
+VideoMAE
+NJU · Tencent
+Flamingo
+DeepMind
+InternVideo
+Shanghai AI Lab · NJU
+VideoMAE V2
+NJU · Shanghai AI Lab
+VideoChat
+Shanghai AI Lab · NJU
+Video-LLaMA
+Alibaba · Hupan Lab
+Video-ChatGPT
+MBZUAI · ANU
+Video-LLaVA
+PKU · PCL
+LLaMA-VID
+CUHK · SmartMore
+V-JEPA
+Meta · Inria
+VideoPrism
+Google
+VideoAgent · long-form
+Stanford
+VideoAgent · memory
+BIGAI · PKU
+InternVideo2
+Shanghai AI Lab · NJU
+VideoLLaMA 2
+Alibaba
+VideoLLM-online
+NUS · Meta
+SAM 2
+Meta
+LLaVA-OneVision
+ByteDance · NTU
+LLaVA-Video
+ByteDance · NTU
+VideoLLaMA 3
+Alibaba
+Qwen2.5-VL
+Alibaba
+VideoMind
+PolyU · NUS
+Video-R1
+CUHK · CUHK, Shenzhen
+PE
+Meta · UT Austin
+V-JEPA 2
+Meta · Mila
+InternVL3.5
+Shanghai AI Lab
+Keye-VL-1.5
+Kuaishou
+StreamingVLM
+MIT · NVIDIA
+LongVT
+MiroMind · NTU
+Qwen3-VL
+Alibaba
+InternVideo-Next
+SJTU · Shanghai AI Lab
+VideoThinker
+ZJU · SII
+V-JEPA 2.1
+Meta · Zaragoza
+InternVideo3
+Shanghai AI Lab · SII
+Gen4U
+DeepMind
+GenCeption
+DeepMind · Toronto
+VideoChat3
+NJU · Shanghai AI Lab
+Wav2Lip
+IIIT Hyderabad · University of Bath
+VideoGPT
+UC Berkeley
+VDM
+Google
+CogVideo
+THU · BAAI
+Make-A-Video
+Meta · University of Rochester
+Imagen Video
+Google
+Phenaki
+Google · University of Michigan
+Tune-A-Video
+NUS · Tencent
+Runway Gen-2
+Runway
+VideoLDM
+LMU Munich · NVIDIA
+AnimateDiff
+Shanghai AI Lab · CUHK
+TokenFlow
+Weizmann
+VideoDirectorGPT
+UNC
+MAGVIT-v2
+Google · CMU
+Stable Video Diffusion
+Stability AI
+Animate Anyone
+Alibaba
+Pika 1.0
+Pika
+MotionCtrl
+Tencent · HKU
+VideoPoet
+Google · DeepMind
+VideoCrafter2
+Tencent
+Lumiere
+Google
+Sora
+OpenAI
+Open-Sora
+HPC-AI Tech
+Kling
+Kuaishou
+Diffusion Forcing
+MIT CSAIL · TUM
+CogVideoX
+Zhipu · THU
+Pyramid Flow
+PKU · BUPT
+Movie Gen
+Meta
+HunyuanVideo
+Tencent
+CausVid
+Adobe · MIT
+LTX-Video
+Lightricks
+Step-Video-T2V
+StepFun
+VACE
+Alibaba
+Wan
+Alibaba
+FramePack
+Stanford
+MAGI-1
+Sand AI
+Self Forcing
+Adobe · UT Austin
+Seedance 1.0
+ByteDance
+Ovi
+Character AI · Yale University
+Sora 2
+OpenAI
+LTX-2
+Lightricks
+Causal Forcing
+THU · ShengShu
+Seedance 2.0
+ByteDance
+VideoRAE
+CUHK(SZ) · HUST
+V-RAE
+NUS · Oxford
+UniVL
+MSRA · SJU
+NExT-GPT
+NUS
+GPT4Video
+Tencent · University of Sydney
+Video-LaVIT
+PKU · Kuaishou
+VILA-U
+THU · MIT
+Emu3
+BAAI
+VideoAgent · planning
+Waterloo · IIT Kharagpur
+HaploOmni
+THU · Tencent
+Show-o2
+NUS · ByteDance
+Omni-Video
+SAIS · Fudan
+UniVid
+AAII · PKU
+UniVideo
+Waterloo · Kuaishou
+NExT-OMNI
+SIAT · UCAS
+VISTA
+Google · NUS
+Emu3.5
+BAAI
+Thinking with Video
+Fudan · SII
+UniVA
+SMU · Rochester
+TUNA
+Meta · HKU
+UnityVideo
+HKUST · CUHK
+ReViSE
+HKUST · Alibaba
+UniUGP
+ByteDance
+JavisGPT
+ZJU · NUS
+CounterVid
+UNIMORE · Pisa
+Omni-Video 2
+SAIS · Fudan
+OmniWeaving
+ZJU · Tencent
+Uni-ViGU
+SAIS · SUTD
+Mamoda2.5
+ByteDance
+Lance
+ByteDance
+Lumos-Nexus
+ZJU · Alibaba
+Cosmos 3
+NVIDIA
+HYDRA-X
+NJU · CASIA
+VideoAgent · editing
+HKU · Snap Inc
+Vega
+TikTok
+Gen4U
+DeepMind
+OpenCoF
+ByteDance · CUHK
+GenCeption
+DeepMind · Toronto
+MoRoute
+SYSU · HUJING
+PixelUMM
+NVIDIA · Waterloo
+EWAM
+Yinwang
+UniWAM
+HKUST(GZ) · OLA
+ProAR
+PolyU · UC Davis
+SV2P
+UIUC · UC Berkeley
+DriveDreamer
+GigaAI · THU
+GAIA-1
+Wayve
+UniSim
+UC Berkeley · MIT
+V-JEPA
+Meta · Inria
+Genie
+DeepMind · UBC
+DIAMOND
+Geneva · Edinburgh
+iVideoGPT
+THU · Huawei Noah’s Ark Lab
+Vista
+HKUST · Shanghai AI Lab
+Pandora
+Maitrix.org · UC San Diego
+IRASim
+HKUST · ByteDance
+GameNGen
+Google · DeepMind
+Oasis
+Decart · Etched
+DINO-WM
+NYU · Meta
+Cosmos
+NVIDIA
+AdaWorld
+HKUST · Harvard University
+GAIA-2
+Wayve
+WorldMem
+NTU · PKU
+LaDi-WM
+NUDT · PKU
+Vid2World
+THU · Chongqing University
+WorldGym
+Stanford · NYU
+Long-term Spatial Mem.
+Shanghai AI Lab · NTU
+V-JEPA 2-AC
+Meta · Mila
+Hunyuan GameCraft
+Tencent · HUST
+Matrix-Game
+Skywork AI
+Genie 3
+Google DeepMind
+Matrix-Game 2.0
+Skywork AI
+Dreamer 4
+DeepMind
+Ctrl-World
+Stanford · THU
+GAIA-3
+Wayve
+RELIC
+Adobe
+LIVE
+CUHK, Shenzhen · SLAI
+DreamDojo
+NVIDIA · HKUST
+Causal-JEPA
+Brown · NYU
+Solaris
+NYU
+LiveWorld
+Adelaide · ANU
+LeWorldModel / LeWM
+MUdMa · NYU
+V-JEPA 2.1
+Meta · Zaragoza
+MultiWorld
+HKU · Sreal AI
+minWM
+ShengShu · HKUST
+OmniDreams
+NVIDIA
+BiWM
+LynnReal · SII
+Mirage
+ZJU · Microsoft
+WorldDirector
+HKUST · Ant Group
+Vidu S1
+THU · ShengShu
+Wan-Streamer
+Alibaba
+WorldTrace
+NVIDIA · Princeton
+Matrix-Game 3.5
+Riemann Dynamics
+Waypoint-1.5
+Overworld
+SMI
+CUHK(SZ) · Alibaba
+Video ↔ World
+Figure 1 Selected milestones in the parallel evolution of video understanding, generation, shared representations and
+workflows, and world prediction and control.
+5

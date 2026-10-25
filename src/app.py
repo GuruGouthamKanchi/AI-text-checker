@@ -71,13 +71,18 @@ async def lifespan(app: FastAPI):
             print(f"[FastAPI Startup] Error preloading RoBERTa: {e}")
 
     if model_modernbert is not None and model_roberta is not None:
-        print(f"[FastAPI Startup] HYBRID ENSEMBLE ENGINE ACTIVE on {device}! (65% ModernBERT + 35% RoBERTa)")
+        print(f"[FastAPI Startup] HYBRID ENSEMBLE ENGINE ACTIVE on {device}! (Max-pooling & heuristic fusion)")
     elif model_modernbert is not None:
         print(f"[FastAPI Startup] ModernBERT Standalone active on {device}.")
     elif model_roberta is not None:
         print(f"[FastAPI Startup] RoBERTa Standalone active on {device}.")
     else:
-        print(f"[FastAPI Startup] App running in SIMULATION MODE until fine-tuned weights exist.")
+        if os.getenv("STRICT_PRODUCTION", "0") == "1" or os.getenv("REQUIRE_MODELS", "0") == "1":
+            raise RuntimeError(
+                "[Fatal] Production startup failed: missing model weights in models/. "
+                "Production mode forbids simulated or random scores (Project Rule 7)."
+            )
+        print(f"[FastAPI Startup] App running in SIMULATION MODE for development/demonstration until fine-tuned weights exist.")
         
     yield
     print("[FastAPI Shutdown] Unloading Hybrid Ensemble Engine models...")

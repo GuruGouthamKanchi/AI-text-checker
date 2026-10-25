@@ -1,0 +1,665 @@
+Direct Pass@k Optimization for Thought Pruning: Balancing
+Quality and Diversity in Test-Time Reasoning
+Mahdi Salmani, Adel Javanmard, Devansh Gupta, and Meisam Razaviyayn
+University of Southern California
+{salmanis, ajavanma, guptadev, razaviya}@usc.edu
+Abstract
+Test-time scaling has emerged as a key inference strategy for reasoning models, where a
+model generates a large number of candidate solutions in the hope of finding at least one correct
+solution. Running all candidate solutions to completion can be computationally demanding, so
+recent work prunes the candidate pool after generating only a short prefix, committing further
+computation only to the surviving candidates. Existing pruning strategies divide broadly into
+two categories: Quality-based methods assign a score to each partial solution and discard those
+predicted to ultimately lead to an incorrect final solution, while diversity-based methods select
+partial solutions that follow different reasoning trajectories and are therefore likely to cover
+different final solutions. The tension between these two objectives is an instance of exploration
+versus exploitation, yet little to no prior work on pruning exposes this trade-off directly, let
+alone optimizes it. In this paper, we introduce a pruning procedure that addresses this trade-off
+directly by optimizing pass@k over the selected solution pool. In particular, it chooses the pool to
+maximize the probability that at least one of its partial solutions, when continued to completion,
+yields a correct answer. Because this objective simultaneously rewards high-quality partial
+solutions and penalizes redundancy among them, quality and diversity are naturally balanced by
+the criterion itself rather than through separate ad-hoc design choices. On eight open-weight
+reasoning models, our method outperforms existing quality-based and diversity-based pruning
+strategies. The gains are particularly pronounced when the pruning procedure keeps a moderate
+number of partial solutions for continued generation, highlighting the value of directly balancing
+quality and diversity during pruning.
+1
+Introduction
+Large Language Models (LLMs) have demonstrated remarkable capabilities in complex reasoning,
+showcasing a strong aptitude for solving complex problems that require multi-step logic [15, 18,
+21, 45, 52]. To further enhance these capabilities, test-time scaling has emerged as a prominent
+strategy, where generating multiple candidate solutions for a single problem allows the model to
+explore diverse reasoning strategies and achieve substantially better final performance [3, 35, 44, 48].
+However, a significant challenge in scaling test-time compute is the prohibitive cost of generating
+many full solutions, which we refer to as rollouts moving forward [23, 33]. Beyond generation, there
+is also the cost of evaluating the finished rollouts in best-of-N methods, which score each rollout
+with a reward model, and this is computationally demanding on a large pool of long reasoning traces
+[11, 26, 36]. This computational bottleneck, both in generation and in evaluating all N rollouts in
+best-of-N methods, necessitates test-time pruning of partial rollouts before they reach a final answer
+1
+arXiv:2610.31667v1  [cs.AI]  22 Oct 2026
+
+
+𝒒
+Question
+Reasoning Model
+𝑁Rollouts
+1
+2
+3
+4
+· · · 𝑁
+Prune
+at 𝑇
+Budget 𝐵
+Generated tokens
+Figure 1: Test-time pruning. Only k of the N rollouts (ringed) continue past the cutoff T, up to
+the budget B.
+and terminate. In other words, we generate all N rollouts only up to a cutoff of T tokens, keep the
+k most promising of them and run those to the full token budget B, as illustrated in Fig. 1.
+One family of methods examines the confidence dynamics of the model during generation,
+utilizing metrics such as logit entropy or confidence [17, 30, 43, 50]. The underlying intuition is that
+if a model is overly confident at an intermediate decoding step, extending the reasoning process is a
+waste of compute; conversely, if the model is entirely lacking in confidence, it is unlikely to reach
+a correct solution regardless of the additional compute provided, allowing for early termination.
+Another line of work leverages the model’s internal state, specifically the hidden states of its
+transformer blocks, to identify which rollouts are worth continuing [1, 54]. By “probing” these
+internal states, one can predict whether the model will ultimately arrive at a correct solution,
+effectively framing the pruning problem as a classification task. This allows for the early discarding
+of partial rollouts that are unlikely to yield a correct final answer. In parallel, a separate line of
+research prioritizes representation exploration (RepExp) to select a subset of rollouts that cover as
+many distinct reasoning strategies as possible [39]. By selecting partial rollouts whose corresponding
+embeddings are dissimilar, RepExp aims to explore a diverse set of reasoning trajectories.
+These approaches, however, sit at the two ends of a spectrum, and neither directly optimizes the
+quantity we actually care about. The problem with probing methods is that the rollouts they rank
+highest tend to be similar to one another. As a result, the probe may be confidently wrong about
+all of the kept rollouts at once, and none of them reaches a correct answer. This is the problem
+of pure exploitation (Fig. 2a). RepExp, on the other hand, finds diverse rollouts, but because it
+ignores the quality of the rollouts, it can spend much of its budget on rollouts that are unlikely to
+succeed (Fig. 2b). These limitations motivate selecting the rollouts by the metric we actually want
+to optimize, choosing the set S of k rollouts that maximizes pass@k, that is, max|S|=k pass@k(S),
+which we formalize in Eq. 3. Optimizing this objective directly keeps the selected rollouts diverse
+enough to avoid shared failures while still favoring high-quality ones (Fig. 2c).
+To this end, we propose PKTP (Pass@k Thought Pruning), a pruning framework that chooses
+the kept rollouts by maximizing pass@k directly. The main difficulty is that, even if the rollouts are
+sampled independently, their outcomes are not independent (conditioned on the partial observation
+of the rollout).
+Hence, pass@k depends on their joint distribution (i.e., rollouts with similar
+partial rollouts tend to succeed or fail together). We model this joint distribution with a latent
+Gaussian model, in which the correctness of each rollout is obtained by thresholding a Gaussian
+2
+
+
+Pure Exploitation
+✗
+✗
+✗
+✓
+✗
+✓
+✗
+✗
+✗
+(a) Keep highest-quality 𝑘,
+redundant and correlated
+Pure Exploration
+✗
+✗
+✗
+✓
+✗
+✓
+✗
+✗
+✗
+(b) Keep most diverse 𝑘, wastes
+budget on weak rollouts
+Ours (PK TP)
+✗
+✗
+✗
+✓
+✗
+✓
+✗
+✗
+✗
+(c) Keep high-quality and
+diverse 𝑘
+Predicted correct
+Uncertain
+Predicted wrong
+✓Correct
+✗Incorrect
+Kept (𝑘)
+Figure 2: Conceptual illustration. The same pool of candidate rollouts, positioned by their
+partial rollout representations in embedding space, under three pruning strategies. Each rollout is
+colored by its predicted correctness and marked ✓/✗by its actual outcome; the k = 3 kept rollouts
+are ringed. (a) Pure exploitation keeps the highest-scoring rollouts, but they are correlated and
+cluster together, so they miss the correct rollout. (b) Pure exploration keeps a maximally diverse
+subset yet spends its budget on low-quality rollouts, also missing it. (c) Our method optimizes
+pass@k directly over the kept subset, balancing quality and diversity, and retains the correct rollout.
+score. Evaluating pass@k under this model requires an expectation over the latent variables, so we
+instead derive a closed-form second-order approximation of it. We show that this approximation
+is submodular, enabling us to approximately solve it using a greedy procedure to find a subset of
+size k. An important aspect of the proposed framework is that the latent model is trained only
+once and does not depend on k, and a single greedy pass yields a nested sequence of subsets, so the
+budget k can be chosen online at inference time without retraining.
+Contributions.
+First, we cast pruning as maximizing the pass@k of the kept set, and we model
+how similar rollouts fail together. Second, we derive a closed-form, submodular approximation of
+pass@k that links the probe and RepExp. Third, through experiments on eight reasoning models,
+we show that PKTP improves over existing pruning methods, especially for moderate values of k.
+2
+Problem Formulation and Related Work
+Setup.
+Given a question q, we draw N candidate reasoning rollouts y(i) ∼π( · | q ) from a model π.
+Each rollout is observed only through its first T tokens, the prefix y(i)
+1:T . We encode this prefix as
+a representation vector hi = h
+
+y(i)
+1:T
+
+, a hidden-state embedding of the reasoning up to token T.
+Pruning then keeps k ≤N rollouts, runs them to the full token budget B, and discards the rest. A
+completed rollout y1:B is either correct or not, recorded by the sign C(y1:B) ∈{−1, +1},
+C(y1:B) =
+(
++1,
+if Verify(y1:B) ,
+−1,
+otherwise.
+(1)
+3
+
+
+Here Verify is a task-specific checker that returns true exactly when a completed rollout reaches a
+correct final answer, for instance by matching a reference solution on a math problem or passing
+the unit tests on a coding task. We write C(y(i)) for the outcome of the i-th rollout once it is run
+to the budget B.
+Representations.
+To prune partial rollouts, we need to map each prefix to a vector that captures
+its essential information. One line of work relies on hand-designed features of the rollout and
+the model’s internal states, such as token confidence, the geometry of the hidden-state trajectory,
+or the convergence of intermediate answers.
+These features are usually very low dimensional
+[13, 19, 28, 38, 40]. A second line of work instead keeps the hidden states of the transformer and
+pools them into a single vector [29, 39, 42], and this is the class we use. In particular, we take hi
+to be an exponential moving average (EMA) of the hidden states, which has proven an effective
+pooling operation [29]. Our improvements are thus shown for this class of embeddings, although
+our framework can be applied to other embeddings as well. Appendix F gives the details of the
+representation we use.
+Objective.
+At pruning time the outcomes C(y(i)) are still unknown, since each depends on a
+(random) continuation we have not yet generated. How, then, should we choose the set S ⊆
+{1, . . . , N} of |S| = k rollouts to keep? Two extreme choices are as follows.
+(i) (Pure exploitation) Keep in S the rollouts {i} with the highest predicted success P
+ C(y(i)) =
++1 | q, y(i)
+1:T
+
+, estimated by a linear probe trained on the representations hi [54], that is, the k
+rollouts with the largest scores w⊤hi for a learned weight vector w. We refer to this pruning
+policy as Linear Probe.
+(ii) (Pure exploration) Build a diverse S, starting from a random rollout and greedily adding
+to S the rollout i⋆by solving
+i⋆= arg max
+i/∈S h⊤
+i
+
+τI +
+X
+j∈S
+hjh⊤
+j
+−1
+hi,
+(2)
+that is, we add, the rollout whose representation is least explained by those already chosen,
+where τ > 0 is a regularizer. This is the RepExp pruning policy [39].
+Neither extreme balances quality against diversity. What we actually want is the set of k rollouts
+with the best pass@k. Mathematically, we seek the set S most likely to contain a correct rollout,
+Pass@k Pruning Objective
+max
+S ⊆{1,...,N} P
+ X
+i∈S
+1{C(y(i)) = +1} ≥1
+ q, y(1)
+1:T , . . . , y(N)
+1:T
+!
+s.t.
+|S| = k.
+(3)
+Here, 1{·} is the indicator function, i.e., 1{True} = 1 and 1{False} = 0. The objective in Eq. 3
+is exactly pass@k of the kept pool, the probability that at least one surviving rollout, once run to
+the budget B, yields a correct answer. We also assume that the final outcomes are binary, although
+the same approach generalizes to continuous outcomes, where each completed rollout is scored by a
+reward model and the goal is to maximize the best of the kept rollouts [10], in which case Eq. 3
+becomes a max@k objective [41].
+4
+
+
+Related work.
+Existing pruning methods score each rollout on its own, using the model’s
+confidence [13, 30], a reward model [36], or a probe on its hidden states [25, 54], or they select a
+diverse set, as RepExp does [39]. Pass@k has also been used as a training objective for reasoning
+models [8, 41], but not to decide which partial rollouts to keep. Outside of language models, choosing
+a set so that at least one item succeeds has been studied in information retrieval and Bayesian
+optimization [6, 34, 46]. Appendix G gives an extended discussion. In what follows, we discuss how
+such an objective can be solved.
+3
+Method
+There are some challenges in solving Eq. 3: First, we need to obtain the pass@k of a given set
+of rollouts. We address this by learning the joint distribution of the rollouts’ outcomes under a
+probabilistic model, from which the pass@k of any set can be estimated. Second, even with such
+an estimate, finding the subset of k rollouts with the highest estimated pass@k is a mixed-integer
+program. We can therefore view our framework as two components, learning the joint distribution of
+the outcomes (Section 3.1), and solving this mixed-integer program at selection time (Section 3.2).
+3.1
+Probabilistic model
+Let H = [h1, . . . , hN] ∈Rd×N collect the representations of the N generated partial rollouts,
+Qθ : Rd →R be a learnable mapping predicting the rollout quality, and define Qθ(H) = [q1, . . . , qN]⊤
+with qi := Qθ(hi). We model the latent scores of the rollouts as
+Z =
+Qθ(H)
+| {z }
+Rollout Quality
++
+H⊤f
+|{z}
+Rollouts Correlation
++
+m
+|{z}
+Outcome Noise
+,
+m ∼N(0, IN),
+f ∼N(0, Id),
+(4)
+where m and f are independent. Intuitively, Zi is a score of how promising rollout i is, so the higher
+its quality qi, the higher its score. On top of qi, the term h⊤
+i f is a random effect shared by rollouts
+with similar representations, which makes them succeed or fail together. Indeed, for distinct rollouts,
+Cov(Zi, Zj | H) = h⊤
+i hj, so rollouts with aligned hi have positively correlated outcomes. Finally,
+mi is noise specific to rollout i.
+The correctness C(y(i)) of rollout i is then modeled by thresholding its score at zero. More
+specifically, we define the random variable Ci = 2 × 1{Zi ≥0} −1. In other words, a positive score
+implies that the rollout is correct, while a negative score implies that it is incorrect. Since the scores
+are independent conditionally on f, the likelihood of an observed correctness pattern c ∈{−1, 1}N is
+Pr
+
+C = c | H
+
+= Ef
+h N
+Y
+i=1
+Φ
+ ci(qi + h⊤
+i f)
+i
+,
+(5)
+where Φ is the standard Gaussian CDF, and the derivation can be found in Appendix A.1.
+Suppose we have M training questions, where question m consists of the representations H(m)
+of a pool and its observed outcomes c(m) ∈{−1, 1}N. The mapping Qθ is trained by maximizing
+their likelihood under Eq. 5, that is, by solving
+max
+θ
+1
+M
+M
+X
+m=1
+log Prθ
+
+C = c(m) | H(m)
+,
+(6)
+where Prθ is the likelihood of Eq. 5 with H = H(m) = [h(m)
+1
+, . . . , h(m)
+N ] and qi = Qθ(h(m)
+i
+). Solving
+Eq. 6 directly is hard, since the expectation over f in Eq. 5 has no closed form. We therefore expand
+5
+
+
+each log-factor to second order in h⊤
+i f, which turns the expectation into a Gaussian integral that
+can be evaluated exactly (Theorem 1).
+Theorem 1 (Second-order surrogate). For a pattern c ∈{−1, 1}N, let ϕ be the standard
+Gaussian density, λi(ci) = ϕ(qi)/Φ(ciqi), κi(ci) = λi(ci)
+ λi(ci) + ciqi
+
+,
+Σ(c) =
+N
+X
+i=1
+κi(ci) hih⊤
+i ,
+b(c) =
+N
+X
+i=1
+ciλi(ci) hi.
+(7)
+Then, as ε →0,
+log Φ
+ ci(qi + ε)
+
+= log Φ(ciqi) + ciλi(ci) ε −κi(ci)
+2
+ε2 + O(|ε|3),
+(8)
+and replacing each log-factor of Pr[C = c | H] in Eq. 5 by this expansion at ε = h⊤
+i f gives
+f
+Pr[C = c | H] =
+ N
+Y
+i=1
+Φ(ciqi)
+
+det
+ Id + Σ(c)
+−1/2 exp
+1
+2 b(c)⊤ Id + Σ(c)
+−1b(c)
+
+.
+(9)
+The proof is in Appendix B.1.1. The expansion is local, so we use Eq. 9 as a tractable surrogate
+rather than as an exact identity or a bound. We therefore replace Prθ in Eq. 6 by f
+Prθ.
+Instead of using hi directly in the correlation term, one could learn an encoder Eψ of the
+representations and use Eψ(hi) in its place, but its helpfulness depends on the amount of data. Since
+our data is limited, we keep hi fixed, so that Qθ is the only learned component, and for the same
+reason we use a simple linear model Qθ(h) = θ⊤h + θ0 for Qθ, as in the Linear Probe [54]. Unlike
+the Linear Probe, which is trained on the correctness of each rollout separately, Qθ is trained on
+the joint outcomes of all rollouts of a question, so the quality it learns already accounts for the
+correlation between them. Since Eq. 9 is in closed form and differentiable in θ, we maximize the
+surrogate likelihood by stochastic gradient ascent over the training questions.
+3.2
+Subset selection
+Maximizing pass@k in Eq. 3 is the same as minimizing the probability that every kept rollout fails.
+Under the latent Gaussian model, and suppressing the conditioning on H, the failure probability of
+a set S of kept rollouts is
+L(S) = Pr
+
+Ci = −1 ∀i ∈S
+
+= Ef∼N (0,Id)
+hY
+i∈S
+Φ
+ −(qi + h⊤
+i f)
+i
+,
+(10)
+and we seek the set of k rollouts that minimizes it. Since L(S) has no closed form, we approximate
+it with Theorem 1.
+Corollary 1 (Selection surrogate). For a set S ⊆[N] := {1, . . . , N}, let λi = ϕ(qi)/Φ(−qi),
+κi = λi(λi −qi), ΣS = P
+i∈S κi hih⊤
+i and bS = P
+i∈S λi hi. Applying Theorem 1 to the rollouts in S
+with ci = −1 for every i ∈S gives a surrogate eL(S) of L(S) with
+log eL(S) =
+X
+i∈S
+log Φ(−qi)
+|
+{z
+}
+Rollout Quality
++
+
+−1
+2 log det(Id + ΣS) + 1
+2 b⊤
+S (Id + ΣS)−1bS
+
+|
+{z
+}
+Rollouts Correlation
+.
+(11)
+6
+
+
+The proof is in Appendix B.1.2. We therefore minimize log eL(S) over |S| = k. Each term of
+Eq. 11 has a direct interpretation. The first term favors large qi, because the baseline failure factor
+Φ(−qi) decreases with qi. The negative log-determinant rewards a collection of hi’s that covers
+several directions instead of repeatedly selecting the same direction. The last term is nonnegative
+and penalizes sets whose weighted vectors λihi add up in the same direction, which the determinant
+alone cannot detect since it treats hi and −hi identically. For example, two rollouts of the same
+quality fail together more often with h2 = h1 than with h2 = −h1, yet both cases give the same ΣS
+and hence the same determinant, while bS is 2λ1h1 in the first case and 0 in the second.
+However, minimizing log eL(S) exactly is hard.
+Proposition 1 (Hardness of exact selection). Minimizing log eL(S) over all S ⊆[N] with |S| = k is
+NP-hard.
+The proof is in Appendix B.3, by a reduction from the maximum independent set problem.
+When the objective is monotone and submodular, however, a greedy optimizer that adds one
+rollout at a time is guaranteed to achieve at least a (1 −e−1) fraction of the optimal value [32].
+The exact pass probability P(S) := 1 −L(S) is known to be monotone and submodular [46]. An
+approximation of a submodular function, though, is not necessarily submodular, so we prove that
+its surrogate eP(S) := 1 −eL(S) is also monotone and submodular, and hence the greedy optimizer
+and its approximation guarantee apply to our problem.
+Theorem 2 (Greedy guarantee). eP is normalized ( eP(∅) = 0), monotone ( eP(A) ≤eP(B)
+whenever A ⊆B), and submodular, that is, for all A ⊆B ⊆[N] and j /∈B,
+eP(A ∪{j}) −eP(A) ≥eP(B ∪{j}) −eP(B).
+(12)
+Consequently, the set Sgreedy
+k
+obtained by adding, k times, the candidate that most increases eP
+satisfies
+eP(Sgreedy
+k
+) ≥(1 −e−1) max
+|S|≤k
+eP(S).
+(13)
+The proof is in Appendix B.2.
+Greedy optimization.
+The greedy optimizer starts from the empty set and, at each step, adds
+the candidate j /∈S with the smallest change ∆j(S) = log eL(S ∪{j}) −log eL(S). Since adding a
+candidate changes ΣS by a rank-one matrix, this change has a closed form that can be updated
+cheaply without rebuilding the determinant and the inverse (Appendix A.2). With these rank-one
+updates, the greedy optimizer costs O
+ k(Nd + d2)
+
+time and O(Nd + d2) memory. By comparison,
+a naive implementation that rebuilds and factorizes Id + ΣS∪{j} for every candidate costs O(d3) per
+candidate, that is, O(kNd3) time, with the same O(Nd + d2) memory.
+3.3
+Relation to Linear Probe and RepExp
+The surrogate makes the quality–diversity trade-off explicit and connects to the two baseline criteria
+in limiting regimes. If the correlation term in Eq. 11 is switched off, then log eL(S) = P
+i∈S log Φ(−qi),
+so minimizing it keeps the k largest quality scores and recovers a quality-only, probe-style ranking;
+it coincides with Linear Probe when Qθ is the corresponding linear probe. At the other extreme,
+suppose that the quality scores are equal and that the penalty term is negligible throughout selection.
+Then every κi equals a common value κ, so ΣS = κ P
+i∈S hih⊤
+i and the relevant set-dependent term
+7
+
+
+is −1
+2 log det(Id + ΣS). By the matrix determinant lemma, its greedy marginal ranks a candidate j
+by h⊤
+j (Id + ΣS)−1hj, the residual-variance criterion used by RepExp on the same representations
+(see Appendix A.3 for the derivation). Between these limits, the modular quality, log-determinant
+diversity, and penalty terms jointly determine the selected set.
+The above two extremes do not show how PKTP moves from Linear Probe to RepExp as k
+grows. To see this, we expand log L(S) and its surrogate when the correlations are weak.
+Proposition 2 (Weak correlations). Fix S, qi and hi, and replace f by ρ f. As ρ →0,
+log L(S) =
+X
+i∈S
+h
+log Φ(−qi) + ρ2
+2 λiqi∥hi∥2i
++ ρ2 X
+i<j∈S
+λiλj h⊤
+i hj + O(ρ4),
+(14)
+and log eL(S) has the same expansion.
+Proposition 2 shows how the correlation strength ρ controls where PKTP sits between the two
+baselines. At ρ = 0 the rollouts are independent, the expansion reduces to P
+i∈S log Φ(−qi), and
+PKTP ranks the rollouts by quality, as Linear Probe does. For ρ > 0, every pair of kept rollouts
+adds a penalty ρ2λiλjh⊤
+i hj, which is large when their representations are similar. A rollout added
+to a set of t rollouts pays t such penalties, so the first pick is decided by quality alone, and as the
+set grows the penalties add up until they outweigh the differences in quality, after which PKTP
+spreads its picks out, as RepExp does. The larger ρ is, the sooner this happens, so ρ sets how fast
+PKTP moves from Linear Probe to RepExp as k grows.
+Appendix C makes the two ends of this behavior precise for a fixed ρ. At small k, if the gap
+between the kth and (k + 1)th largest qualities exceeds a constant multiple of kρ2, PKTP keeps
+exactly the k candidates with the largest qi, as Linear Probe does, and in the same order when this
+holds at every budget up to k. At large k, when a few candidates of high quality stand out from
+a bulk of lower quality, the objective of PKTP, averaged over the bulk qualities, reduces to the
+RepExp objective plus a term for these candidates. Its minimizers therefore keep them and nearly
+maximize the RepExp objective. Finally, the conditions of these two results do not conflict. We
+construct a single model, with one quality distribution and one value of ρ, in which PKTP follows
+Linear Probe at small k, while its averaged objective reduces to the RepExp objective as k grows.
+4
+Experiments
+4.1
+Setup
+Models.
+We evaluate on eight open-weight reasoning models in two size tiers. The small tier is
+Qwen3-0.6B, Qwen3-1.7B [49], OpenMath-Nemotron-1.5B [31] and DeepSeek-R1-Distill-Qwen-1.5B
+[15], and the large tier is Qwen3-8B, OpenMath-Nemotron-7B, DeepSeek-R1-Distill-Qwen-7B and
+Skywork-OR1-Math-7B [16]. Every model generates its rollouts with temperature 0.8, top-p of 0.95,
+and a full token budget of B = 32,768 tokens.
+Datasets.
+We pool problems from several benchmark sources rather than a single one, since a
+pruning policy has to be trained on part of the problems and evaluated on the rest, and no single
+competition benchmark is large enough for both. The two model tiers are evaluated on different
+benchmark substrates, chosen so that neither tier is saturated. Both tiers use AIME 2024, 2025
+and 2026 and HMMT 2024, 2025 and 2026 [2], together with RIMO-N [9]. The small tier adds
+BeyondAIME [4], OlymMATH (Easy) [37] and Omni-MATH levels 7 and 8 [14], while the large
+tier replaces these by AMO-Bench [27], OlymMATH (Hard) and Omni-MATH levels 8 and 9. This
+8
+
+
+1
+2
+4
+8
+16
+-1
+0
+1
+2
+Gain over Random (pts)
+Qwen3-0.6B
+1
+2
+4
+8
+16
+-1
+0
+1
+2
+Qwen3-1.7B
+1
+2
+4
+8
+16
+-1
+0
+1
+OpenMath-Nemotron-1.5B
+1
+2
+4
+8
+16
+0
+2
+DeepSeek-R1-Distill-Qwen-1.5B
+1
+2
+4
+8
+16
+k
+0
+2
+Gain over Random (pts)
+Qwen3-8B
+1
+2
+4
+8
+16
+k
+0
+2
+4
+OpenMath-Nemotron-7B
+1
+2
+4
+8
+16
+k
+-2
+0
+2
+DeepSeek-R1-Distill-Qwen-7B
+1
+2
+4
+8
+16
+k
+0
+2
+Skywork-OR1-Math-7B
+Random (Pass@k)
+Linear Probe
+RepExp
+PKTP (ours)
+Figure 3: Gain in pass@k over random pruning. For every model, the pooled pass@k of each
+pruning policy minus that of Random (Pass@k), in percentage points, as a function of the number
+k of rollouts kept, with a band of one standard error of the repetition-by-repetition difference. The
+absolute numbers are in Table 1 and the per-benchmark breakdown in Appendix D.
+gives around 600 problems per model. For each model we then remove the problems on which it
+generates all correct or all wrong solutions in 128 trials.
+Verification.
+A completed rollout counts as correct when its final answer matches the reference
+answer of the problem. We take that answer from the \boxed{} expression of the rollout and ask a
+Qwen3-32B judge [49] whether it is equivalent to the reference answer. We use a judge rather than a
+symbolic checker such as math-verify [24], because benchmarks like AMO-Bench have descriptive
+answers that a symbolic checker cannot handle.
+Evaluation.
+Only a few hundred problems are available for each model, so a single split into
+training and test problems would leave too few on either side, and we evaluate with cross-validation
+instead. For each model we partition its problems into eight folds, with each benchmark spread
+evenly across the folds. Each fold serves once as the test set while the learned components are
+trained on the other seven, so every problem is scored exactly once by a model that was not trained
+on it. One such pass over all eight folds forms a repetition. Because the outcome of a repetition
+depends on how the problems happen to be divided, we run 20 repetitions, each with a new random
+partition obtained by shuffling the problems of every benchmark before assigning them to folds, and
+with fresh random seeds for training. Every reported number is the average over the 20 repetitions,
+and its standard error is computed across them. For RepExp we set the regularizer to τ = 1. For all
+methods, the representation hi of a partial rollout is the EMA of its hidden states with rate 10−3.
+9

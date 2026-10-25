@@ -1,0 +1,766 @@
+Drift Says When, Budget Says How Much:
+Rate-Controlled KV Re-selection for Long-Form Multimodal Generation
+Bin Hu
+Tsinghua University
+Yingbo Xiao
+The Chinese University of Hong Kong, Shenzhen
+Abstract
+KV cache compression for multimodal LLMs
+usually selects the visual tokens to keep once,
+at prefill, and reuses that selection for the whole
+generation.
+We show that this one-shot se-
+lection is severely limited on long-form gen-
+eration: on detailed image description, even
+an oracle that selects with the attention of the
+uncompressed answer reaches only 0.44–0.52
+ROUGE-L agreement with the uncompressed
+output at 32 retained prefix tokens per head,
+because the evidence the model reads moves as
+the description unfolds. Re-selecting whenever
+attention drifts out of the kept set is the natural
+remedy, but we find that a fixed drift threshold
+fails systematically: drift magnitudes are not
+comparable across samples, so low-drift sam-
+ples are almost never refreshed although they
+benefit the most. We propose Rate-Controlled
+Refresh (RCR), which lets drift decide when
+and where to re-select while a per-sample con-
+troller regulates how often, combined with a
+low-rank drift detector, candidate-restricted re-
+selection, and a decision that stays on the GPU.
+With one setting for all models and tasks, RCR
+outperforms the per-step retrieval method In-
+finiGen by 1.6–3.8 ROUGE-L points on five
+of six model–task settings with no significant
+difference on the sixth, while staying within
+1.7 points of exact per-step re-selection, with
+comparable estimated data movement per step
+and a 4× smaller GPU-resident detector. On
+DetailCaps, drift-chosen timing beats random
+timing at the same refresh rate and periodic
+timing even at a higher rate, by 2.0–5.0 points;
+the advantage over InfiniGen is largest at tight
+budgets and shrinks as the budget grows. On
+pre-registered video description, where drift is
+homogeneous across samples, RCR is on par
+with InfiniGen on Qwen2-VL and exceeds it on
+Qwen3-VL but no longer beats a fixed thresh-
+old at the nearest tested rates, consistent with
+the diagnosis; object-level evaluation shows
+that RCR achieves higher object F1 against the
+uncompressed output than InfiniGen on two of
+three models.
+1
+Introduction
+The KV cache of a multimodal large language
+model (MLLM) is dominated by visual tokens: in
+our long-form benchmarks the prefix holds 640–
+2,300 tokens per sample, almost all of them im-
+age patches. Prefill-time eviction methods such as
+SnapKV (Li et al., 2024), PyramidKV (Cai et al.,
+2024), Ada-KV (Feng et al., 2025) and the mul-
+timodal BACON (Chen et al., 2026) score prefix
+tokens with the attention of an observation win-
+dow and keep only the top few. On visual question
+answering one-shot selection can be close to loss-
+less: with 64 KV entries per head, an oracle that
+scores with the true answer’s attention matches the
+uncompressed model on TextVQA and DocVQA.
+Long-form generation is different. On detailed
+captioning (DetailCaps; Dong et al., 2024) bet-
+ter scoring helps but cannot close the gap: even
+the answer-attention oracle keeps only 0.44–0.52
+ROUGE-L agreement with the uncompressed out-
+put (§3). The reason is that attention moves: as the
+model describes the skateboarder, then the ramp,
+then the trash bin (Figure 1), the evidence it needs
+leaves the set chosen at prefill. With 32 slots per
+head, even an oracle-scored one-shot selection falls
+well short.
+A natural remedy is to keep the full KV off the
+GPU and re-select whenever the attention mass
+on evicted tokens, which we call drift, exceeds
+a threshold. This already beats periodic refresh
+at equal refresh rates (Appendix D), yet it trails
+InfiniGen (Lee et al., 2024), which re-selects at
+every step, by 1.9 points on Qwen2-VL DetailCaps.
+A per-sample analysis (§4) shows where the gap
+comes from: on high-drift samples the threshold
+rule already matches exact per-step re-selection,
+but on low-drift samples it refreshes 1% of the time
+while exact re-selection would gain 30 points over
+1
+arXiv:2610.31433v1  [cs.LG]  22 Oct 2026
+
+
+BACON. Drift tells when within a sample, but its
+magnitude is not comparable across samples.
+We therefore decouple the two decisions. RCR
+keeps drift as the signal for when and in which
+layer to re-select, but adapts the threshold online
+per sample so that a target fraction ρ of layer-steps
+refresh. Three further components make refreshing
+accurate and cheap: drift is estimated from 8 SVD-
+rotated key channels, re-selection scores exactly
+only the detector’s top candidates, and the trigger
+decision never leaves the GPU. Our contributions
+are:
+• We quantify the limits of one-shot selection
+on long-form multimodal generation across
+three MLLMs (§3).
+• We identify why fixed drift thresholds fail: the
+gap to per-step retrieval comes almost entirely
+from low-drift samples (§4); on video, where
+almost no sample is starved, the advantage of
+rate control over a fixed threshold disappears,
+consistent with this diagnosis.
+• We propose RCR, which separates when
+(drift) from how much (a per-sample rate bud-
+get). One configuration outperforms Infini-
+Gen on five of six model–task settings with no
+significant difference on the sixth, at compa-
+rable CPU traffic; with everything else fixed,
+drift-chosen timing beats random timing at the
+same rate and periodic timing even at a higher
+rate by 2.0–5.0 points (§6).
+• We follow a develop-then-confirm protocol:
+components were chosen on a 100-sample de-
+velopment split and confirmed on held-out
+data under a pre-registered decision rule (Ap-
+pendix A).
+2
+Related Work
+One-shot KV eviction.
+H2O (Zhang et al., 2023)
+and Scissorhands (Liu et al., 2023) keep heavy hit-
+ters under a persistence-of-importance assumption;
+SnapKV (Li et al., 2024) votes with an observation
+window, and PyramidKV (Cai et al., 2024), Ada-
+KV (Feng et al., 2025), HeadKV (Fu et al., 2025)
+and CAKE (Qin et al., 2025) redistribute budgets
+across layers and heads. Multimodal variants ex-
+ploit modality structure (Wan et al., 2024; Liu et al.,
+2024c; Tu et al., 2025; Wan et al., 2025; Huang
+et al., 2025; Li et al., 2025; Wang et al., 2025a; Liu
+et al., 2026); BACON (Chen et al., 2026) is a strong
+low-budget selector that we use at prefill. Look-
+ahead methods (Wang et al., 2025b; Galim et al.,
+2026; Ahn et al., 2026) estimate future queries be-
+fore a single eviction. All of them select once; we
+show this limits long-form fidelity even with oracle
+scores. Visual token reduction prunes or merges
+image tokens inside the model (Chen et al., 2024a;
+Zhang et al., 2025b; Xing et al., 2025; Yang et al.,
+2025b), with dynamic or recoverable variants for
+generation (Liang et al., 2025; Yang et al., 2026);
+these change the computation itself and are comple-
+mentary to KV selection. For long outputs, several
+methods keep updating a compressed cache as text
+is generated (Wu et al., 2025; Ghadia et al., 2025;
+Liao et al., 2025; Zhang et al., 2025a; Cai et al.,
+2025); RCR instead re-selects among all prefix to-
+kens from a full copy, so visual evidence evicted
+earlier can return.
+Decode-time retrieval.
+Another line keeps the
+full KV (often offloaded) and retrieves a subset
+at every step: Quest (Tang et al., 2024) bounds
+page scores with channel-wise key extrema, Ark-
+Vale (Chen et al., 2024b) recalls pages by bounding-
+sphere digests, and InfiniGen (Lee et al., 2024)
+speculates attention from a few SVD-skewed key
+channels; related designs use low-rank keys, ap-
+proximate nearest neighbours or hashing (Ribar
+et al., 2024; Singhania et al., 2024; Liu et al.,
+2024a; Chen et al., 2025; Sun et al., 2025a; Jie
+et al., 2025), share selections across layers (Yang
+et al., 2025a; Hao et al., 2025), or filter coarse-to-
+fine (Behnam et al., 2025). Twilight (Lin et al.,
+2025) replaces fixed top-k budgets with top-p prun-
+ing, and ParisKV (Qi et al., 2026) makes retrieval
+robust to query drift; both target per-step sparse
+attention rather than deciding when to re-select.
+RCR borrows InfiniGen’s skewing for its detector
+and coarse-to-fine filtering for re-selection, but re-
+trieves only on a budgeted fraction of layer-steps
+chosen by drift.
+Deciding when to recompute.
+ReSA (Sun
+et al., 2025b), Tactic (Zhu et al., 2025) and Re-
+freshKV (Xu et al., 2024) recompute at fixed in-
+tervals; dynamic variants trigger on query sim-
+ilarity (Xu et al., 2024; Yao et al., 2026), and
+DSTP (Kim et al., 2026) triggers when the attention
+distribution over kept visual tokens departs from a
+prefill anchor. All use fixed thresholds. Our trig-
+ger signal is the attention mass on evicted tokens,
+which directly bounds the eviction error (Feng et al.,
+2025; Shi and Gu, 2026) and is the online counter-
+2
+
+
+Input image
+Output
+skateboarder
+graffiti ramp
+trash bin
+Drift
+dt
+τ
+GPU cache
+CPU full KV
+refresh
+decoding step →
+Figure 1: Illustration (not measured). While describing the image, attention moves from the skateboarder to the
+ramp and the trash bin. Drift dt, the attention mass on evicted prefix tokens, stays low most of the time; when it
+crosses the threshold, the current query re-selects tokens from the full KV kept on the CPU and overwrites the GPU
+cache. In RCR the threshold is adapted online per sample so that a fraction ρ of layer-steps refresh.
+DetailCaps fidelity
+Qwen2
+LLaVA
+Qwen3
+SnapKV
+.389
+.362
+–
+BACON
+.388
+.371
+.409
+Last-query
+.367
+.386
+–
+Look-ahead 8 steps
+.448
+.412
+–
+Prefill oracle (answer attn.)
+.516
+.440
+.507
+Exact re-selection every step
+.613
+.478
+.571
+Table 1: One-shot selection falls short on long descrip-
+tions even with oracle scores; re-selecting during decod-
+ing is not. –: not run.
+part of QEvict’s offline Future Missed Mass (Garg
+et al., 2026); our analysis shows that its threshold
+must adapt per sample.
+3
+The Limits of One-Shot Selection
+Setup.
+We use Qwen2-VL-7B-Instruct (Wang
+et al., 2024), LLaVA-NeXT-Mistral-7B (Liu et al.,
+2024b) and Qwen3-VL-8B-Instruct (Bai et al.,
+2025) with FlashAttention-2. The budget is 64
+KV entries per KV head: c = 32 selected prefix to-
+kens plus the last W = 32 observation-window
+tokens; generated tokens are appended.
+Tasks
+are TextCaps (Sidorov et al., 2020) (500 valida-
+tion images, one-sentence captions, ≤64 new to-
+kens) and DetailCaps (Dong et al., 2024) (300
+images, median 157–238 words, ≤512 new to-
+kens). All runs use greedy decoding (details in
+Appendix M). Our metric is fidelity: ROUGE-L
+F1 between the compressed and the uncompressed
+output, which isolates the deviation caused by com-
+pression; confidence intervals are paired bootstrap
+95%. Reference-based CIDEr and ROUGE-L sep-
+arate one-shot from dynamic methods but not dy-
+namic methods from each other (§6, Appendix H).
+Better scoring is not enough.
+Table 1 compares
+one-shot selectors on DetailCaps. SnapKV, BA-
+CON and last-query scoring differ by at most 2.4
+points; selecting with the attention of the first 8
+answer tokens (decoded with full KV) adds 4–6
+points over BACON, and even the prefill oracle,
+which scores with the uncompressed answer’s own
+attention, stays at .44–.52. Re-selecting at every
+decoding step with the current query reaches .48–
+.61. On short-answer VQA the picture is the oppo-
+site: the prefill oracle loses no accuracy (Qwen2
+TextVQA (Singh et al., 2019) .851 vs. .848 un-
+compressed; similarly on DocVQA (Mathew et al.,
+2021)), so the gap there is one of scoring. In long-
+form generation, we attribute the gap that remains
+even under oracle scoring to the staleness of the
+selection. Attention trajectories confirm this: the
+most-attended prefix position stays the same be-
+tween adjacent steps only 41% (Qwen2) to 80%
+(LLaVA) of the time, and 37–44% of newly at-
+tended evidence in LLaVA lies far from all previous
+evidence.
+4
+Drift and Why Fixed Thresholds Fail
+Drift.
+Let Sl,h be the c prefix tokens kept for KV
+head h of layer l, and at,j the attention of step t on
+prefix token j, averaged over the query heads of
+the GQA group and normalised over the full prefix
+plus the rest of the cache. Drift is the attention
+mass the model would put on evicted prefix tokens,
+dl,h(t) =
+X
+j /∈Sl,h
+at,j,
+dl(t) =
+1
+Hkv
+X
+h
+dl,h(t).
+(1)
+A fixed-threshold refresh re-selects layer l when-
+ever an estimate ˆdl(t) exceeds τ, using the cur-
+3
+
+
+Low drift
+Mid
+High drift
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+Fidelity (ROUGE-L)
+1%
+9%
+35%
+39%
+40%
+40%
+BACON
+Fixed threshold
+InfiniGen
+RCR (ours)
+Exact every step
+Figure 2: Qwen2-VL DetailCaps split into terciles by
+each sample’s mean drift under the fixed threshold
+(τ = 0.03). Numbers above bars are refresh rates. The
+fixed threshold matches exact re-selection on high-drift
+samples but starves low-drift ones; RCR closes this gap.
+rent query’s exact attention over the full prefix.
+With a cheap page-mean estimator (keys averaged
+over 16-token pages) this rule beats periodic re-
+fresh by 3.0–4.2 points at equal refresh rates on
+Qwen2-VL and LLaVA, but it needs a per-setting
+τ ∈[0.02, 0.15] and trails InfiniGen on Qwen2-VL
+DetailCaps (.551 vs. .570).
+Where the gap comes from.
+Figure 2 splits the
+300 Qwen2-VL DetailCaps samples into terciles
+by their mean drift under τ = 0.03. On high-
+drift samples the fixed threshold refreshes 35% of
+layer-steps and already matches exact per-step re-
+selection (.479 vs. .484), ahead of InfiniGen (.442).
+On low-drift samples it refreshes only 1% of the
+time, yet these samples gain the most from refresh-
+ing (BACON .462, exact .763), and InfiniGen leads
+by 16 points. Across samples, the gap to InfiniGen
+is unrelated to output length (Spearman −0.01) but
+clearly related to mean drift (−0.41; Appendix E).
+Normalising drift by the total prefix attention does
+not help: the two quantities have a sample-level
+rank correlation of 0.98. In low-drift samples lit-
+tle attention reaches evicted tokens, but that little
+matters.
+Takeaway.
+Within a sample, drift is a good sig-
+nal of when attention has moved; across samples its
+magnitude does not reflect how valuable a refresh
+is. A single threshold therefore cannot allocate
+refreshes well, which motivates controlling the re-
+fresh budget per sample.
+5
+Rate-Controlled Refresh
+Cache layout.
+Prefill selects Sl,h with BACON.
+The full prefix KV (Np tokens) is kept aside (in
+CPU memory in a deployment), and the GPU cache
+is laid out as [c selected | W window | generated].
+A refresh overwrites only the first c slots; keys carry
+RoPE already, so no re-encoding is needed.
+Per-sample rate control.
+RCR (Algorithm 1 in
+Figure 3) maintains one threshold τ per sample,
+shared by all layers and initialised to τ0 = 0.03.
+After layer l checks step t and refreshes a share
+f ∈[0, 1] of its heads, the threshold is updated
+multiplicatively,
+τ ←τ · exp
+ η (f −ρ)
+
+,
+η = 0.05,
+(2)
+a constant-gain Robbins–Monro step in log τ that is
+stationary only when the trigger probability equals
+ρ, i.e. it tracks the slowly changing (1−ρ)-quantile
+of drift; a persistent trigger excess of 0.1 moves
+τ by 15–20% per decoding step (28–36 layers).
+Because τ is shared across layers, layers that drift
+more at a given moment still refresh preferentially;
+because it is reset for every sample, each sample
+receives roughly a ρ share of refreshes and low-
+drift samples are no longer starved. Within a step,
+layers update τ in forward order, so later layers
+see a threshold adjusted by earlier layers’ triggers;
+we did not explore per-layer thresholds. We use
+ρ = 0.4 throughout.
+Low-rank drift detector.
+At the end of prefill
+we take, per layer and KV head, the top R = 8
+right singular vectors PR ∈R128×R of the prefix
+key matrix K ∈RNp×128 and keep KPR on the
+GPU. Logits of evicted tokens are approximated by
+(qPR)(kPR)⊤while kept tokens use exact logits.
+This costs the same as the page-mean estimator
+(≈Np/16 dot products per step) but resolves in-
+dividual tokens and yields a token-level ranking.
+The skewing idea follows InfiniGen, which uses 32
+channels for per-step selection; RCR uses 8 chan-
+nels and only for detection and coarse ranking.
+Candidate re-selection.
+When a layer triggers,
+RCR fetches the keys of the detector’s top 4c to-
+kens, computes their exact attention, keeps the top
+c, and fetches their values. A refresh thus reads 5c
+vectors instead of Np + 2c for a full-prefix scan.
+GPU-side decision.
+A naive implementation
+copies the drift-vs-threshold comparison to the host
+in every layer and step to branch on it, which
+stalls the kernel pipeline.
+RCR instead com-
+putes the candidate selection in every layer and
+merges it with the old one under the trigger mask
+4
+
+
+Algorithm 1: RCR at decoding step t, layer l
+1. ˆa ←detector attention over the prefix, from logits that
+are exact for Sl,h and (qPR)(kjPR)⊤otherwise
+2. ˆdl,h ←P
+j /∈Sl,h ˆaj;
+m ←[
+1
+Hkv
+P
+h ˆdl,h > τ]
+3. τ ←τ exp(η(m −ρ))
+4. Ch ←top-4c of ˆa;
+S′
+l,h ←top-c of exact qk⊤
+j , j ∈
+Ch
+5. Sl,h ←m ? S′
+l,h : Sl,h
+(masked, no host sync)
+6. write K/V of Sl,h into the first c cache slots; run atten-
+tion
+Figure 3: One RCR step. τ is shared by all layers and
+reset to τ0 for every sample; with layer-level triggering,
+m ∈{0, 1} and f = m in Eq. (2).
+(torch.where); un-triggered heads write back
+their unchanged entries, so the cache contents are
+identical to the branching implementation, which
+we verify token-for-token (Appendix F). Offload-
+ing then requires a read conditioned on the mask
+(§7).
+Cost.
+Per KV head and step, RCR performs ≈
+Np/16 detector dot products and reads on average
+5c r = 160 r vectors from the CPU, where r ≈ρ
+is the refresh rate. Quest, ArkVale and InfiniGen
+read 2c = 64 vectors per step, two-stage Quest
+5c = 160, and the fixed-threshold rule r(Np + 2c).
+The GPU-resident detector of RCR holds Np/16
+key equivalents, versus Np/4 for InfiniGen’s 32
+channels and for Quest’s page extrema at page size
+8.
+6
+Experiments
+Baselines.
+All dynamic methods start from the
+same BACON selection and budget, and re-select
+with the current step’s attention only. Exact ev-
+ery step re-selects from exact full-prefix attention
+at each step; it is the strongest current-query re-
+selection, not a strict bound (RCR slightly exceeds
+it on LLaVA DetailCaps). Periodic re-selects at
+step 1 and every T steps. Quest, ArkVale and two-
+stage Quest (page size 8; the latter scores 4c can-
+didates exactly) retrieve at every step, as does In-
+finiGen (previous-layer input as query proxy, 32
+of 128 skewed channels). Fixed threshold is the
+page-mean drift rule of §4 with τ chosen per setting
+by the rule we registered for Qwen3-VL (the most
+faithful threshold with a refresh rate of 10–30%;
+Appendix C). It also differs from RCR in its detec-
+tor and full-prefix refresh (separated in Table 3).
+Protocol.
+RCR’s components were selected on
+a development split of 100 Qwen2-VL DetailCaps
+images that overlaps the 300-image test set in only
+two images (Appendix A). Three candidates were
+then evaluated on all six model–task settings under
+a decision rule registered in advance; we report
+RCR here and all candidates in Appendix B.
+Main results.
+Table 2 reports fidelity on all six
+settings. Apart from exact per-step re-selection,
+RCR is the best method in every setting. It im-
+proves over BACON by 11.4–21.0 points on De-
+tailCaps and stays within 1.7 points of exact per-
+step re-selection in every setting (and above it on
+LLaVA DetailCaps), while refreshing 40–48% of
+layer-steps. It outperforms InfiniGen with con-
+fidence intervals above zero on five settings (+1.6
+to +3.8), and is on par with it on Qwen3-VL De-
+tailCaps (+0.5, interval including zero). One ρ fits
+all settings. The fixed-threshold rule needs a tuned
+τ per setting, and on Qwen3-VL its pre-registered
+setting falls well behind the per-step methods (Ap-
+pendix C); RCR uses the same configuration ev-
+erywhere and improves over it by 2.0–4.8 points
+on DetailCaps. On TextCaps the realised refresh
+rate (41–48%) slightly exceeds ρ because outputs
+last only 12–29 steps, too few for the threshold to
+converge. Page-level retrieval is ineffective at this
+budget: with only four pages per step, Quest gains
+at most 6.0 points over BACON and ArkVale falls
+below BACON on Qwen2-VL.
+Cost.
+Figure 4 places each method by its CPU-to-
+GPU traffic. RCR reads 63–77 vectors per step and
+head (160 r), on par with InfiniGen and Quest (64),
+39–48% of two-stage Quest (160), and at most half
+of the fixed-threshold rule, which scans the full
+prefix at every trigger. Its GPU-resident detector
+is 4× smaller than InfiniGen’s, and it changes the
+cache on only ∼40% of layer-steps. The one-off
+extra cost is an SVD of an Np × 128 matrix per
+layer and head at the end of prefill. Our implemen-
+tation keeps the full prefix on the GPU to simulate
+offloading, so we report traffic rather than wall-
+clock latency; moving the trigger decision onto the
+GPU alone speeds up our simulation by about 3.4×
+(Appendix F).
+Component analysis.
+Table 3 compares RCR’s
+components on the development split. At similar
+refresh rates the low-rank detector improves over
+page means by 1.3 points, and adding candidate
+re-selection still gives high fidelity while cutting
+5
+
+
+Qwen2-VL-7B
+LLaVA-NeXT-7B
+Qwen3-VL-8B
+Method
+DetailCaps
+TextCaps
+DetailCaps
+TextCaps
+DetailCaps
+TextCaps
+BACON (one-shot)
+.388
+.626
+.371
+.680
+.409
+.505
+Prefill oracle (one-shot)
+.516
+.774
+.440
+.810
+.507
+.735
+Periodic, T=4
+.521 (25%)
+.738 (28%)
+.448 (25%)
+.751 (29%)
+.535 (25%)
+.687 (27%)
+Quest, page 8
+.408
+.644
+.419
+.735
+.440
+.565
+ArkVale, page 8
+.347
+.535
+.401
+.697
+.424
+.510
+Two-stage Quest, page 8
+.508
+.763
+.468
+.808
+.550
+.684
+InfiniGen
+.570
+.779
+.451
+.773
+.560
+.733
+Fixed threshold
+.551 (25%)
+.780 (29%)
+.465 (14%)
+.782 (28%)
+.517 (18%)
+.745 (44%)
+RCR (ρ = 0.4)
+.598 (40%)
+.816 (48%)
+.485 (40%)
+.811 (48%)
+.565 (40%)
+.750 (41%)
+∆vs. InfiniGen
++2.8 [0.8,4.8]
++3.7 [2.1,5.4]
++3.4 [2.1,4.8]
++3.8 [1.8,5.9]
++0.5 [−1.1,2.1]
++1.6 [0.2,3.2]
+Exact every step
+.613
+.826
+.478
+.822
+.571
+.767
+Table 2: Fidelity (ROUGE-L to the uncompressed output) at a budget of 64 prefix KV entries per head (generated
+tokens are kept). Parentheses: share of layer-steps that re-select (per-step methods: 100%). Bold: best method other
+than exact every step. ∆: paired difference in points with 95% bootstrap CI.
+102
+103
+CPU →GPU vectors / step / head
+0.4
+0.5
+0.6
+Fidelity
+BACON
+Qwen2-VL-7B
+102
+103
+CPU →GPU vectors / step / head
+0.40
+0.45
+BACON
+LLaVA-NeXT-7B
+102
+103
+CPU →GPU vectors / step / head
+0.45
+0.50
+0.55
+BACON
+Qwen3-VL-8B
+Quest p8
+ArkVale p8
+Two-stage Quest
+InfiniGen
+Periodic T=4
+Fixed threshold
+RCR (ours)
+Exact every step
+Figure 4: Fidelity vs. average number of 128-d vectors read from CPU per step and KV head on DetailCaps (log
+scale; cost model of §5). At the traffic of a per-step method that fetches only the selected tokens, RCR reaches the
+highest fidelity.
+Variant (dev split)
+Refresh
+Fid.
+∆vs. IG
+Fixed τ=.03, page-mean
+15%
+.498
+−5.0
++ per-head trigger
+15%
+.536
+−1.2
+Fixed τ=.02, page-mean
+26%
+.535
+−1.3
+Fixed τ=.03, low-rank
+28%
+.548
+0.0
+Fixed τ=.02, low-rank + cand.
+37%
+.558
++0.9
+Rate ρ=.2, page-mean
+20%
+.529
+−2.0
+RCR: rate ρ=.4 + low-rank + cand.
+40%
+.584
++3.5
+InfiniGen / exact every step
+100%
+.549 / .594 0 / +4.5
+Table 3: Component analysis on the 100-image devel-
+opment split (Qwen2-VL DetailCaps). ∆: paired dif-
+ference to InfiniGen in points. Full list with intervals in
+Appendix A.
+each refresh from Np + 2c to 5c vectors, which is
+what makes a 40% refresh rate affordable. Rate
+control alone at ρ = 0.2 is about 1.6 points bet-
+ter than linearly interpolating the fixed-threshold
+sweep, but its main value is transfer: in the con-
+firmation runs, the two fixed-threshold candidates
+Trigger (same detector, cand.) Refresh Qwen2
+LLaVA
+Random
+40%
+.548 −5.0 .462 −2.3
+Periodic, T=3
+33%
+.552 −4.6
+–
+Periodic, T=2
+50%
+.578 −2.0
+–
+Drift, rate-controlled (RCR)
+40%
+.598
+.485
+Table 4: Does drift decide when? DetailCaps fidelity
+when only the trigger changes; small numbers: paired
+difference to RCR (all 95% CIs exclude zero; Ap-
+pendix G).
+that refreshed 33–56% of layer-steps on the devel-
+opment split drifted to 21–100% on other models
+and tasks, whereas RCR stayed at 40–48% with
+similar fidelity (Appendix B). Per-head triggering
+helps at low refresh rates but did not transfer as
+predictably.
+Does drift decide when?
+Table 4 keeps RCR’s
+detector, candidate re-selection and merge and re-
+6

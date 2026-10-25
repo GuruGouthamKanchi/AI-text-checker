@@ -1,0 +1,811 @@
+From Structured Records to Patient Narratives: Preserving Clinical
+Alignment in LLM-Generated Health Summaries
+Bayram Ayadi1,2
+Florian Geissler2
+Johanna Schmidhuber2
+1University of Passau, Passau, Germany
+2Fraunhofer Institute for Cognitive Systems IKS, Munich, Germany
+ayadi02@ads.uni-passau.de, florian.geissler@iks.fraunhofer.de
+Abstract
+As wearable and digital health systems in-
+creasingly generate longitudinal physiologi-
+cal records, communicating these observations
+in patient-accessible language remains a sig-
+nificant challenge. Large Language Models
+(LLMs) offer a promising mechanism for trans-
+lating structured clinical information into read-
+able narratives, but this process may introduce
+semantic drift, where clinically precise mean-
+ing is distorted during simplification.
+We investigate evidence-grounded health sum-
+marization for menstrual health monitoring us-
+ing a constrained generation framework that
+combines structured evidence conditioning
+with Retrieval-Augmented Generation (RAG)
+using a prompt-based constrained generation
+framework. We evaluate semantic alignment us-
+ing Natural Language Inference (NLI), atomic
+factuality metrics, and readability measures.
+Across three LLMs and 4,500 generated sum-
+maries, explicit grounding constraints consis-
+tently improve clinical alignment, particularly
+by improving uncertainty preservation and,
+once faithfulness is evaluated against retrieved
+evidence, generally preserving or improving
+faithfulness, while effects on omission remain
+model-dependent. We also find that improved
+clinical alignment comes at the cost of in-
+creased reading difficulty and medical terminol-
+ogy. These findings highlight the need to jointly
+evaluate faithfulness, uncertainty preservation,
+and readability when developing patient-facing
+medical LLM systems.
+1
+Introduction
+The growing integration of wearable and digital
+health technologies into everyday life has created
+an expanding stream of longitudinal physiologi-
+cal data (spanning menstrual cycle phases, heart
+rate variability (HRV), skin temperature, and sleep
+quality) that is increasingly interpreted by patients
+themselves rather than by clinicians. Communicat-
+ing these observations in accessible lay language is
+therefore a task with direct implications for patient
+safety and health literacy.
+Large Language Models (LLMs) present a com-
+pelling mechanism for this translation. Recent
+work demonstrates that adapted LLMs can match
+or exceed medical expert performance on stan-
+dard clinical summarization benchmarks (Van Veen
+et al., 2024), and the field has seen rapid advances
+in factuality verification, constrained generation,
+and longitudinal narrative synthesis. Semantic drift,
+defined as the accumulation of semantic change as
+medical concepts move from clinical to public dis-
+course, has been shown to be greatest at precisely
+this transition point (Karakkaparambil James et al.,
+2026). Our work operationalizes this broader phe-
+nomenon in the context of automated summariza-
+tion, introducing a five-category clinical alignment
+taxonomy and a constrained generation framework
+to systematically measure and mitigate misalign-
+ment across these dimensions.
+Existing approaches to health text simplification
+assume a semantically equivalent reference docu-
+ment to simplify. Our setting is fundamentally dif-
+ferent, generating patient-facing narratives directly
+from structured physiological observations, where
+faithfulness must be verified against raw evidence
+rather than a reference text. This gap is particu-
+larly consequential in menstrual health monitoring,
+where cyclical signals, intrinsic uncertainty, and the
+documented consequences of urgency miscalibra-
+tion make evidence-grounded generation especially
+critical.
+This paper makes the following contributions:
+• We formalize the structured-to-narrative sum-
+marization task for longitudinal physiological
+records and introduce an evaluation concept
+using a taxonomy of five semantic drift con-
+ditions: Faithfulness Violation, Epistemic
+Misalignment, Diagnostic Inference Over-
+reach, Omission Drift, and Urgency Mis-
+1
+arXiv:2610.31467v1  [cs.CL]  22 Oct 2026
+
+
+alignment.
+• We design and implement a framework for
+the semi-synthetic generation of medically
+grounded menstrual health data.
+• We
+propose
+an
+LLM-based
+generation
+pipeline
+combining
+explicit
+evidence-
+grounding
+constraints,
+targeting
+each
+alignment category in the taxonomy, with
+RAG that supports simplification through
+retrieved lay-term definitions.
+• We systematically evaluate the clinical align-
+ment of generated patient narratives along the
+defined taxonomy and derive preliminary in-
+sights on favorable configurations of such a
+setup in menstrual health monitoring.
+Taken together, this work positions trustworthy sim-
+plification as a central and measurable challenge in
+human-centered digital health.
+2
+Related Work
+2.1
+Clinical Summarization and
+Lay-Language Simplification
+Clinical summarization includes both expert-to-
+expert tasks, such as radiology impressions and
+discharge summaries, and expert-to-patient com-
+munication, which requires lay-language simpli-
+fication grounded in health literacy. (Van Veen
+et al., 2024) show that adapted LLMs can match
+or exceed human expert performance across mul-
+tiple clinical summarization tasks, suggesting that
+output fluency is less of a bottleneck than seman-
+tic fidelity. In longitudinal settings, CLIN-SUMM
+(D’souza et al., 2025) demonstrates the value of
+temporally structured summarization, while (Fer-
+razzi et al., 2026) show that supervised fine-tuning
+and constrained decoding can allow small domain-
+specific models to outperform much larger ones.
+This motivates our use of explicit generation con-
+straints, though we apply them at the prompting
+level rather than through decoding-time control.
+For patient-facing communication, simplifica-
+tion is closely tied to health literacy and self-
+management outcomes (Fitzpatrick, 2023). Re-
+sources such as README (Yao et al., 2024) and
+multi-stage simplification pipelines like S3 support
+medical-to-lay translation, but prior work consis-
+tently highlights a trade-off between readability
+and fidelity. Simplification can improve accessi-
+bility while omitting or distorting clinically impor-
+tant qualifiers, a pattern consistent with semantic
+drift in the transition from evidence to narrative
+(Karakkaparambil James et al., 2026). Recent work
+addresses this tension through fidelity-readability
+optimization (Verma et al., 2026), and reproductive
+health further complicates simplification due to in-
+direct or stigmatized language (Hua et al., 2026).
+These findings underscore the need for evidence-
+grounded generation.
+However, existing benchmarks focus on summa-
+rizing or simplifying existing clinical text. They
+do not address generation directly from struc-
+tured physiological observations, where faithful-
+ness must be preserved against raw evidence rather
+than a reference document.
+2.2
+NLI-Based Faithfulness Assessment and
+Hallucination Verification
+Natural Language Inference (NLI) (Bowman et al.,
+2015; Williams et al., 2018) is widely used for
+factuality assessment in summarization, especially
+when combined with atomic fact decomposition
+(Min et al., 2023; Kamoi et al., 2023). In medical
+settings, this is particularly relevant because hal-
+lucinations often reflect reasoning failures rather
+than missing knowledge (Pal et al., 2023). Bench-
+marks such as Med-HALT and MedHalu show that
+instruction tuning can even worsen hallucination
+behavior, motivating verification-based evaluation.
+Clinical NLI was established by MedNLI (Ro-
+manov and Shivade, 2018), but several limitations
+remain. Clinical NLI datasets contain annotation
+artifacts that can inflate performance (Herlihy and
+Rudinger, 2021), NLI models degrade under do-
+main shift (Jullien et al., 2024), and textual entail-
+ment is not equivalent to factual support (Mor-Lan
+and Levi, 2024). In addition, atomic-level verifi-
+cation depends heavily on the consistency of fact
+decomposition in clinical text (Munnangi et al.,
+2025).
+The most relevant paradigm is decompose-then-
+verify.
+FActScore (Min et al., 2023) evaluates
+generated text at the atomic-claim level against
+trusted evidence, while AlignScore (Zha et al.,
+2023) learns a broader alignment function across
+NLI, QA, and IR tasks. Despite known limitations,
+these claim-level methods are better suited than
+surface metrics such as ROUGE for detecting the
+subtle semantic drift central to our setting.
+Overall, prior work has studied constrained gen-
+2
+
+
+eration, factuality verification, and longitudinal
+summarization largely in isolation. To our knowl-
+edge, no work has combined them for structured-
+to-narrative, patient-facing summarization of wear-
+able health data. Our paper addresses this gap.
+3
+Methodology
+This work investigates whether evidence-grounded
+and constrained language generation can improve
+semantic alignment during the simplification of
+longitudinal health observations into patient-facing
+summaries. The framework targets factual consis-
+tency, uncertainty calibration, and clinical faithful-
+ness while maintaining accessibility for non-expert
+users.
+3.1
+Task Definition
+Given a structured set of physiological observations
+derived from longitudinal health monitoring, the
+task is to generate a patient-oriented natural lan-
+guage summary that remains faithful to the under-
+lying evidence, avoids unsupported medical claims,
+preserves clinically relevant uncertainty, and is un-
+derstandable to non-expert users. Formally, let
+X = {x1, x2, . . . , xn} denote a structured physio-
+logical record containing observed signals, symp-
+tom annotations, and contextual metadata. The
+objective is to generate a lay-language summary
+Y such that the generated content remains seman-
+tically aligned with X while minimizing factual
+distortion. The evaluation of this semantic align-
+ment is detailed in Sec. 3.5.
+3.2
+Dataset Construction
+Due to the limited availability of publicly accessi-
+ble longitudinal menstrual-health datasets paired
+with patient-oriented summaries, this study em-
+ploys a semi-synthetic structured dataset gener-
+ated via a causal directed acyclic graph (DAG)
+that encodes known physiological dependencies
+across the menstrual cycle. The generator produces
+500 single-day observations, each drawn from a
+stochastically determined cycle, following a bio-
+logically motivated causal ordering: temporal struc-
+ture (cycle and luteal-phase length, calibrated to
+population data (Bull et al., 2019; Fehring et al.,
+2006)) determines phase and cycle day; sleep qual-
+ity and duration are conditioned on phase, reflect-
+ing progesterone-mediated sleep disruption (Baker
+and Driver, 2007); resting heart rate and HRV trend
+are jointly conditioned on phase and sleep, captur-
+ing both hormonal modulation (Tenan et al., 2014)
+and acute sympathetic override; SpO2 is sampled
+independently as a homeostatically regulated sig-
+nal; and symptoms are generated as downstream
+consequences of these upstream states rather than
+independent annotations.
+To simulate real-world data sparsity, each sam-
+ple is assigned one of five user profiles (mini-
+mal_tracker to advanced_wearable) that determine
+which fields are observable, probabilistically avail-
+able, or systematically absent, producing behav-
+iorally mediated structured missingness. A confi-
+dence score, derived from resulting data complete-
+ness and phase clarity, provides uncertainty meta-
+data for downstream generation. The full causal
+record (pre-masking) is retained as ground truth
+X, enabling evaluation of whether generated sum-
+maries faithfully reflect available evidence without
+hallucinating masked information.
+Full details of the generative DAG and an exam-
+ple record are provided in Appendix A.
+3.3
+System Overview
+Our
+system
+takes
+each
+patient’s
+structured
+menstrual-health record (fields such as cycle tim-
+ing, symptoms, trends, and related clinical con-
+text) and generates patient-facing summaries under
+three generation regimes: Base, Constrained, and
+RAG-Constrained. In the Base setting, the model
+summarizes directly from the record with minimal
+control; in the Constrained setting, the same input
+is generated under explicit clinical communication
+constraints, implemented as structured instructions
+within the prompt (for example, factual ground-
+ing, uncertainty handling, and nuance-preservation
+rules, full prompts in Appendix B). Finally, in the
+RAG-Constrained setting, those constraints are re-
+tained while adding retrieved lay-term definitions
+to support clearer, simplified explanations (see Ap-
+pendix C for implementation details). Specifically,
+the role of Retrieval-Augmented Generation (RAG)
+in this setting is to facilitate text simplification us-
+ing the README dataset, an extensive collection
+of over 50,000 unique pairs of medical terms and
+their lay definitions (Yao et al., 2024). Together,
+these constraints enforce evidence-aware summa-
+rization over open-ended medical interpretation.
+3.4
+Experimental Setup and Baselines
+To systematically evaluate the impact of our
+evidence-grounded generation framework, we
+benchmarked the task across three distinct tiers
+of Large Language Models. This selection allows
+3
+
+
+Figure 1: Overview of the pipeline and five-category semantic alignment evaluation framework.
+us to observe how model scale affects clinical align-
+ment and constraint adherence:
+• GPT-4o:
+Representing a state-of-the-art,
+large-scale proprietary model (OpenAI et al.,
+2024).
+• Qwen2.5:14B-Instruct:
+Representing a
+highly capable, mid-sized open-weight model
+(Qwen et al., 2025).
+• Phi-4-mini-4B: Representing a lightweight,
+efficient small language model (SLM) suitable
+for low-latency or on-device health applica-
+tions (Microsoft et al., 2025).
+For our experiments, we sampled 500 records
+from the semi-synthetic menstrual health dataset.
+Each record was processed across the three mod-
+els using three distinct generation configurations,
+resulting in a total corpus of 4,500 patient-facing
+summaries. The configurations evaluated include:
+• Base(Vanilla LLM): The model directly
+translates the structured physiological obser-
+vations into a summary.
+• Constrained: The model generates a sum-
+mary utilizing explicit evidence-grounding
+constraints (e.g., Uncertainty Preservation, Di-
+agnostic Constraint) injected into the prompt,
+but operates without Retrieval-Augmented
+Generation (RAG).
+• RAG-Constrained: The full pipeline combin-
+ing non-parametric retrieval from a curated
+medical knowledge base (medical term, lay
+definition) with explicit prompt based clinical
+constraints.
+3.5
+Evaluation
+We define all semantic alignment metrics so that
+a score of zero indicates perfect alignment and
+higher values indicate greater drift. Let X denote
+the structured physiological record and Y the gen-
+erated patient-facing summary.
+Faithfulness violation (Mfaith). Each summary’s
+precomputed atomic_facts are checked against
+a textual premise formed by concatenating all
+non-null fields of X (excluding sample_id) into
+field-value statements. Each claim ai ∈A is tested
+with
+pritamdeka/PubMedBERT-MNLI-MedNLI
+(Deka et al., 2023) via the Hugging Face text-
+classification pipeline; a claim is supported only if
+labeled entailment:
+For each atomic claim ai
+∈A, we query
+pritamdeka/PubMedBERT-MNLI-MedNLI
+via
+the
+Hugging
+Face
+text-classification
+pipeline,
+using
+X
+as
+the
+premise
+and
+ai as the hypothesis.
+Let NLI(X, ai)
+∈
+{entailment, neutral, contradiction}
+denote
+the
+predicted label. We define the support indicator:
+Isup(ai) =
+(
+1
+if NLI(X, ai) = entailment
+0
+otherwise
+(1)
+Mfaith = 1
+|A|
+|A|
+X
+i=1
+(1 −Isup(ai))
+(2)
+Epistemic misalignment (Mepist).
+A record
+bears uncertainty if confidence_score < 0.60
+or missing_fields is non-empty. Claims from
+such records are uncertainty-sensitive if they con-
+tain cycle- or interpretation-related keywords (e.g.,
+4
+
+
+Alignment Condi-
+tion
+Definition
+Example
+Metric
+Related Work
+Faithfulness Viola-
+tion
+Unsupported physiologi-
+cal claims generated be-
+yond the scope of the
+structured evidence
+Stating elevated HRV when
+only temperature data is
+present
+Eq. 2
+Faithfulness and factual-
+ity(Maynez et al., 2020)
+Epistemic
+mis-
+alignment
+Amplification of uncer-
+tain
+observations
+into
+definitive statements
+“Your cycle is irregular” in-
+stead of “your cycle may be
+irregular”
+Eq. 3
+(Clark et al., 2025)
+Diagnostic
+infer-
+ence overreach
+Implication of pathology
+unsupported by the under-
+lying evidence
+Suggesting
+endometriosis
+from mild cramp annotations
+Eq. 4
+(Zhu et al., 2026)
+Omission Drift
+Removal of clinically rel-
+evant nuance during sim-
+plification
+Dropping confidence scores
+or phase uncertainty from the
+summary
+Eq. 5
+(Oukelmoun et al., 2025)
+Urgency Misalign-
+ment
+Unnecessarily alarming
+or over-reassuring lan-
+guage
+“This is completely normal”
+for an ambiguous HRV drop
+Eq. 6
+Table 1: Semantic alignment taxonomy covering five clinical alignment conditions, their definitions, illustrative
+examples, formal metrics, and connections to related literature concepts.
+phase, ovulation, trend, normal). A claim is defini-
+tive if it contains no hedge markers (e.g., may,
+might, likely) and is asserted directly:
+Mepist =
+1
+|Aunc|
+X
+a∈Aunc
+I(IsDefinitive(a)). (3)
+With Mepist = 0, no uncertainty-sensitive claims
+exist.
+Diagnostic inference overreach (Mdiag). Unsup-
+ported pathology mentions are detected via scis-
+paCy en_ner_bc5cdr_md with medSpaCy nega-
+tion handling; only non-negated DISEASE mentions
+are retained as DY . A summary overreaches if any
+extracted diagnosis is absent from the textualized
+source record:
+Mdiag = I(DY̸ ⊆X).
+(4)
+We also report a corrected version excluding
+pregnancy and ectopic pregnancy, which man-
+ual review showed were typically explanatory
+reproductive-context mentions rather than unsup-
+ported diagnoses.
+Omission drift (Momit). For a fixed salient-field
+set (cycle timing, phase, ovulation estimate, sleep,
+resting heart rate, HRV trend, SpO2, temperature
+trend, symptoms), we generate a reference state-
+ment per non-null field and test reversed entailment
+with the same NLI model (summary as premise,
+field statement as hypothesis). Unentailed fields
+count as omitted:
+Momit =
+# omitted salient fields
+# non-null salient fields in X .
+(5)
+Urgency misalignment (Murg). Unlike the claim-
+level metrics above, urgency concerns perceived
+tone rather than entailment. Each summary Y is
+rated by an LLM judge (Claude-3.5-Haiku (An-
+thropic, 2024) , temperature 0) on a continuous
+scale from reassuring to alarming, independent of
+whether that tone is clinically warranted:
+Murg = Judge(Y ) ∈[0, 1].
+(6)
+Readability, lexical diversity, and jargon. We as-
+sess the fidelity-accessibility trade-off along three
+axes.
+Grade-level readability: SMOG, FKGL, and ARI,
+plus Dale-Chall (vocabulary familiarity, largely
+length-independent); since the three grade-level
+indices are highly correlated, FKGL is our pri-
+mary endpoint, with SMOG and ARI as robustness
+checks.
+Lexical and syntactic complexity: MTLD (forward-
+backward averaged, factor threshold 0.72) for lex-
+ical variety, and a fixed spaCy parser for mean
+dependency-tree depth and subordinate-clause ra-
+tio, applied identically across conditions; word
+counts are tracked to detect verbosity inflation.
+Medical jargon: scispaCy with a UMLS linker iden-
+tifies terms resolving to a documented UMLS con-
+cept, reported as density (entities per 100 words),
+raw entity count, and entities per sentence.
+3.6
+Statistical Procedure
+For each metric we run paired Wilcoxon signed-
+rank tests (Wilcoxon, 1992) , since the design is
+5
+
+
+fully matched and several metrics are not normally
+distributed. We report the paired mean and median
+difference, a paired Cohen’s d (mean difference
+over the standard deviation of the paired differ-
+ences), and the matched-pairs rank-biserial correla-
+tion as a non-parametric effect size. Two families
+of contrasts are tested separately: Within-model
+comparisons across the three summary types, and
+within-summary-type comparisons across the three
+models. Because n = 500 pairs per test, most con-
+trasts reach statistical significance; we therefore
+treat effect size, not the raw p-value, as the basis
+for interpretation. p-values are corrected for mul-
+tiple comparisons with the Benjamini-Hochberg
+procedure, applied separately within each of the
+two contrast families.
+4
+Results
+We evaluated three models (GPT-4o, Phi-4-mini,
+and Qwen2.5-14B) across three generation settings
+(base, constrained, and rag_constrained) on
+500 structured records, yielding 4,500 generated
+summaries in total. We report the five semantic-
+alignment metrics (Table 1), together with read-
+ability, lexical-diversity, syntactic-complexity, and
+jargon measures to characterize the fidelity-
+accessibility trade-off. Because the grade-level
+readability metrics are strongly intercorrelated, we
+use FKGL as the primary grade-level endpoint and
+treat SMOG and ARI as robustness checks; Dale-
+Chall, MTLD, dependency depth, and subordinate-
+clause ratio are interpreted as distinct constructs.
+4.1
+Clinical alignment
+Faithfulness violation. Table 2 reports mean faith-
+fulness violation rates across models and settings
+(corrected for RAG-constrained as described in
+§5.2). For all three models, Mfaith is lowest or
+comparable in the RAG-constrained condition rela-
+tive to constrained: GPT-4o improves further under
+retrieval (0.186 →0.152), Qwen2.5-14B is essen-
+tially unchanged (0.165 →0.162), and Phi-4-mini
+shows a small increase (0.212 →0.220). All three
+models remain well below their base levels. Pooled
+across settings, mean Mfaith is 0.242 for base, 0.188
+for constrained, and 0.178 for rag_constrained;
+across models, Qwen2.5-14B performs best overall
+(0.172), followed by GPT-4o (0.201) and Phi-4-
+mini (0.235).
+Epistemic misalignment.
+As shown in Table 2,
+Mepist decreases monotonically from base to
+constrained to rag_constrained for all three
+models, with the pooled mean falling from 0.297
+to 0.263 to 0.248. GPT-4o achieves the lowest fi-
+nal value (0.237); Phi-4-mini and Qwen2.5-14B
+show the same monotonic pattern. Median Mepist
+is 0.0 in every model-by-setting cell, so the mean
+is driven by a smaller subset of problematic cases.
+Notably, this improvement occurs despite the aver-
+age number of uncertainty-sensitive claims rising
+across settings (pooled: 1.17 →1.76 →2.70), indi-
+cating that explicit uncertainty-preservation instruc-
+tions and retrieved explanatory support help models
+state uncertain observations more cautiously rather
+than more definitively.
+Diagnostic
+inference
+overreach.
+The
+raw
+diagnostic-overreach metric suggested substantial
+monotonic increases under constraints and re-
+trieval; manual inspection traced nearly all flagged
+cases to pregnancy or ectopic pregnancy mentions
+used in fertility-window or ovulation explanations
+rather than as unsupported diagnoses (discussed
+further in §5.2). After excluding these two terms,
+overreach collapses to near zero in every cell:
+GPT-4o and Qwen2.5-14B fall to 0.000 in all
+settings, while Phi-4-mini reaches only 0.004 in
+base and 0.006 in rag_constrained.
+Omission drift.
+Omission drift shows more
+heterogeneous behavior.
+GPT-4o improves
+monotonically,
+from 0.219 (base) to 0.130
+(rag_constrained), with a median of 0.0 under
+rag_constrained. Qwen2.5-14B performs best
+under constrained generation (0.147) and rises
+slightly under retrieval (0.167), remaining below its
+base value (0.176). Phi-4-mini is the only model
+that worsens monotonically, from 0.264 to 0.286.
+Pooled across settings, omission drift declines only
+modestly (0.220 →0.205 →0.194), masking these
+model-specific differences; we relate Phi-4-mini’s
+reversal to its more discursive output style in §5.2.
+Urgency misalignment.
+Mean Murg increases
+significantly from base to constrained for all
+three models (e.g., GPT-4o: 0.170 →0.227, d =
+−0.61; all pFDR < 10−5), then drops significantly
+from constrained to rag_constrained for every
+model (d = 0.37–0.45, all pFDR < 10−13), return-
+ing GPT-4o and Phi-4-mini to base levels while
+Qwen2.5-14B only partially recovers. Across set-
+tings, GPT-4o is consistently the least alarming
+model, though this gap narrows once retrieval is
+added.
+6
+
+
+Model
+Setting
+Mfaith ↓
+Mepist ↓
+Mdiag ↓
+Momit ↓
+Murg
+GPT-4o
+Base
+0.264
+0.293
+0.000
+0.219
+0.170
+Constrained
+0.186
+0.243
+0.000
+0.195
+0.227
+RAG-Constrained
+0.152
+0.237
+0.000
+0.130
+0.179
+Qwen2.5-14B
+Base
+0.190
+0.299
+0.000
+0.176
+0.247
+Constrained
+0.165
+0.275
+0.000
+0.147
+0.270
+RAG-Constrained
+0.162
+0.251
+0.000
+0.167
+0.199
+Phi-4-mini
+Base
+0.273
+0.298
+0.004
+0.264
+0.237
+Constrained
+0.212
+0.270
+0.000
+0.273
+0.263
+RAG-Constrained
+0.220
+0.255
+0.006
+0.286
+0.181
+Table 2: Clinical alignment metrics by model and generation setting, ordered by model scale (large to small).Mfaith:
+faithfulness violation rate (RAG-constrained: entailed by X or retrieved context); Mepist: epistemic misalignment;
+Mdiag: diagnostic inference overreach (corrected, excluding pregnancy/ectopic pregnancy mentions); Momit: omis-
+sion drift; Murg: urgency misalignment. All metrics range [0, 1] with lower values indicating better alignment.
+4.2
+Readability and stylistic trade-offs
+Grade-level readability and syntactic complex-
+ity.
+Across all three models, readability worsens
+under added control: all three grade-level met-
+rics increase monotonically or near-monotonically
+from base to constrained to rag_constrained
+(Table 6), with FKGL as the primary endpoint. For
+GPT-4o, the largest shift occurs between base and
+constrained (FKGL paired d = 1.39; ARI d =
+1.22; Dale-Chall d = 1.23; all pFDR < 10−70),
+while the further increase from constrained to
+rag_constrained is modest for FKGL (d = 0.26)
+and negligible for ARI (d = −0.08, n.s. after
+correction) and Dale-Chall (d = −0.09, signifi-
+cant but trivial). Dependency-tree depth follows
+the same pattern: a large increase from base to
+constrained (d = 0.90) with essentially no fur-
+ther change under retrieval (d = 0.01, n.s.). This
+suggests explicit grounding constraints, rather than
+retrieval itself, are the main driver of increased
+reading difficulty. Table 6 shows the same quali-
+tative pattern across models: Phi-4-mini produces
+the highest grade-level outputs under all settings,
+GPT-4o occupies the middle range, and Qwen2.5-
+14B is typically lowest on FKGL and ARI once
+constraints are applied.
+Lexical diversity.
+Using MTLD (to assess lexi-
+cal variety independent of length), GPT-4o shows
+a clear decline from base to rag_constrained,
+modest between base and constrained (d =
+−0.26) and substantially larger between base and
+rag_constrained (d = −0.63). Phi-4-mini de-
+clines similarly, from a much higher starting point.
+Qwen2.5-14B is comparatively stable, even ris-
+ing slightly from base to constrained before re-
+turning near baseline under retrieval. The lexical-
+diversity cost of constrained generation is therefore
+model-dependent rather than universal.
+Medical jargon.
+Medical-jargon usage shows
+a more nuanced trade-off than a single mea-
+sure captures. As shown in Table 7, raw medi-
+cal entity count rises consistently from base to
+rag_constrained for every model, with large ef-
+fects for GPT-4o (constrained minus base: d =
+1.89; rag_constrained minus base: d = 2.24).
+By contrast, jargon density (entities per 100 words)
+declines across settings for all models, since total
+word count grows.
+5
+Discussion
+5.1
+Readability
+Taken together, these results indicate that the
+evidence-grounding mechanisms evaluated for
+their effect on factual alignment in Section 3 carry a
+measurable cost in accessibility. Grade-level read-
+ability increases substantially once explicit con-
+straints are applied, largely independent of whether
+retrieval is also used, while lexical diversity de-
+creases and domain-term mentions increase in ab-
+solute terms even as their density per word declines.
+This is consistent with the readability-fidelity ten-
+sion noted in constrained clinical summarization
+more broadly (Verma et al., 2026), and suggests
+that the drift-reduction constraints introduced in
+this work should be evaluated jointly against both
+factual alignment and reading difficulty rather than
+either in isolation. We treat this joint analysis, cor-
+relating the per-sample drift metrics of Table 1
+against the per-sample readability measures re-
+ported here, as a direct extension of the present
+results. One caveat applies to how we measure
+readability: FKGL, ARI, and SMOG are based
+7

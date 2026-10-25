@@ -1,0 +1,672 @@
+Would an LLM Match into a Residency? Uncertainty, Reasoning and
+Image Use of Open Language Models on the Spanish MIR Examination
+Miguel Fernandez-de-Retana
+a†, Unai Zulaika
+b, Rub´en S´anchez-Corcuera
+c,
+Aritz Bilbao-Jayo
+d and Aitor Almeida
+e
+Faculty of Engineering, University of Deusto (Bilbao, Spain)
+†Corresponding author: m.fernandezderetana@deusto.es
+Keywords:
+Clinical Reasoning, Large Language Models, Medical Question Answering, Open-Weight Models, Selective
+Prediction, Uncertainty Quantification, Vision-Language Models.
+Abstract:
+Accuracy on medical examinations is common evidence offered for the clinical use of language models, yet
+a health system that intends to run an open model on its own hardware needs to know considerably more:
+whether the model recognizes when it is likely to be wrong, whether medical fine-tuning improves this ability,
+whether its correct answers rest on sound clinical reasoning, or whether it actually uses the images it is given.
+We examine these questions for four open models of 8 to 27 billion parameters on the Spanish MIR resi-
+dency examination, scoring 1,552 questions from eight editions under the exam’s own rules. Answering every
+question, the three larger models would rank among roughly the first 600 to 3,000 candidates, with 41 to 43
+specialties still open to them. Abstention, however, never pays, because even their least confident answers are
+right more often than the 25% break-even. Medical fine-tuning reduced overconfidence at the cost of accuracy,
+without improving how well confidence separates right from wrong answers. Moreover, 13–38% of correct
+answers rejected a distractor for a clinically unsound reason that confidence did not reflect, and removing or
+swapping the provided contextual images left accuracy unchanged.
+1
+INTRODUCTION
+Large language models (LLMs) now pass medical li-
+censing examinations, often by a wide margin (Kung
+et al., 2023; Singhal et al., 2023; Nori et al., 2023;
+Kasai et al., 2023), and the Spanish residency exami-
+nation is no exception (Guillen-Grima et al., 2023).
+Most of this evidence, however, comes from large
+proprietary models accessed through closed APIs,
+whose weights are not available and whose prompt-
+ing, decoding or training data remain outside the
+user’s control. A hospital that cannot send patient data
+beyond its own infrastructure must thus instead turn to
+open models that can run on its own hardware, which
+also gives it the ability to inspect, control and audit
+them (Riedemann et al., 2024; Thirunavukarasu et al.,
+2023). At the scale that fits on a single workstation
+GPU of reasonable cost and memory, i.e., models of a
+a
+https://orcid.org/0009-0002-0883-1303
+b
+https://orcid.org/0000-0002-7366-9579
+c
+https://orcid.org/0000-0002-6361-0901
+d
+https://orcid.org/0000-0001-7743-6652
+e
+https://orcid.org/0000-0002-1585-4717
+few tens of billions of parameters, accuracy on medi-
+cal examinations is far from a solved problem, and the
+question is whether the performance of these models
+is good enough to support clinical decision-making or
+education purposes.
+Yet, a headline accuracy figure answers none of
+the questions that a health system would need to ask
+before deploying such a model for clinical decision
+support or medical education (Hager et al., 2024). It
+says nothing about whether the model knows when it
+is wrong, whether medical fine-tuning improves that
+self-knowledge or merely changes accuracy, whether
+a correct answer is reached through reasoning that a
+physician would consider clinically sound, or whether
+the model actually looks at the image when a case
+comes with one. A model can thus be confidently
+wrong, or right for the wrong reasons, without either
+showing in its score.
+The Spanish M´edico Interno Residente (MIR) ex-
+amination makes it possible to address all four ques-
+tions under realistic conditions.
+Because it penal-
+izes wrong answers, a candidate’s score depends on
+when they choose to answer or abstain; because it al-
+locates training locations and specialties by rank, a
+arXiv:2610.31586v1  [cs.CL]  22 Oct 2026
+
+
+score translates directly into a specialty and hospital
+where different candidates would be placed under var-
+ious degrees of competitiveness; and because physi-
+cians publish per-option commentaries on many of its
+questions, and about one question in eight includes a
+clinical image, it also lends itself to an analysis of rea-
+soning and image use. We evaluate four open models,
+namely Qwen3-8B, Qwen3-14B, Gemma-3-27B and
+MedGemma-27B, the last two of which share a base
+model and differ only in medical tuning, and address
+the following research questions:
+RQ1. Scored like a real candidate, where does each
+model land in the national ranking?
+RQ2. Does medical fine-tuning improve a model’s
+judgement of its own uncertainty, or only its ac-
+curacy/practical performance?
+RQ3. When a model gets the answer right, does it re-
+ject the wrong options for reasons that a physician
+would consider clinically sound?
+RQ4. Do vision language models actually use the
+clinical images they are given, or do they answer
+instead from the text alone?
+Our results show that a score good enough to win a
+competitive residency hides substantial weaknesses.
+The three larger models would rank among the first
+few thousand candidates and could choose almost
+any specialty, yet none of the four can profit from
+the exam’s penalty by abstaining, since even their
+least confident answers are right more often than the
+25% break-even. Medical tuning makes a model less
+overconfident but also less accurate, and no better at
+telling its right answers from wrong ones. Between
+13 and 38% of correct answers dismiss at least one
+wrong option for a clinically unsound reason, which
+the model’s confidence does not reveal, and withhold-
+ing or swapping the clinical image leaves accuracy
+unchanged.
+In summary, our contributions are: (i) a corpus of
+2,595 questions extracted from the last twelve official
+MIR exams, from 2014 to 2025, with answer keys,
+physician commentary, clinical plates and the pub-
+lished score-to-rank data of the 2023 and 2024 calls;
+(ii) an evaluation under the exam’s own scoring and
+allocation rules of four open models of 8 to 27 billion
+parameters, with and without medical tuning; (iii) a
+controlled comparison of the effect of medical tuning
+on calibration, with an exam sat after the model train-
+ing cutoff as a contamination control; and (iv) evi-
+dence on model reasoning and image use in questions
+with physician commentary and clinical plates.
+2
+RELATED WORK
+LLMs on Medical Examinations. Since ChatGPT
+approached the pass mark of the USMLE (Kung et al.,
+2023), medical examinations have become the stan-
+dard showcase for clinical LLMs. MedQA (Jin et al.,
+2021) and its successors track accuracy (Singhal et al.,
+2023; Singhal et al., 2025; Nori et al., 2023), and
+national examinations such as those of Japan (Kasai
+et al., 2023) and Spain (Guillen-Grima et al., 2023)
+have since been added.
+The MIR in particular is
+available as a benchmark through HEAD-QA (Vilares
+and G´omez-Rodr´ıguez, 2019; Correa-Guill´en et al.,
+2026), and rheumatologists have rated the reason-
+ing of LLMs on its rheumatology questions (Madrid-
+Garc´ıa et al., 2023). These studies, however, report
+accuracy or at most the raw mark, and we are not
+aware of any that scores a model under the MIR’s
+penalty and allocation rules, or that separates what a
+model gains by answering from what it could gain by
+abstaining.
+Explanations and Reasoning. A correct answer does
+not guarantee correct reasoning. GPT-4V was found
+to give flawed rationales on over a third of the im-
+age challenges it answered correctly (Jin et al., 2024),
+and the explanations a model produces do not nec-
+essarily reflect the process that actually led to its an-
+swer (Turpin et al., 2023). To this end, CasiMedicos
+provides physician-written explanations of MIR ques-
+tions that cover the wrong options as well as the right
+one (Alonso et al., 2024; Goenaga et al., 2024), which
+makes it possible to ask whether a model rejects each
+distractor for a clinically valid reason. We grade that
+reasoning against the physician’s text with an LLM
+acting as a judge (Zheng et al., 2023).
+Calibration and Abstention. For a model’s confi-
+dence to support deferral, it must be both calibrated
+(Guo et al., 2017; Naeini et al., 2015) and able to
+separate right from wrong answers (Hendrycks and
+Gimpel, 2017), a trade-off between coverage and risk
+formalized by selective prediction (Geifman and El-
+Yaniv, 2017).
+LLMs do carry some knowledge of
+their own correctness (Kadavath et al., 2022), al-
+though the confidence they verbalize tends to be over-
+inflated and sycophantic (Xiong et al., 2024). It has
+recently been argued that benchmarks which do not
+penalize wrong answers reward guessing, and that pe-
+nalized scoring would instead reward honest absten-
+tion (Kalai et al., 2025).
+The MIR provides such
+a benchmark, with a penalty that makes it possible
+to ask whether a model can identify the questions it
+would answer worse than chance, and whether medi-
+cal fine-tuning improves that ability.
+
+
+Images and Contamination.
+Multimodal models
+have been shown to score well on medical visual
+questions while ignoring or misreading the image
+(Yan et al., 2025; Jin et al., 2024).
+Examination
+results are also exposed to training data contamina-
+tion (Sainz et al., 2023), for which comparing perfor-
+mance before and after a model’s training cutoff is a
+standard control (Roberts et al., 2024).
+3
+THE MIR EXAMINATION
+3.1
+Format and Scoring
+The MIR is a single, national, multiple-choice exam-
+ination sat once a year by every graduating physician
+who seeks a specialty training post in Spain.
+Fol-
+lowing the Ministry of Health, we name each exam
+by the year of its call, even though it is sat early in
+the following year, so the 2025 exam, for instance,
+took place on 24 January 2026. Papers contained 225
+scored questions up to the 2018 exam, 175 in 2019
+and 2020 and 200 from 2021 onwards, in each case
+with 10 reserve questions that replace any question
+annulled by the examining commission. Questions
+had five options up to the 2014 exam and four there-
+after. According to the official scoring rules, a correct
+answer scores +3, a wrong answer −1 and a blank 0,
+so that the total mark S is
+S = 3c−w,
+(1)
+where c and w are the numbers of correct and incor-
+rect answers, respectively. Published results divide
+this mark by three, giving the net score S/3 = c−w/3,
+i.e., the number of correct answers net of the penalty
+for wrong ones. We report net scores throughout.
+Since answering a question that one gets right with
+probability p is worth 3p −(1 −p) = 4p −1 points,
+against zero for a blank, it follows that
+Answer ⇐⇒p > 1
+4,
+(2)
+regardless of the number of options. With four op-
+tions, a random guess therefore has an expected value
+of exactly zero, and a blank is better than a guess that
+is right less than 25% of the time. The relevant ques-
+tion for a model is thus not whether it abstains often
+enough, but whether it can identify those questions.
+3.2
+From Score to Training Post
+Candidates are ranked by a total mark that weighs the
+examination at 90% and the academic record at 10%,
+with the resulting rank determining the order in which
+they choose a specialty and a hospital in the national
+territory, so that each specialty’s cut-off is the rank of
+the candidate who took its last place. Since the Min-
+istry of Health stopped publishing per-candidate re-
+sult lists after the 2021 exam, the only public informa-
+tion consists of the per-specialty summaries that the
+trade press compiles from the allocation (ConSalud,
+2024; ConSalud, 2025). For each specialty, these re-
+port the mean net score and mean rank of its entrants
+and, for the 2023 exam, the net score and rank of its
+last entrant, together with the cut-off and the hospital
+where the last place went.
+4
+DATA
+Questions. We parsed the official Version 0 book-
+lets of the last twelve MIR examinations, from 2014
+to 2025, containing 2,595 questions including 120 re-
+serves (Table 1). Answer keys were taken from the
+answer tables published by CasiMedicos and from
+HEAD-QA v2 (Correa-Guill´en et al., 2026), matched
+on question text. Where both sources key the same
+question they agree on 730 of 773 cases, and 30 of the
+43 disagreements fall in the 2017 exam: the four mod-
+els’ unanimous answers agree with it on only 36% of
+questions, against 85–93% in every other year. We
+therefore start the analysis of RQ1, RQ2 and RQ4 at
+the 2018 exam, which leaves only four-option papers.
+Annulled questions are excluded throughout.
+Physician Commentary.
+CasiMedicos also pub-
+lishes clinician explanations of questions (Alonso
+et al., 2024; Goenaga et al., 2024), and for some of
+them, the commentary discusses the wrong options
+one by one. We use the 123 official questions from
+the 2015 and 2017–2021 exams whose commentary
+covers at least two options, since only these can reveal
+whether a distractor was rejected for the right reason.
+Clinical Plates. We extracted the clinical plates from
+the image annexes of the 2019–2025 exams, the only
+ones available, obtaining 174 questions with a plate,
+of which 171 are scorable.
+Specialty Labels. CasiMedicos further assigns each
+commented question to a specialty, with 619 of the
+1,552 scored questions from 2018–2025 (40%) carry-
+ing such a label.
+Rank Data. We built a score-to-rank curve for the
+2023 exam (88 points, covering mean and last en-
+trants) and for the 2024 exam (45 points, mean en-
+trants only), together with the cut-offs of their 45 and
+44 specialties. The 2025 exam has published cut-offs
+but no scores yet, and for the 2022 exam, we found
+cut-offs but no per-specialty scores.
+
+
+Table 1: Question sets used by each research question.
+Set
+Questions
+Use
+Official papers, 2014–2025
+2,595
+Corpus
+Scored, 2018–2025
+1,552
+RQ1, RQ2
+With commentary on
+123
+RQ3
+two or more options
+With a scorable image plate
+171
+RQ4
+Rank-curve points, 2023 / 2024
+88 / 45
+RQ1
+Specialty cut-offs, 2023 / 2024
+45 / 44
+RQ1
+Table 2: Evaluated models and the judge.
+Model
+Params
+Precision
+Images
+Qwen3-8B
+8.2B
+16-bit
+No
+Qwen3-14B
+14.8B
+16-bit
+No
+Gemma-3-27B
+27.4B
+8-bit
+Yes
+MedGemma-27B
+27.4B
+8-bit
+Yes
+Llama-3.3-70B (Judge)
+70.6B
+4-bit
+No
+5
+METHOD
+Figure 1 summarizes the study design. Pass A an-
+swers every scored question of the 2018–2025 exams
+in label mode, and serves RQ1 and RQ2. Pass B asks
+for a reason per option on the questions with physi-
+cian commentary (RQ3). Pass C repeats the image
+questions with the plate shown, withheld or swapped
+(RQ4). The four models are evaluated in parallel on
+each pass, and all runs are deterministic.
+5.1
+Models
+We evaluate Qwen3-8B and Qwen3-14B (Qwen
+Team,
+2025) together with Gemma-3-27B and
+MedGemma-27B (Gemma Team, 2025; Sellergren
+et al., 2025), whose sizes and precisions are listed in
+Table 2. All four were released in 2025, before the
+2025 exam was sat. Since MedGemma-27B is built
+on Gemma-3-27B through medical tuning, the pair
+isolates the effect of that tuning at a fixed scale and
+architecture, and as both accept images, they are also
+the two models evaluated in Pass C. All experiments
+ran on a single 48GB NVIDIA Quadro RTX 8000, the
+kind of hardware a hospital can realistically own and
+operate. Qwen3’s thinking mode was disabled so that
+all four models answer directly.
+5.2
+Answering Protocol
+All prompts are written in Spanish, the language of
+the examination. The system prompt introduces the
+model as a MIR candidate and asks it to answer in the
+language of the question, while the user turn contains
+the stem and the numbered options. The model is not
+told about the scoring rule, since abstention is applied
+afterwards on the basis of its confidence (Section 5.3).
+Label Mode. In this mode, used for RQ1, RQ2 and
+RQ4, the model is asked only for the number of the
+correct option. In a single forward pass we read the
+probability qk that the model assigns to each option
+number k as the first token of its reply and renormalize
+it over the options, ˆpk = qk/∑j qj. The answer is then
+argmaxk ˆpk and the confidence maxk ˆpk, thus derived
+from the model’s distribution over the options.
+Generate Mode. In this mode, used for RQ3, the
+model is asked for a reply stating, for every option,
+whether it is the one to mark together with a one sen-
+tence clinical reason, followed by the final answer and
+a stated confidence. Asking whether an option is “the
+one to mark” rather than whether it is “true” keeps
+the verdict unambiguous on negatively phrased stems
+(e.g., “which of the following is FALSE”), which
+make up about a fifth of the MIR.
+5.3
+Scoring and Placement (RQ1)
+Each full-paper run is scored according to (1) under
+three answering policies: always hands in every an-
+swer, oracle hands in only the correct ones and thus
+sets the ceiling for a perfectly self-aware model, and
+calibrated applies the break-even rule of (2). The lat-
+ter requires an estimate of p that the confidence can-
+not provide, because the largest of four probabilities
+summing to one is at least 1/4, so the rule “answer
+if maxk ˆpk ≥1/4” would never leave a blank. We
+therefore estimate p from the model’s record on its
+other seven examinations, sorting their answers by
+confidence into ten equal-sized groups and taking as
+ˆP(correct) the accuracy of the group into which a new
+answer’s confidence falls, so that no examination’s
+policy is fitted on its own answers. From these poli-
+cies we derive the abstention gain, calibrated minus
+always, and the headroom, oracle minus calibrated,
+that is, the part of the net score that only a more accu-
+rate model could recover.
+To place a model in the national ranking, we fit a
+score-to-rank curve for each exam through the pub-
+lished points and interpolate linearly between the re-
+sulting knots.
+A specialty is considered open at a
+given rank if its last place went to that rank or a later
+one, so the most competitive open specialty is the best
+choice still available, and the hospital that took its
+last place is where it remained available at the end.
+Mapping the 95% interval of the net score through the
+curve then gives the corresponding range of ranks.
+
+
+Data
+Model Runs
+Scoring
+Research Questions
+Score-to-Rank Curves and
+Specialty Cut-Offs
+(2023–2024)
+Official Papers (2018–2025)
+1,552 Scored Questions
+Pass A: Label Mode
+Four Models, Full Papers
+Option Probabilities
+From One Forward Pass
+Scoring Under Exam
+Answering Policies
+ECE, Brier and AUROC
+Before and After Release
+RQ1: Net Score
+and Placement
+RQ2: Medical Tuning
+and Uncertainty
+Physician Commentary
+on Two or More Options
+123 Questions
+Pass B: Generate Mode
+Verdict and Reason
+Llama-3.3-70B Judge
+Against Physician Text
+Same, Valid or Wrong
+RQ3: Distractor
+Reasoning
+Clinical Plates
+171 Scorable Questions
+Pass C: Label Mode
+Two Vision Models
+Own, No or Another Plate
+Paired Accuracy
+per Condition
+RQ4: Image Use
+Figure 1: Study Design. Pass A answers every scored question of the 2018–2025 exams and serves RQ1 and RQ2. Pass B
+asks for a reason per option on the questions with physician commentary (RQ3). Pass C repeats the image questions with the
+plate shown, withheld or swapped (RQ4).
+5.4
+Calibration (RQ2)
+For each model, we report accuracy, mean confidence,
+expected calibration error (ECE, with ten equal bins)
+(Naeini et al., 2015), the multi-class Brier score over
+the option distribution (Brier, 1950), and the area un-
+der the ROC curve (AUROC) with which confidence
+separates right from wrong answers (Hendrycks and
+Gimpel, 2017). Whereas ECE measures whether con-
+fidence matches accuracy on average, AUROC mea-
+sures whether it ranks answers correctly. The main
+contrast is between MedGemma-27B and Gemma-3-
+27B on the same questions. As a contamination con-
+trol, we also report every measure separately for the
+pre-release examinations, whose questions have cir-
+culated publicly for years, and for the 2025 exam,
+which was sat after all four models had been released.
+5.5
+Rationale Grading (RQ3)
+Each model performs one generate mode run over the
+123 questions with commentaries on two or more op-
+tions. For every option that has both a physician span
+and a model reason, an external judge, i.e., a Llama-
+3.3-70B-Instruct (Grattafiori et al., 2024) in 4-bit pre-
+cision, is shown the question, the options, the key, the
+model’s verdict on the option, the physician’s text for
+it and the model’s reason, and labels the reason as
+same if it gives the physician’s key clinical reason,
+valid if it gives a different but clinically correct and
+sufficient one, or wrong if it is clinically wrong, un-
+supported, irrelevant or too vague, or argues for the
+wrong verdict. Because the reasons are graded against
+the physician’s commentary, RQ3 is limited to the 108
+questions on which the physician’s answer matches
+the exam key. Our main measure of interest, right an-
+swer, wrong reason, is the share of correctly answered
+questions on which at least one distractor was rejected
+for a reason labelled wrong, with which we compare
+the label mode confidence of these answers with that
+of correct answers whose distractor reasons were all
+sound.
+5.6
+Image Conditions (RQ4)
+The two vision models answer the 171 image ques-
+tions in label mode under three conditions, i.e., with
+the question’s own plate, with no plate, and with the
+plate of a different question. We report accuracy per
+condition, the paired difference between the real plate
+and each alternative, the share of answers that change,
+and the share of questions answered correctly in all
+three conditions, for which the text alone is evidently
+sufficient.
+5.7
+Statistical Analysis
+All confidence intervals are 95% intervals computed
+over questions, so they express how much a measure
+would change had a different set of questions been
+asked.
+Since every answer is deterministic, this is
+the only source of variation. For proportions, namely
+the accuracies and the RQ3 rate, we use Wilson in-
+tervals (Wilson, 1927).
+For the measures that are
+not simple proportions (e.g., net score, ECE, Brier
+score and AUROC), and for the difference between
+two values of any measure, we use a percentile boot-
+strap with 2,000 resamples of the questions (Efron
+and Tibshirani, 1993). Two kinds of difference arise.
+When both values come from the same questions, as
+in MedGemma-27B minus Gemma-3-27B and in the
+real plate minus each alternative, the questions are re-
+
+
+sampled once and both values recomputed on them
+(a paired bootstrap). When they come from different
+questions, as in the 2025 exam minus the earlier ones
+and in the RQ3 confidence gap, the two sets are re-
+sampled independently.
+As for significance tests, two models or two im-
+age conditions answering the same questions are com-
+pared with McNemar’s exact test (McNemar, 1947),
+which considers only the questions on which the two
+disagree. The RQ3 rates, in contrast, are computed
+over each model’s own correct answers and therefore
+over different questions, so we compare them with
+Fisher’s exact test. Because this comparison involves
+all six pairs of the four models, its six p-values are
+corrected with Holm’s adjustment (Holm, 1979). No
+other test in the paper is adjusted.
+6
+RESULTS
+6.1
+RQ1: Scored Like a Real Candidate
+When answering every question, Gemma-3-27B and
+Qwen3-14B obtain an average net score per exam-
+ination of 131.3 and 131.0, respectively, followed
+by MedGemma-27B with 125.5 and Qwen3-8B with
+95.8, with a 95% interval of roughly ±16 on any sin-
+gle examination. Since the eight examinations differ
+in length, from 172 to 221 scored questions, Table 3
+reports the net score per 100 questions over all 1,552
+of them, which is 67.7, 67.5, 64.7 and 49.4 for the
+same four models. Furthermore, Figure 2 and Table 4
+show how these net scores map to the 2023 and 2024
+score-to-rank curves. In 2023, Gemma-3-27B’s net
+score of 142.7 maps to an estimated rank of about
+1,628, at which 43 of the 45 specialties were still
+open, the most competitive being Oral and Maxillo-
+facial Surgery. Qwen3-14B lands close behind with
+the same choice, whereas MedGemma-27B would
+reach Cardiology and Qwen3-8B, with 22 special-
+ties left, Haematology. In 2024 the three larger mod-
+els reach ranks between about 600 and 1,400, with
+Plastic Surgery or Ophthalmology still open. These
+ranges are nonetheless wide, since a single examina-
+tion places a model in the 95% interval of roughly
+2,000 ranks, and the 2024 curve, which is based
+on only 45 points, places any given score markedly
+higher than the 2023 curve (Section 8).
+Abstention, on the other hand, never helps. The
+calibrated policy answers every question on every ex-
+amination, so the abstention gain is zero for all 32
+model-examination pairs. This is not because confi-
+dence is uninformative, since it separates right from
+wrong answers with an AUROC of 0.80 for the three
+Table 3: RQ1, pooled over the 2018–2025 exams (1,552
+questions). Net score, gain and headroom per 100 ques-
+tions. Gain is calibrated minus always, headroom oracle
+minus calibrated. Tenth: accuracy of the tenth of answers
+each model was least sure of.
+Model
+Acc.
+Net Gain Headroom Tenth
+Gemma-3-27B
+.758 67.7
+0.0
+8.1
+.387
+MedGemma-27B
+.735 64.7
+0.0
+8.8
+.368
+Qwen3-14B
+.756 67.5
+0.0
+8.1
+.445
+Qwen3-8B
+.621 49.4
+0.0
+12.7
+.303
+larger models and 0.76 for Qwen3-8B (Table 5), but
+because even the least confident tenth of each model’s
+answers on its other examinations was right 29–47%
+of the time, above the 25% threshold of (2). Indeed,
+skipping the least confident tenth chosen in hindsight
+within each examination would have lowered the net
+score on 28 of the 32 pairs and gained at most 3.7 on
+the others. Figure 3 illustrates why: the net score rises
+almost monotonically as answers are added from most
+to least confident. The net score lost to wrong an-
+swers, 15.7–24.5 per examination (8.1–12.7 per 100
+questions), is thus headroom that a more accurate
+model could recover.
+6.2
+RQ2: Medical Tuning and
+Uncertainty
+All four models are overconfident (Figure 4), with a
+mean confidence of 0.91–0.99 against an accuracy of
+0.62–0.76 and an ECE of 0.21–0.29 (Table 5). Below
+a confidence of 0.9, in fact, accuracy falls under 0.5 in
+all but one of the bins with at least ten answers. Med-
+ical tuning, however, changed the level of confidence.
+Over all eight examinations, MedGemma-27B is 2.3
+points less accurate than Gemma-3-27B on the same
+questions (p = 0.027) and 0.047 less confident, which
+lowers its ECE by 0.026 [0.005, 0.045]. Its AUROC,
+however, is essentially unchanged, with a difference
+of +0.002 [−0.025, +0.028], so it is no better at telling
+its right answers from its wrong ones. Given that no
+confidence-based abstention pays on this examination
+(RQ1), the lower ECE brings no gain in net score,
+whereas the loss of accuracy costs about 3 points of
+net score per 100 questions.
+Moreover, we find no sign of memorization (Fig-
+ure 5). On the 2025 exam, which none of the mod-
+els may have seen during training, all are at least as
+accurate as on the older exams, by 1.2 to 4.9 points
+(Table 5), and its mean confidence matches that on
+the older exams to within 0.003.
+If anything, the
+Qwen models rank their answers better on 2025, with
+AUROC differences of +0.075 [+0.007, +0.138] and
++0.082 [+0.010, +0.143]. Likewise, the accuracy gap

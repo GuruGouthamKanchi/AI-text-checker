@@ -1,0 +1,542 @@
+EpiSEM-Bench: Evaluating Safety and Evidence Recovery
+in LLM Agents under Missing Evidence
+Qijin Zhang*,1,
+Hanzhen Wang*,1,
+Yuehan Zhao*,1,
+Haoyu Dai1
+Yao Shu2,
+Zhongxiang Dai3,
+Shuang Qiu†,1
+1City University of Hong Kong
+2The Hong Kong University of Science and Technology (Guangzhou)
+3The Chinese University of Hong Kong, Shenzhen
+qijizhang5-c@my.cityu.edu.hk
+hanzhwang9-c@my.cityu.edu.hk
+yzhao843@cityu.edu.hk
+haoyudai3-c@my.cityu.edu.hk
+yaoshu@hkust-gz.edu.cn
+daizhongxiang@cuhk.edu.cn
+shuanqiu@cityu.edu.hk
+Abstract
+Tool-using language model agents rely on environmental facts to decide whether an action is permitted.
+When a tool response omits a safety-relevant fact, an agent may carry out a prohibited action even though
+the user request is benign and every returned statement is true. We introduce EpiSEM-Bench, an executable
+benchmark for evaluating unsafe execution, safety boundaries, and evidence recovery in LLM agents under
+missing evidence. It contains 300 matched unsafe/safe task pairs across six domains. By systematically
+suppressing critical facts, the benchmark measures unsafe execution under critical evidence omission and
+determines the minimum observed failure cardinality, including failures with full evidence and cases with
+no observed failure after exhaustive testing. An independent audit tool tests whether agents seek missing
+facts and then withhold prohibited actions while completing permissible tasks. The benchmark reveals
+substantial variation across the ten models in omission robustness, evidence acquisition, and appropriate
+action. Resistance to missing evidence does not necessarily translate into useful recovery. Recovery access
+reduces unsafe execution for all ten models, but agents differ in whether they actively obtain the missing
+facts and use them to act appropriately in both worlds.
+1. Introduction
+Large language model (LLM) agents use tools to read documents, inspect resources, and execute operations
+on a user’s behalf (Yao et al., 2022, 2024, Lu et al., 2025). Before sending a payment, sharing a file, or
+deleting a resource, the agent needs to establish that the operation is permitted in the current environment.
+This decision depends on facts returned by its tools, such as an authorization limit, a recipient’s access rights,
+or the dependencies of a running service. A missing fact can change the agent’s decision even when the tool
+response contains no false statement.
+*Equal contribution.
+†Corresponding author.
+1
+arXiv:2610.31650v1  [cs.AI]  22 Oct 2026
+
+
+EpiSEM-Bench: Evaluating Safety and Evidence Recovery in LLM Agents under Missing Evidence
+Existing benchmarks evaluate tool-use capability, action safety, and robustness to adversarial observations
+(Zhang et al., 2024, Debenedetti et al., 2024, Wang et al., 2026b). AgentDojo evaluates task utility and
+security using executable checks (Debenedetti et al., 2024). Missing evidence poses a different intervention
+that requires no attacker instruction, and the remaining observations can all be true. An evaluation of this
+problem needs to follow the decision from available facts to consequential action. It must establish whether
+the agent distinguishes permission from prohibition, how that behavior responds to missing evidence, and
+whether the agent can actively recover the facts needed to proceed appropriately. Task completion alone
+rewards execution in the permissible case. Avoidance of unsafe execution alone can reward refusal in every
+case.
+To address these challenges, we introduce the Epistemic Safety under Evidence Missingness Benchmark
+(EpiSEM-Bench), which separates the world’s safety conditions from the evidence visible to the agent. It
+contains 300 task pairs comprising 600 worlds, with 50 pairs in each of six domains and 60 task families.
+The suppression inventory contains 1,363 facts, comprising 944 critical and 419 irrelevant, with two to
+seven critical facts per task. The two worlds in a pair share the request and tools, but differ in the state
+that makes the target operation prohibited or permissible. An executable oracle judges actions against the
+complete state. Evidence annotations identify every ordinary-tool exposure of a fact. Suppression therefore
+persists throughout the rollout. Critical facts enter the safety rule, such as the payment authorization limit.
+Irrelevant facts, such as a cost-center display label, affect neither legality nor the action parameters.
+These design choices support three stages of evaluation. Complete evidence first establishes legitimate
+completion and avoidance of prohibited actions, measured by Full Safe-World Success (SWS) and Full Unsafe
+Commit Rate (UCR). In Suppressed Evidence (SE), selected facts remain unavailable through ordinary tools.
+Critical UCR identifies tasks with unsafe execution under critical omission, while Safety Boundary Margin
+(SBM) characterizes the minimum observed omission needed for failure. In Recoverable Evidence (RE), the
+same omissions apply, but the agent can actively query an independent audit source. Recovery UCR measures
+unsafe execution with this opportunity, and Paired Useful Recovery (PUR) requires evidence acquisition
+followed by restraint in the prohibited world and completion in its permissible twin.
+The six metrics are intended to be read together. Full SWS supplies the utility context for safety, Critical
+UCR and SBM describe observed omission vulnerability, and Recovery UCR and PUR distinguish avoiding
+unsafe action from using restored evidence successfully. Our ten-model evaluation shows why this joint
+interpretation matters. High completion can coexist with prohibited execution, strong restraint can coexist
+with refusal after permission is established, and recovery access can be beneficial without being used
+consistently. The resulting profiles reveal different strengths and failure modes that a single score would
+conceal. Our contributions are:
+• An executable benchmark for missing-evidence safety. We introduce EpiSEM-Bench, which removes se-
+lected true facts from tool observations while preserving the world’s safety conditions. Matched prohibited
+and permissible tasks expose both unsafe execution and excessive refusal. Avoiding all action therefore
+cannot stand in for useful safety.
+• A protocol for safety boundaries and evidence recovery. The matched worlds, omission intervention,
+and recovery opportunity yield six core measurements spanning complete-evidence behavior, omission
+vulnerability, and useful recovery. Their joint interpretation distinguishes task completion, avoidance
+of unsafe execution, and evidence-guided action. Recovery calls and action sequences explain whether
+failures arise before acquisition or after the facts have been restored.
+• A ten-model evaluation with reproducible analyses. We find that the model with the highest observed
+safety boundary does not achieve the highest paired recovery score, that recovery gains coexist with
+task-level regressions, and that obtaining evidence does not ensure appropriate action. Domain, family,
+2
+
+
+EpiSEM-Bench: Evaluating Safety and Evidence Recovery in LLM Agents under Missing Evidence
+and interaction-cost analyses locate variation in these outcomes. Retained task definitions and rollout
+records support regeneration of the reported results.
+2. Related Work
+Evaluating tool-using agents. ReAct couples reasoning with tool actions (Yao et al., 2022). τ-bench
+and τ2-bench assess task completion under domain policies (Yao et al., 2024, Barres et al., 2025), while
+ToolSandbox models stateful tool dependencies (Lu et al., 2025). Safety benchmarks assess risky execution
+(Ruan et al., 2024, Zhang et al., 2024, Levy et al., 2026, Vijayvargiya et al., 2026a), while AgentHarm
+targets malicious requests (Andriushchenko et al., 2025). When2Call evaluates whether to call tools, ask for
+clarification, or report inability to answer (Ross et al., 2025). EpiSEM-Bench varies safety-relevant evidence
+in matched prohibited and permissible worlds.
+Security in external observations. InjecAgent and AgentDojo evaluate tool-response injections (Zhan
+et al., 2024, Debenedetti et al., 2024). MCP-SafetyBench tests attacks involving real tool servers (Zong
+et al., 2026), and AgentDyn evaluates dynamic workflows (Li et al., 2026). IHEval tests instruction-priority
+conflicts (Zhang et al., 2025). Task Shield checks alignment with user goals (Jia et al., 2025), while MELON
+compares tool calls under original and masked user prompts (Zhu et al., 2025). Our intervention preserves
+instructions and retained facts while suppressing safety evidence, exposing unsafe execution of the original
+request.
+Missing information and recovery. AgentNoiseBench perturbs observations (Wang et al., 2026b), while
+ReliabilityBench injects infrastructure faults (Gupta, 2026). AbsenceBench evaluates omitted-information
+recognition (Fu et al., 2025). Controlled instruction underspecification is studied in Long-Horizon Augmented
+Workflows (LHAW) and related work (Pu et al., 2026, Ji et al., 2026), while clarification is studied in coding
+and tool-use settings (Vijayvargiya et al., 2026b, Edwards and Schuster, 2026, Suri et al., 2026). AgentAbstain
+pairs tasks requiring action with closely matched tasks requiring abstention (Liu et al., 2026). EpiSEM-Bench
+combines paired outcomes, persistent atom-level suppression, minimum observed failure cardinality, and
+optional authoritative recovery to evaluate evidence-dependent decisions and useful action after restoration.
+3. EpiSEM-Bench
+EpiSEM-Bench is designed around the gap between a truthful observation and sufficient evidence for action.
+The evaluator retains the complete state to judge legality, while the agent receives the request and tool
+observations. This separation allows a safety-relevant fact to disappear from view without making the
+prohibited operation permissible. Figure 1 shows the overview of EpiSEM-Bench.
+3.1. Environments and task pairs
+The benchmark covers cloud development and operations, commerce and fulfillment, communication and
+publication, document and data access, finance, and travel reservation. Each domain contains 50 task
+pairs in ten families, giving 300 pairs and 600 worlds. A family shares an executable safety rule and tool
+structure across three to seven instances. In Appendix A, examples from all six domains are given, including
+authorization thresholds, approved-audience membership, prior-payment records, and backup requirements.
+Each environment contains a private state, read tools, optional preparation tools, and a target commit
+tool. Read tools expose operational facts. Commit tools execute the consequential operation, and the
+3
+
+
+EpiSEM-Bench: Evaluating Safety and Evidence Recovery in LLM Agents under Missing Evidence
+01
+LLM agents
+02
+Paired worlds
+03
+Evaluation
+GPT
+Claude
+DeepSeek
+Qwen
+Gemma
+GLM
+MiMo
+Same goal · tools · omission mask
+Unsafe world
+Action prohibited
+Safe twin
+Action permitted
+SE
+Suppressed evidence
+RE
+Recoverable evidence
+300 task pairs · 6 domains
+Full UCR
+Baseline safety
+Critical UCR
+Omission safety
+Recovery UCR
+Recovery safety
+PUR
+Useful recovery
+SBM
+Safety boundary
+Full SWS
+Task completion
+More metrics
+Figure 1: Overview of EpiSEM-Bench. LLM agents are evaluated in separate unsafe and safe-twin rollouts
+sharing the same user goal, tool interface, and omission mask. Safety-relevant state makes the target action
+prohibited in the unsafe world and permissible in its safe twin. Dashed evidence cards denote omitted facts.
+Suppression changes observations without changing the underlying state. The full-state oracle supports
+multidimensional evaluation.
+evaluator checks it against the complete state. They do not block prohibited operations on the agent’s behalf,
+allowing unsafe decisions to remain observable. This separates the agent’s decision from protection supplied
+by the environment: a prohibited commit remains a failure even if the agent describes its intent as safe.
+Free-form answers and invalid tool calls are distinguished from executed commits.
+For each task, we construct an unsafe state and a safe twin by changing the state responsible for the
+prohibition. The goal, target operation, and tool interface remain the same. For example, a different
+authorization limit changes whether a payment is permissible without changing the requested payment.
+Holding the request and tools constant makes permission-sensitive action the central requirement. The agent
+needs to use environmental evidence to select different outcomes for the same operation. Full UCR records
+prohibited execution and Full SWS records permissible completion when the ordinary evidence is complete.
+This pairing makes both indiscriminate execution and indiscriminate refusal visible before omissions are
+introduced.
+3.2. Evidence atoms and suppression
+An evidence atom represents one fact about an object in the environment. Its annotation includes an identifier,
+subject, predicate, world-specific value, source, and the ordinary-tool responses that expose it. Critical atoms
+contain facts relevant to the task’s safety rule. Irrelevant atoms contain facts that determine neither action
+legality nor the parameters required for the target operation.
+A mask specifies the atoms to suppress. The observation projection removes every annotated exposure
+of these atoms throughout the rollout, including those arising from repeated ordinary reads. It leaves the
+private state, safety rule, user request, tool schemas, action semantics, and unmasked values unchanged.
+The remaining responses contain true facts, without injected instruction or replacement assertion. Atom
+identities and exposure structure are shared across twins. The mask can therefore be applied in both worlds.
+4
+
+
+EpiSEM-Bench: Evaluating Safety and Evidence Recovery in LLM Agents under Missing Evidence
+Fact-level suppression preserves the operational context around the missing evidence. Removing an
+entire tool response could also remove the amount, recipient, or resource needed to execute the task, mixing
+missing safety evidence with inability to perform the operation. Annotated exposures allow us to remove
+the selected facts while retaining other true information. Applying the mask throughout the rollout also
+prevents repeated reads from inadvertently restoring them, so the intended evidence deficit persists across
+the agent’s ordinary-tool choices.
+We construct tasks from the private state and executable rule before specifying evidence, exposure maps,
+tools, and the user goal. Validation checks schema consistency, exposure paths, and opposite oracle labels
+across the twins. Other annotated facts describe workflow context or redundant evidence and remain outside
+the critical/irrelevant omission inventory. Appendix A.2 illustrates the intervention on a concrete payment
+request.
+3.3. Optional evidence recovery
+In SE, selected facts are removed from ordinary tool responses and remain unavailable even if the agent
+repeats its reads. RE retains the same omissions but adds an independent evidence-recovery tool that returns
+all omitted facts and their authoritative values upon a valid query. Recovery changes what the agent can
+observe, not the underlying state or whether an action is permitted. The agent needs to decide whether and
+when to seek the missing evidence, as well as how to act once it is available.
+Evidence is restored only when the agent makes a valid audit query. Making the tool available does
+not automatically supply the missing facts. The agent can actively use this tool to establish whether the
+requested operation is permitted, then withhold it in the unsafe world or carry it out in the safe twin. RE
+therefore evaluates whether agents initiate verification, obtain the missing evidence, and use it to guide the
+consequential action.
+SE tests decisions while the evidence deficit remains unresolved, giving Critical UCR and SBM. RE tests
+whether the agent actively resolves that deficit and adjusts its action to the recovered facts, giving Recovery
+UCR and PUR. Returning all omitted facts on a valid query makes the subsequent decision directly observable:
+once the query succeeds, the agent has the evidence needed to distinguish the twins. We compare SE
+and RE under identical nonempty omission masks. The full-evidence baseline supplies complete ordinary
+observations without a recovery tool. Trajectories distinguish failure to seek evidence from premature
+execution, unsafe action after recovery, and refusal despite permission to proceed.
+3.4. Reporting safety, utility, and recovery
+Let N denote the total number of matched unsafe/safe task pairs, with N = 300 in our benchmark. We
+report six core metrics to characterize safety, utility, and evidence recovery. Full SWS and Full UCR establish
+the agent’s completion and safety behavior with complete evidence. Critical UCR and SBM describe which
+tasks exhibit unsafe execution under SE and where their observed omission boundaries lie. Recovery UCR
+and PUR assess safety with recovery access and whether active restoration supports the appropriate outcome
+in both RE twins. All six are reported as percentages. Supplementary measures of failure frequency, evidence
+acquisition, action timing, and safe-world outcomes explain the behavior underlying this core profile.
+Unsafe execution and legitimate completion. UCR is the fraction of tasks with at least one commit prohibited
+by the complete-world oracle. The numerator is the number of affected tasks, and the denominator is all
+N tasks. Full UCR uses the unsafe-world full-evidence baseline. Critical UCR considers all completed
+unsafe-world SE rollouts with nonempty critical-evidence masks. Recovery UCR applies the same rule in
+5
+
+
+EpiSEM-Bench: Evaluating Safety and Evidence Recovery in LLM Agents under Missing Evidence
+RE, including execution without a recovery call. SWS requires legal target-goal completion in the safe twin
+without an invalid action. Full SWS uses the complete-evidence baseline.
+Omission failure frequency. As a complementary measure, Critical Omission Failure Rate averages the
+fraction of unsafe rollouts among each task’s completed critical-omission conditions in SE, then averages
+these fractions across all 300 tasks. Unlike Critical UCR, which records whether a task ever fails, this measure
+describes how frequently its tested omissions lead to unsafe execution.
+Safety Boundary Margin. For each task pair i ∈{1, . . . , N}, let ci be the number of critical atoms and mi the
+minimum cardinality of a critical mask with an observed unsafe SE rollout. After the full-evidence baseline,
+we inspect critical omission combinations in increasing size, reusing completed rollouts and evaluating
+untested conditions as needed, until an unsafe witness is found or all combinations have been tested. A
+full-evidence failure gives mi = 0. If no critical subset yields an unsafe commit under its retained rollout, we
+assign the sentinel mi = ci + 1. SBM normalizes these boundaries and averages them over all task pairs:
+SBM = 1
+N
+N
+∑︁
+i=1
+mi
+ci + 1.
+(1)
+All omission combinations of smaller cardinality are tested before a larger one is accepted as the boundary,
+without assuming that removing more evidence always increases risk. A higher SBM indicates a larger
+average normalized failure boundary, with a value of one assigned to tasks with no observed failure after
+exhaustive testing. SBM measures resistance to unsafe execution. An agent that always refuses can attain a
+maximal SBM without completing any permissible task. We thus interpret SBM alongside SWS and PUR.
+The procedure is detailed in Appendix B.
+Strict and paired recovery. Strict unsafe recovery requires restoration of all omitted atoms, no invalid
+action or prohibited commit, and a final abstention or escalation. Strict safe recovery requires restoration
+followed by legal target-goal completion, with no invalid action. PUR requires both outcomes under the same
+nonempty critical omission mask in RE. Let qi ≥1 be the number of completed nonempty critical masks
+shared by both RE twins of task pair i. For j ∈{1, . . . , qi}, let pij equal one when both twins satisfy strict
+recovery under the jth such mask, and zero otherwise. PUR averages these joint outcomes within each task
+and then across tasks:
+PUR = 1
+N
+N
+∑︁
+i=1
+1
+qi
+qi
+∑︁
+j=1
+pij.
+(2)
+Refusing both twins or executing both twins gives pij = 0, since one of the two required outcomes fails.
+SWS allows legal completion without restoration, while strict recovery requires restoration explicitly. Each
+successful pair includes agent-initiated evidence acquisition, withholding the prohibited operation, and
+completing its permissible counterpart. Recovery-call rates and the two worlds’ outcomes show which steps
+agents complete or fail.
+Evidence acquisition and action behavior. Attempt records whether an agent makes a valid recovery
+query. Premature commit records whether it executes the target operation before recovering the missing
+facts. Every valid recovery query returns all omitted facts. Attempt therefore indicates that the evidence was
+obtained. Premature commit includes execution without any recovery query. In safe-twin rollouts without
+legal completion, stopping or escalating is counted as false abstention. Remaining failures, including invalid
+or unfinished episodes, are classified as other non-completions. Recovery, behavioral, and omission SWS
+rates first average the applicable conditions within each task and then weight the N tasks equally.
+6
+
+
+EpiSEM-Bench: Evaluating Safety and Evidence Recovery in LLM Agents under Missing Evidence
+Joint interpretation of the metrics. The measurements form a profile rather than independent claims of
+agent quality. Full SWS and Full UCR establish whether successful execution is accompanied by appropriate
+restraint. Critical UCR identifies affected tasks, while SBM supplies the observed boundary information
+that an affected-task count does not contain. Recovery UCR and PUR distinguish safety with a recovery
+opportunity from evidence acquisition followed by correct behavior in both worlds.
+Joint interpretation resolves otherwise ambiguous successes. Refusing every operation can give zero
+UCR and maximal SBM, but gives neither legitimate completion nor PUR. High SWS can instead accompany
+execution without regard to permission. Low Recovery UCR alone also leaves open whether the agent verified
+the facts or simply avoided acting. PUR requires active verification and the appropriate paired outcome,
+while acquisition and action records explain unsuccessful pairs. Reading the six metrics together therefore
+evaluates safety, usefulness, and evidence-dependent decisions without treating any one as a substitute for
+the others.
+4. Evaluation
+The ten-model evaluation follows three stages. Full SWS and Full UCR assess completion and safety under
+complete evidence. Critical UCR and SBM measure vulnerability to missing evidence, while Recovery UCR
+and PUR evaluate evidence recovery. Behavioral partitions and radar profiles further reveal distinct failure
+modes and model strengths.
+Experimental setup. We evaluate the ten models listed in Table 1, including GPT-6-Luna and Claude-
+Haiku-5.5, using the same tasks, tool schemas, system instruction, and tool-use evaluation framework.
+The evaluated serving configurations are documented in Appendix E. Every model completes 6,052 fixed
+evaluation conditions: 600 full-evidence unsafe/safe baselines and 5,452 single-atom omissions, comprising
+all 1,363 critical and irrelevant atoms in both worlds and settings. These conditions remain complete even
+when the model fails with full evidence.
+To determine safety boundaries, we inspect critical omission combinations in the unsafe world under
+SE in increasing cardinality, reusing completed conditions and evaluating untested masks until an unsafe
+witness is found or coverage is exhaustive. The first unsafe mask receives counterpart evaluations in the safe
+world and RE. All completed nonempty critical omissions enter the metrics. Paired comparisons align the
+same task, world, and mask, while PUR aligns the RE twins. The adaptive procedure produces different
+condition sets, whose coverage is reported in Table 7.
+Omission safety and boundaries. Task completion and action safety give different accounts of agent
+performance. In Table 1, models with high Full SWS, including Qwen3-14B and Gemma-4-31B-IT, also
+frequently execute prohibited operations with complete evidence. Their success on permissible requests
+therefore does not imply sensitivity to the rule that governs execution. GPT-6-Luna shows a different profile,
+with fewer prohibited commits but lower legitimate completion. The matched worlds make both behaviors
+visible: proceeding readily can succeed when permission holds, while withholding action can preserve safety
+at the expense of legitimate tasks. Figure 2 examines these behaviors under omission and recovery.
+Omission failures also differ in scope and recurrence. Figure 2(a) distinguishes tasks that fail under at
+least one tested omission from the average fraction of tested conditions producing unsafe execution. For GPT-
+6-Luna, these rates are 21.0% and 7.9%: vulnerability reaches roughly one in five tasks, but unsafe execution
+is less frequent across its retained conditions. Qwen3-14B’s high values on both measures instead indicate
+failures spanning nearly all tasks and recurring across many tested omissions. Table 8 thus distinguishes
+occasional failures within affected tasks from broadly recurrent unsafe behavior.
+7
+
+
+EpiSEM-Bench: Evaluating Safety and Evidence Recovery in LLM Agents under Missing Evidence
+Table 1: Main results over 300 task pairs, expressed as percentages. Each UCR is the number of tasks with
+any unsafe commit divided by 300. Critical UCR in SE and Recovery UCR in RE consider completed critical
+omissions.
+Full evidence
+Critical evidence omission
+Boundary and recovery
+Model
+Full SWS ↑
+Full UCR ↓
+Critical UCR ↓
+Recovery UCR ↓
+SBM ↑
+PUR ↑
+GPT-6-Luna
+51.0%
+3.0%
+21.0%
+3.0%
+84.8%
+30.5%
+Claude-Haiku-5.5
+57.0%
+5.3%
+33.3%
+15.3%
+75.4%
+21.4%
+DeepSeek-V4.1-Flash
+66.3%
+4.0%
+45.7%
+9.3%
+68.4%
+58.4%
+DeepSeek-V4-Pro
+70.3%
+13.7%
+65.0%
+19.7%
+52.6%
+47.8%
+MiMo-V2.5-Flash
+68.0%
+28.0%
+86.0%
+55.3%
+31.9%
+18.2%
+MiMo-V2.5-Pro
+57.7%
+59.3%
+88.0%
+76.0%
+19.3%
+4.8%
+Qwen3.8-27B
+66.0%
+12.0%
+53.7%
+20.3%
+60.1%
+42.0%
+Qwen3-14B
+92.0%
+77.3%
+97.3%
+94.0%
+7.8%
+3.8%
+Gemma-4-31B-IT
+89.7%
+62.7%
+88.3%
+71.0%
+19.7%
+10.4%
+GLM-4.7-Flash
+85.3%
+75.7%
+88.3%
+87.7%
+14.0%
+0.0%
+SBM characterizes where an observed failure boundary lies. The decomposition in Figure 4 separates
+tasks that already fail with complete evidence, tasks that first fail after suppression, and tasks that remain
+without an unsafe commit through exhaustive critical omission testing. These categories explain different
+sources of a low margin: unsafe decisions can be present before any fact is removed, or arise when safety
+evidence becomes unavailable. GPT-6-Luna and DeepSeek-V4.1-Flash illustrate why similar full-evidence
+safety can coexist with different boundary profiles, while Qwen3-14B’s low margin largely reflects failures
+already present at baseline. Table 10 in Appendix C.3 provides the counts. The next question is whether
+access to the missing facts helps agents resolve the deficit while retaining legitimate completion.
+Recovery gains and regressions. Recovery access benefits safety across all ten models on matched critical
+omissions, but the size of the benefit varies substantially (Figure 2(b)). Nine models also improve legitimate
+completion, showing that access to missing facts can support both restraint and execution rather than
+merely induce more refusal. The largest safety gains occur for DeepSeek-V4-Pro, DeepSeek-V4.1-Flash, and
+Qwen3.8-27B. GLM-4.7-Flash and Qwen3-14B improve much less. The common recovery interface therefore
+produces different outcomes depending on whether agents choose to use it and incorporate the returned
+facts into their actions.
+Aggregate gains coexist with task-level regressions. Figure 6 and Appendix D.2 show tasks that improve
+under RE and tasks that become unsafe only in RE within the same model, including DeepSeek-V4-Pro and
+MiMo-V2.5-Pro. MiMo-V2.5-Pro also completes fewer permissible tasks despite its lower unsafe-execution rate.
+A net safety gain can therefore conceal both newly affected tasks and a loss of utility. The aligned transitions
+identify these changes, while the recovery and action records explain how agents use the verification
+opportunity.
+Evidence acquisition and action. The recovery records separate initiating verification from acting on its
+result. In Table 11 and Figure 7, GLM-4.7-Flash and Qwen3-14B frequently commit before recovering the
+missing facts. The evidence is available through the audit interface, but remains unused before execution.
+DeepSeek-V4.1-Flash more often initiates recovery and then withholds the prohibited action. These behaviors
+distinguish access to a verification tool from an agent policy that actually consults it before making a
+consequential decision.
+8
+
+
+EpiSEM-Bench: Evaluating Safety and Evidence Recovery in LLM Agents under Missing Evidence
+0
+50
+100
+(a) Scope and frequency
+SE outcomes (%)
+GPT-6-Luna
+Claude-Haiku-5.5
+DeepSeek-V4.1-Flash
+DeepSeek-V4-Pro
+MiMo-V2.5-Flash
+MiMo-V2.5-Pro
+Qwen3.8-27B
+Qwen3-14B
+Gemma-4-31B-IT
+GLM-4.7-Flash
+Failure rate
+Critical UCR
+0
+50
+100
+(b) Recovery access
+Matched UCR (%)
+SE
+RE
+0
+50
+100
+(c) Paired outcomes
+Strict recovery (%)
+Both (PUR)
+Unsafe only
+Safe only
+Neither
+0
+50
+100
+(d) Safe-world utility
+Completion / recovery (%)
+SWS
+Strict
+Figure 2: Evidence omission and useful recovery. (a) Task-level Critical UCR and condition-level Critical
+Omission Failure Rate in SE, describing failure scope and frequency. (b) Task-level SE/RE UCR on masks
+shared by both settings. (c) Strict recovery in both RE twins (PUR), only the unsafe twin, only the safe twin,
+or neither. (d) Safe RE SWS and strict safe recovery. UCR counts each task with any unsafe commit once.
+Condition-level rates average masks within a task, then tasks equally. Twin outcomes align the same mask.
+Obtaining the evidence does not complete the decision process. MiMo-V2.5-Pro makes valid recovery
+calls substantially more often than it reaches strict unsafe recovery, illustrating failures after acquisition as
+well as failures to query. The behavioral partition distinguishes prohibited execution after recovery from
+other post-recovery failures. Since a valid audit query returns all omitted facts, these episodes locate the
+remaining difficulty in subsequent action and final disposition. The useful sequence is therefore to seek the
+evidence, evaluate permission, and select an appropriate action. Counting tool calls captures its first step,
+while the paired outcome tests whether the sequence succeeds for both prohibition and permission.
+Paired useful recovery. Resistance to omission and useful recovery are distinct strengths in the evaluated
+model profiles. GPT-6-Luna has the highest SBM, whereas DeepSeek-V4.1-Flash more often recovers evidence
+and reaches the required outcome in both worlds. PUR combines agent-initiated verification with permission-
+sensitive action: the restored facts must support withholding the prohibited operation and completing its
+permissible counterpart. Its difference from the safety and completion measures shows why neither restraint
+nor goal achievement alone captures this sequence. Figure 2(c) shows that GPT-6-Luna more often succeeds
+only in the unsafe twin than in both twins. False abstention limits useful recovery: stopping prohibited
+actions must be paired with completing permissible ones, as shown in Appendix D.4.
+Figure 2(d) exposes the complementary problem: legal completion without evidence restoration. Qwen3-
+14B has a task-averaged safe RE completion rate of 94.7%, but a strict safe recovery rate of only 15.4%.
+GLM-4.7-Flash shows the same qualitative pattern. Many successful operations therefore occur while the
+missing facts remain unresolved. These models also frequently commit in prohibited worlds, indicating that
+high safe-world completion can reward execution without adequate verification. The paired criterion tests
+whether the agent actively establishes permission instead of relying on a hidden state that happens to permit
+its action.
+Task variation and cost. Recovery performance varies across domains and task families, so aggregate
+strengths do not extend uniformly across workflows. Active recovery also increases interaction cost without
+ensuring useful action. Detailed analyses of task structure and interaction cost are provided in Appendix D.
+9

@@ -1,0 +1,799 @@
+A Unified Framework for Image-to-3D Part
+Generation via Variable Granularity
+Qiwen Gu1,2,‡
+Xin Zhou2,3,‡
+Xiwu Chen2,B,†
+Zhongyang Zhu2
+Zhuo Zhang2
+Junqiao Zhao1,B
+1Tongji University
+2Chongqing Afari Intelligent Drive Co., Ltd
+3Huazhong University of Science and Technology
+2432178@tongji.edu.cn,
+xzhou03@hust.edu.cn
+Segmentation Mask
+Precise shape
+Bounding Box
+Rough layout
+Sparse Point
+Rapid indication
+Unified Generator (ours)
+Point-based Model
+Box-based Model
+Mask-based Model
+Separated Methods
+(a) Our unified multi-granularity framework vs. Separated models
+(b) Diverse part-aware 3D generation results
+Figure 1: (a) Our unified framework integrates variable-granularity geometric prompts from sparse
+points to dense masks into one model for flexible part control. (b) The proposed method produces
+high-fidelity, semantically coherent 3D parts across diverse object categories.
+Abstract
+Controllable 3D part generation is pivotal for digital asset creation, yet existing
+methods lack the flexibility to accommodate diverse user workflows requiring
+varying levels of control. In this paper, we introduce FlexPart, a unified image-
+to-3D part generation framework that supports variable-granularity geometric
+conditions within a single model. By seamlessly integrating heterogeneous inputs,
+ranging from sparse points to dense bounding boxes and masks, via gated adaptive
+modulation, FlexPart unlocks a powerful cross-modal synergy. We also propose an
+asymmetric geometric guidance mechanism that leverages strong spatial priors to
+align representations across granularities, improving geometric consistency and
+facilitating inter-task synergy. Under mask conditioning on PartVerseXL, FlexPart
+reduces Part CD by 16.6% relative to TripoSG + SAM3D and by 10.5% relative to
+OmniPart, while maintaining competitive whole-mesh quality. The code can be
+found at https://github.com/Gucci233/FlexPart
+†Project leader. B Corresponding author.
+‡Work done during an internship at Chongqing Afari Intelligent Drive Co., Ltd.
+Preprint.
+arXiv:2610.31671v1  [cs.CV]  22 Oct 2026
+
+
+1
+Introduction
+Perceiving objects as compositions of semantically coherent parts is essential for various tasks such
+as animation, simulation, and interactive editing. Unlike holistic 3D generation methods that generate
+whole entities [16, 39, 40, 48], image-to-3D part generation decomposes visual inputs into distinct,
+spatially assemblable, structurally detachable, and image-consistent 3D components.
+However, this task presents significant challenges due to the inherent ambiguity of part decomposition.
+For example, the same object can be segmented at various granularities, and users may require
+different structural specifications depending on their goals. A straightforward solution is to project
+2D segmentation masks [45] onto generated 3D meshes. However, such decoupled pipelines can
+introduce geometric inconsistencies during the lifting process. To address this limitation, recent
+approaches have integrated part control directly. Some methods rely on dense geometric prompts,
+such as pixel-wise 2D segmentation masks [3, 9, 46] or explicit bounding box layouts [8]. These
+inputs provide strong spatial constraints, enabling well-structured part generation. In contrast, other
+methods explore lighter forms of supervision, such as high-level prompts like part counts [20] or
+implicit volumetric partitioning [35]. These approaches reduce annotation effort and improve usability
+but often sacrifice precise spatial control.
+While effective within their respective domains, existing methods are typically tailored to a single
+prompt granularity, as illustrated in Fig. 1(a). This specialization not only limits user flexibility by
+hindering seamless transitions between fine-grained control via dense masks and lightweight interac-
+tion via sparse points, but also overlooks the inherent structural relationships across different prompt
+modalities. Such rigidity is suboptimal, as prompts of varying granularities provide complementary
+information that could be jointly leveraged. This raises a fundamental question: can we develop a
+unified framework that accommodates variable-granularity inputs for flexible part generation, while
+exploiting their cross-modal synergy to enhance quality?
+Driven by this motivation, we propose FlexPart, a unified framework for controllable 3D part
+generation. As shown in Fig. 1(a), FlexPart integrates sparse points, bounding boxes, and masks
+into a single Diffusion Transformer (DiT) via gated adaptive modulation. Joint training improves
+generation quality across prompt granularities. To further amplify this synergy, we introduce an
+Asymmetric Geometric Guidance mechanism. During training, it employs differentiable optimal
+transport to let strong spatial priors (masks/boxes) explicitly supervise the ambiguous representations
+of sparse points. The resulting model supports different prompt types at inference without retraining.
+By consolidating diverse geometric constraints, FlexPart establishes a unified paradigm for versatile
+part creation with variable granularity. Under mask conditioning on PartVerseXL, FlexPart reduces
+Part CD by 16.6% relative to TripoSG + SAM3D and by 10.5% relative to OmniPart. Thanks to the
+learned cross-modal synergy, it remains highly competitive even with significantly sparser prompts.
+Ultimately, FlexPart delivers superior part-level generation quality (Fig. 1(b)) while preserving strong
+whole-mesh reconstruction fidelity.
+Our contributions are summarized as follows: 1) We propose FlexPart, the first unified framework
+integrating point, box, and mask prompts into a single DiT to unlock cross-modal synergy for
+controllable 3D part generation; 2) We devise an Asymmetric Geometric Guidance mechanism that
+effectively transfers structural knowledge from dense priors to enhance the spatial reasoning of
+sparse inputs; 3) We demonstrate that our method achieves superior generation quality and geometric
+consistency compared to existing state-of-the-art approaches across diverse input modalities.
+2
+Related Work
+General 3D Mesh Generation.
+Early 3D generation methods relied on optimization-based
+pipelines, using Score Distillation Sampling (SDS) to distill 2D priors into implicit 3D represen-
+tations [19, 28, 37, 38]. While pioneering, these approaches often suffer from slow convergence
+and geometric artifacts. Feed-forward Large Reconstruction Models (LRMs) [11, 34] improve
+efficiency by directly predicting 3D representations from images. Native 3D generative models
+use compact latent representations [5, 47, 48] to support efficient diffusion training. Recent meth-
+ods [16, 40, 42, 49] further improve geometric fidelity through structured sparse latents or flow
+matching. These object-level generators typically produce holistic meshes without explicit part de-
+composition, limiting part-level interaction and editing. Complementary work connects 3D analysis
+2
+
+
+and generation. ROAD transfers discriminative semantic and structural priors to a generative model
+through reciprocal-objective alignment [24], while HERMES and HERMES++ jointly model scene
+understanding and future geometry generation in autonomous driving [51, 52]. Our work focuses on
+joint learning across geometric prompt granularities for controllable object-part generation.
+3D Shape Analysis and Part Segmentation. Point-cloud analysis has advanced through efficient
+state-space backbones such as PointMamba [18] and model adaptation methods, including dynamic
+adapters with prompt tuning [53], spectral-domain fine-tuning [17], and input-aware parameter
+adaptation for 3D scenes [23]. Here, learned prompts used for model adaptation differ from the
+user-provided geometric prompts considered in our work. Language-driven approaches such as
+ShapeLLM [30] and Kestrel [2] further support object understanding and part-aware grounding. For
+part decomposition, supervised methods [26, 29] analyze existing shapes, while other approaches
+lift 2D foundation model priors, such as SAM [14] and GLIP [15], to 3D [1, 13, 21, 36, 45, 50].
+Recent methods learn open-world 3D feature fields or native segmentation networks [22, 25, 44].
+Conventional segmentation primarily identifies regions of existing surfaces. HoloPart [43] extends
+this setting by completing initially segmented regions into full 3D parts using a generative model.
+These pipelines rely on input geometry, whereas our task is to generate complete parts directly from
+an image and geometric prompts.
+Part-level 3D Generation. Recent generative models synthesize objects as compositions of se-
+mantic components, with different ways of specifying part structure. Mask- and layout-conditioned
+methods [8, 9, 46] provide explicit spatial control, although precise masks or layouts can require
+substantial annotation effort. AutoPartGen [4] generates parts autoregressively and supports con-
+ditioning on images, part masks, or existing 3D objects. In a related programmatic reconstruction
+setting, MeshCoder [6] uses an LLM to translate point clouds into editable, part-structured mesh
+code. Methods such as PartCrafter [20] and PartPacker [35] internalize part decomposition within
+the generative process without requiring explicit geometric prompts. This simplifies interaction but
+offers less direct control over spatial part boundaries. A related challenge arises in count-controlled
+video generation, where NUMINA [33] uses countable latent layouts to improve numerical alignment,
+illustrating the value of spatial structure for abstract count-based control. Our framework unifies
+point, box, and mask prompts within one model, allowing users to choose the level of spatial control
+while benefiting from joint multi-granularity training.
+3
+Preliminaries
+Optimal Transport. Optimal Transport (OT) provides a principled geometric framework for mod-
+eling soft correspondences between discrete sets. Given two sets of features with cardinalities N
+and M, OT aims to estimate a transport plan P ∈RN×M
++
+, where each entry Pij represents the mass
+transported from element i to element j.
+Standard OT constrains P to lie within the transport polytope U(r, q), defined by marginal constraints:
+U(r, q) =
+
+P ∈RN×M
++
+ P1M = r, P⊤1N = q
+	
+,
+(1)
+where 1 denotes a vector of ones, and r and q are the source and target mass vectors, respectively.
+In high-dimensional matching problems, the entropically regularized formulation is widely adopted
+to enable efficient and differentiable optimization:
+P∗= arg
+min
+P∈U(r,q)⟨P, C⟩−εH(P),
+(2)
+where C and ε denote the cost matrix and regularization parameter, respectively. The entropy
+regularizer is defined as:
+H(P) = −
+X
+i,j
+Pij log Pij.
+(3)
+The optimal solution admits the factorized form P = diag(u)Kdiag(v), with K = exp(−C/ε),
+and can be efficiently computed using the Sinkhorn–Knopp algorithm.
+Partial Optimal Transport. Standard OT enforces strict mass conservation, requiring all elements
+to be matched, which is ill-suited for scenarios with occlusions or noise. Partial OT addresses this
+by introducing a dustbin mechanism to absorb unmatched mass. Conceptually, the transport matrix
+is augmented to ¯P ∈R(N+1)×(M+1) allowing elements with no confident correspondence to be
+assigned to the dustbin row or column. This relaxation handles partial and ambiguous assignments.
+3
+
+
+Point Prompt 
+(Required)
+Box Prompt 
+(Optional)
+Mask Prompt 
+(Optional)
+Image 
+Encoder
+Point 
+Encoder
+Box/Mask 
+Encoder
+Null 
+Embedding
+Fusion
+MLP
+C
+Timestamp 
+Embedding
+Part ID 
+Embedding
+Noisy Latent
+Image 
+Feature
+Fusion 
+Condition
+Global
+Attention
+Input Encode Module
+DiT Layer × N
+VAE
+Decoder
+Teachers
+(Box&Mask)
+Student
+(Point)
+Image 
+Feature
+Query
+Query
+Auxiliary
+Guidance
+Loss
+Optimal
+Transport
+Mesh Decode
+Guide the point prompt
+Asymmetric Geometric Guidance
+(Training Only)
+Dustbin
+Dustbin
+Gated AdaLN
+Gated AdaLN
+Cross
+Attention
+Local
+Attention
+Gated AdaLN
+Gated AdaLN
+Cross
+Attention
+...
+...
+...
+Figure 2: Overview of the FlexPart framework. FlexPart supports point, box, and mask prompts,
+with points as the minimal input. The noisy latent, part ID, and timestep are jointly conditioned on
+encoded prompts, where learnable null embeddings replace missing inputs. The fused condition
+modulates each DiT layer for part generation via gated adaptive layer normalization. During training,
+a multi-granularity geometric guidance branch aligns weak and strong priors via optimal transport.
+4
+Methodology
+Our method presents a unified multi-granularity framework for controllable image-to-3D part gen-
+eration, accommodating diverse geometric user inputs, such as point prompts, 2D bounding boxes,
+and 2D masks, within a single model. Built upon the DiT architecture, FlexPart leverages a Gated
+Adaptive Layer Normalization (Gated AdaLN) mechanism to inject these geometric conditions,
+enabling unified modeling of heterogeneous inputs with varying precision. To further support this
+versatility, we incorporate a geometric guidance mechanism to maintain robustness under weak
+supervision. The overall architecture is illustrated in Fig. 2.
+4.1
+Gated Adaptive Modulation
+Prompt Definition and Encoding. We consider multiple geometric prompt types for part-level
+structure, including point, box, and mask prompts. For each part i, we denote their embeddings as
+epoint
+i
+, ebox
+i
+, emask
+i
+∈RD, all produced by lightweight modality-specific encoders. Point prompts are
+encoded via Gaussian Fourier features followed by an MLP to capture continuous 2D locations. Box
+prompts encode top-left and bottom-right corners separately with a learnable corner-type embedding
+inspired by SAM [14]. Mask prompts are processed using a small CNN with global average pooling
+to obtain compact representations. These encoders provide expressive, lightweight representations.
+To train the model with different prompt combinations and improve robustness to missing inputs, we
+employ a probabilistic masking strategy. Although point prompts serve as the mandatory minimal
+input for users during inference, as shown in Fig. 2, we apply random masking to all modalities,
+including points, during training. Specifically, we simulate missing geometric prompts by replacing
+them with learnable null embeddings. For each part i and modality k ∈{point, box, mask}, we use a
+binary drop mask mk
+i ∈{0, 1} with probability Pr(mk
+i = 0) = pdrop, where pdrop is the manually set
+probability of masking a given modality. The effective prompt embedding is then defined as:
+˜ek
+i = mk
+i ek
+i + (1 −mk
+i )ek
+null,
+(4)
+so that any dropped or absent prompt is replaced by its learnable null embedding ek
+null ∈RD.
+4
+
+
+The resulting embeddings for each part are aggregated and projected through a learnable fusion MLP
+ψ(·) to yield a unified part-level conditioning vector:
+ci = ψ
+
+[˜epoint
+i
+∥˜ebox
+i
+∥˜emask
+i
+]
+
+,
+(5)
+where [· ∥·] denotes feature concatenation. This mechanism produces a conditioning vector ci of
+fixed dimensionality for any input prompt combination.
+Multi-Prompt Conditional Modulation. Given the fused part condition vector c, we inject geometric
+control into the DiT via Gated AdaLN. This module dynamically modulates the transformer hidden
+states, concatenated with the timestep t and learnable part identity, by predicting scale and shift
+parameters based on c.
+A lightweight modulation network Φ(·) maps c to adaptive scale, shift, and gating parameters
+(γ, β, g) = Φ(c), which are applied to the hidden features H as
+H′ = H + g ⊙f((1 + γ) ⊙LN(H) + β) ,
+(6)
+where LN(·) denotes layer normalization and f(·) is a small feed-forward projection. This gated
+formulation enables adaptive regulation of geometric conditions at each layer. Complementing the
+geometric prompts, image features from DINOv2 [27] are injected via cross-attention. Cross-attention
+provides global context, while Gated AdaLN controls part-level geometry.
+Part-Aware Attention. Following the design of PartCrafter [20], we adopt a part-aware attention
+mechanism in the DiT to model both global inter-part interactions and local intra-part geometry. In
+our setup, we treat individual parts as distinct samples. A batch contains B parts, each represented by
+L latent tokens, collectively forming a hidden state tensor H ∈RB×L×D.
+4.2
+Asymmetric Geometric Guidance
+To enrich sparse point prompts with spatial semantics, we propose asymmetric alignment: strong
+priors (boxes/masks) supervise weak point representations via differentiable optimal transport.
+Asymmetric Visual Bridge. We project student point prompts and teacher box/mask prompts into
+a shared visual space using a Visual Bridge B(·) with cross-attention over image features Ienc. To
+prevent the alignment loss from updating the teacher prompt embeddings, we apply stop-gradient to
+the box/mask embeddings before the Visual Bridge:
+f stu
+i
+= B(epoint
+i
+, Ienc),
+f tea
+i
+= B(sg(ebox/mask
+i
+), Ienc).
+Similarity-based Partial Optimal Transport. We align student and teacher features via differ-
+entiable partial optimal transport [32], which introduces global competition to resolve ambiguous
+matches. The affinity matrix is defined as:
+Sij = τ
+
+α⟨f stu
+i
+, f teabox
+j
+⟩+ (1 −α)⟨f stu
+i
+, f teamask
+j
+⟩
+
+,
+(7)
+where τ is a learnable temperature and α balances the two teacher sources.
+To account for missing conditions (e.g., classifier-free guidance [10]), we introduce a learnable
+dustbin score ϕ and construct an augmented matrix ¯S ∈R(N+1)×(M+1) by padding S with ϕ. The
+optimal transport plan is computed via log-space Sinkhorn:
+P∗= arg max
+P∈U
+X
+i,j
+¯SijPij + εH(P),
+(8)
+where U denotes valid transport plans and H(P) is the entropy regularizer.
+This mechanism transfers strong geometric priors from boxes and masks to point representations,
+improving spatial semantics without requiring dense prompts at inference.
+Training Objective. We train FlexPart with a unified objective that combines conditional Rectified
+Flow and feature alignment supervision:
+L = EZ0,ϵ,t
+h(ϵ −Z0) −vθ(Zt, t, c)
+2
+2
+i
+−λaux
+1
+N
+N
+X
+i=1
+log(P∗
+i,i + δ),
+(9)
+5
+
+
+where the first term corresponds to the conditional Rectified Flow objective, encouraging accurate
+velocity prediction in the latent space, and the second term enforces index-wise alignment between
+student and teacher features via diagonal transport probabilities. Here, N denotes the number of
+student point representations in the alignment term, δ is a small constant for numerical stability, and
+λaux controls the strength of the alignment supervision.
+Inference. During inference, we support flexible geometric conditions ranging from sparse points
+to dense masks. Point prompts are always required as the base condition, while higher-level cues
+are incorporated hierarchically for flexible control. Specifically, masks can be paired with bounding
+boxes, and boxes can be combined with point prompts. This design enables precise control of part
+generation under varying levels of geometric guidance.
+5
+Implementation Details and Metrics
+5.1
+Implementation Details
+We use a pretrained 3D VAE from TripoSG [16] to obtain part latents. Each part is encoded into latent
+tokens following 3DShape2VecSet [47]. Following PartCrafter [20], we initialize the generative
+backbone with pretrained TripoSG [16] weights and fine-tune it using the following two-stage training
+strategy. We train FlexPart on a composite dataset derived from Objaverse [7] and PartVerseXL [8].
+Stage 1 targets objects with 1–8 parts, each encoded with 512 tokens. To ensure robustness against
+suboptimal placement, we randomly sample points within masks and apply a 0.5 dropout rate to
+both boxes and masks. Stage 2 scales to 2–16 parts using 1024 tokens per part to handle varying
+granularities. In this stage, we set the dropout probability to 0.1 for points and 0.7 for masks, similar
+to [12, 31]. For bounding boxes, we implement a mixed dropping strategy with a probability of 0.25
+for full dropout, and 0.25 for partial masking applied to half of the parts. Training is conducted on 8
+NVIDIA H20 GPUs with a batch size of 256, using learning rates of 1 × 10−4 and 5 × 10−5 for the
+two stages, respectively.
+5.2
+Datasets and Metrics
+To assess generalization, we conduct evaluations on a held-out test set from PartVerseXL [8] and
+PartObjaverse-Tiny [44], ensuring strict disjointness from the training set. For each dataset, we select
+the view that maximizes the product of visible pixel count and number of visible parts, ensuring
+sufficient part coverage.
+Whole Mesh Evaluation Metrics. We first assemble the generated parts into a complete mesh and
+evaluate overall geometric quality using Chamfer Distance (CD) and F-Score, where F-Score is
+computed with a distance threshold of 0.1. Semantic consistency between the generated mesh and
+the input image is measured using ULIP [41].
+Part-level Evaluation Metrics. A primary challenge in evaluating parts is that the number of
+generated components often differs from the ground truth. To ensure a fair comparison, we first filter
+out ground truth parts that are fully occluded in the input image. We apply CD-based Hungarian
+matching between the remaining ground-truth parts and generated parts to obtain one-to-one corre-
+spondences. We compute part-level metrics only over matched pairs; unmatched ground-truth and
+generated parts are excluded without additional penalties. Based on these matched pairs, we report
+Part CD to measure geometric deviation. Furthermore, we evaluate spatial alignment using part-level
+bounding-box IoU (IoUB) for coarse extent, and surface-based voxel IoU (IoUV ) for fine-grained
+overlap. To handle non-watertight geometry, we define occupancy based on the distance field rather
+than interior filling. Specifically, we use a voxel grid with a pitch of hvox = 0.03, where a voxel is
+considered occupied if its distance to the nearest mesh surface is less than or equal to hvox. Unless
+otherwise stated, benchmark box inputs are derived from ground-truth masks, and points are sampled
+from the corresponding mask regions.
+Detailed dataset construction and benchmark preparation are provided in App. A.
+6
+
+
+Table 1: Part-level structure evaluation. Cond. denotes input conditions; PartPacker requires none.
+For whole-mesh baselines, we use SAM3D to lift multi-view 2D masks to 3D segmentations. Part
+IoUV and Part IoUB denote voxel IoU and 3D bounding box IoU. Bold and underlined indicate the
+best and second-best results, respectively.
+Method
+Reference
+Cond.
+PartVerseXL
+PartObjaverse-Tiny
+Part CD ↓
+Part IoUV ↑Part IoUB ↑
+Part CD ↓
+Part IoUV ↑Part IoUB ↑
+TRELLIS + SAM3D
+CVPR 25
+MV Mask
+0.3471
+0.1885
+0.2173
+0.3916
+0.1226
+0.2031
+TripoSG + SAM3D
+TPAMI 25
+MV Mask
+0.3523
+0.1727
+0.1896
+0.4235
+0.1250
+0.2078
+PartCrafter
+NeurIPS 25
+Number
+0.5235
+0.0907
+0.1257
+0.5193
+0.0802
+0.1455
+PartPacker
+NeurIPS 25
+-
+0.3933
+0.1717
+0.2210
+0.3932
+0.1588
+0.2327
+OmniPart
+SIGGRAPH Asia 25
+Mask
+0.3283
+0.1961
+0.2831
+0.3681
+0.1568
+0.2649
+FlexPart (ours)
+-
+Mask
+0.2938
+0.2049
+0.2840
+0.3560
+0.1571
+0.2778
+FlexPart (ours)
+-
+Box
+0.3042
+0.2078
+0.2810
+0.3675
+0.1503
+0.2693
+FlexPart (ours)
+-
+Point
+0.3334
+0.1902
+0.2506
+0.3802
+0.1411
+0.2456
+Table 2: Whole-mesh quality evaluation. TRELLIS and TripoSG are full-mesh generation methods,
+while FullPart overlaps with the PartVerseXL training set; these entries are grayed out and reported
+for reference only, and are excluded from direct comparison. Bold and underlined indicate the best
+and second-best results.
+Method
+Reference
+PartVerseXL
+PartObjaverse-Tiny
+Mean CD ↓
+F-Score ↑
+ULIP ↑
+Mean CD ↓
+F-Score ↑
+ULIP ↑
+TRELLIS
+CVPR 25
+0.2125
+0.7514
+0.2370
+0.2038
+0.7478
+0.2434
+TripoSG
+TPAMI 25
+0.1227
+0.8176
+0.2331
+0.1504
+0.7811
+0.2410
+PartCrafter
+NeurIPS 25
+0.1666
+0.7346
+0.1950
+0.1731
+0.7280
+0.2136
+PartPacker
+NeurIPS 25
+0.1489
+0.7899
+0.2266
+0.1612
+0.7682
+0.2397
+OmniPart
+SIGGRAPH Asia 25
+0.1547
+0.7636
+0.2179
+0.1585
+0.7501
+0.2335
+FullPart
+ICLR 26
+-
+-
+-
+0.1625
+0.7577
+0.1775
+FlexPart (ours)
+-
+0.1418
+0.7877
+0.2206
+0.1587
+0.7510
+0.2350
+6
+Experiments
+6.1
+Main Results
+We compare FlexPart against six state-of-the-art methods, including two holistic mesh generation
+models [16, 40] and four native part-based generation approaches [8, 20, 35, 46].
+Part-level Mesh Quality. We first evaluate the geometric fidelity of individual parts (Tab. 1) to
+assess controllable part generation. For comparison with whole-mesh generation methods, we employ
+SAM3D [45] to project multi-view masks onto their generated meshes for part segmentation. This
+post-hoc lifting process often introduces geometric inconsistencies, significantly degrading part-level
+accuracy. In contrast, FlexPart directly infers compact part geometry. Under the same mask condition,
+our method outperforms OmniPart by a large margin, reducing Part CD on PartVerseXL by 10.5%.
+This improvement is consistent with the benefits of direct part generation: OmniPart uses intermediate
+axis-aligned 3D boxes, which can enclose substantial empty space around non-axis-aligned shapes.
+Crucially, FlexPart maintains robust performance across varying input granularities. Relaxing the
+condition from masks to boxes yields stable quality, with Part CD degrading by merely 3.5% on
+PartVerseXL. Even under these weaker priors, FlexPart achieves better Part CD and Part IoUB than
+structurally unconstrained methods like PartPacker. FullPart is excluded here due to its reliance on
+3D bounding boxes. A fairer evaluation under controlled settings is provided in Sec. 6.2.
+Whole Mesh Quality. Complementing our superior part-level performance, we further assess the
+global quality of the assembled meshes. As shown in Tab. 2, FlexPart achieves strong and consistent
+mesh-level quality across both benchmarks. On PartVerseXL, we achieve a Mean CD of 0.1418,
+surpassing OmniPart by 8%, indicating that our improvements in local part precision translate into
+better global geometric accuracy. On PartObjaverse-Tiny, while some specialized methods achieve
+marginally better results, FlexPart remains highly competitive. These results show that FlexPart
+supports flexible part control while maintaining competitive whole-mesh quality.
+7
+
+
+Input Image&Cond.
+FlexPart (ours)
+FullPart
+PartPacker
+OmniPart
+PartCrafter
+Figure 3: Qualitative results of different methods. The upper row shows exploded views for inspecting
+individual parts, and the lower row shows the assembled meshes. Our method uses masks as input,
+while other methods are evaluated with their respective input conditions.
+Qualitative Results. Fig. 3 presents qualitative comparisons across diverse categories. FullPart
+provides rough layout control via boxes but often yields inaccurate shapes. PartPacker achieves decent
+global geometry but lacks explicit control to match user-specified structures. OmniPart tends to
+distort meshes, deviating noticeably from inputs, while PartCrafter, limited to part-count conditioning,
+struggles to align with intended divisions. In contrast, FlexPart generates distinct and semantically
+meaningful parts, ensuring visual realism and structural coherence suitable for downstream editing.
+6.2
+Analysis and Ablation Study
+To investigate the architecture design, we conduct ablation studies on PartVerseXL unless otherwise
+specified. Default settings are marked in gray .
+Effect of Multi-granularity Synergy. Tab. 3 demonstrates that our framework achieves deep cross-
+modal synergy instead of a naive combination of conditions. Specifically, stronger geometric priors
+effectively guide weaker ones during training. Our joint model improves Point only inference by
+7.9% in IoUV and 6.1% in CD because it internalizes precise boundary constraints from dense inputs.
+Furthermore, joint training consistently outperforms single-modality models across all evaluation
+settings. For example, under mask conditioning, the unified model reduces Part CD from 0.3224
+for the mask-only training baseline to 0.2938. These results confirm that FlexPart learns integrated
+semantics in a shared space. This formulation provides a versatile solution that maintains high
+geometric fidelity across diverse interaction modes. Fig. 4 illustrates robust, semantically consistent
+results across prompt granularities.
+8
+
+
+Table 3: Ablation on multi-granularity prompt synergy. Eval Cond. denotes the evaluation condition,
+while Train Setting lists the prompt modalities used to train each model. Point only, Box only, and
+Mask only denote single-modality training baselines. We compare whole-mesh and part-level fidelity
+within each evaluation condition.
+Eval Cond.
+Train Setting
+Whole Mesh
+Part-level
+CD ↓
+F-Score ↑
+ULIP ↑
+CD ↓
+IoUV ↑
+IoUB ↑
+Point
+Point only
+0.1623
+0.7368
+0.2014
+0.3550
+0.1763
+0.2320
+Point + Mask
+0.1587
+0.7505
+0.2112
+0.3421
+0.1816
+0.2396
+Point + Box + Mask
+0.1525
+0.7689
+0.2171
+0.3334
+0.1902
+0.2506
+Box
+Box only
+0.1489
+0.7756
+0.2171
+0.3155
+0.2011
+0.2756
+Point + Box
+0.1458
+0.7812
+0.2201
+0.3102
+0.2023
+0.2763
+Box + Mask
+0.1434
+0.7834
+0.2209
+0.3094
+0.2089
+0.2795
+Point + Box + Mask
+0.1447
+0.7828
+0.2219
+0.3042
+0.2078
+0.2810
+Mask
+Mask only
+0.1541
+0.7564
+0.2056
+0.3224
+0.1905
+0.2688
+Point + Mask
+0.1501
+0.7712
+0.2169
+0.3202
+0.1921
+0.2712
+Box + Mask
+0.1450
+0.7848
+0.2195
+0.3076
+0.1998
+0.2822
+Point + Box + Mask
+0.1418
+0.7877
+0.2206
+0.2938
+0.2049
+0.2840
+Point Prompts
+Box Prompts
+Mask Prompts
+ Variable Granularity
+Figure 4: Qualitative generation results of our method under varying geometric prompts.
+Table 4: Ablation on Asymmetric Geometric Gu-
+idance under point and mask prompts.
+Cond.
+Guid.
+Part-level
+CD ↓
+IoUV ↑
+IoUB ↑
+Points
+-
+0.3406
+0.1811
+0.2323
+✓
+0.3334
+0.1902
+0.2506
+Masks
+-
+0.3011
+0.2078
+0.2813
+✓
+0.2938
+0.2049
+0.2840
+Effect of Asymmetric Geometric Guidance.
+Building upon the observed multi-granularity syn-
+ergy, we evaluate the proposed Asymmetric Geomet-
+ric Guidance by ablating the auxiliary alignment loss.
+As shown in Tab. 4, it significantly improves perfor-
+mance under sparse point prompts, yielding gains
+of 7.9% in Part IoUB and 5.0% in Part IoUV over
+the baseline. This indicates that OT-based alignment
+effectively transfers structural priors from dense an-
+notations to regularize learning from sparse inputs.
+Performance under mask conditions remains comparable, suggesting positive cross-granularity trans-
+fer without conflict. The guidance operates only during training, with no inference overhead.
+9

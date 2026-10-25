@@ -1,0 +1,559 @@
+DUOCOOK:
+AN OVERCOOKED-INSPIRED BENCH-
+MARK FOR VISUAL PLANNING AND COORDINATION
+Ziyi Jiao1, Heng Zhang1, Drishti Regmi2
+Xiaokang Ye2, Lianhui Qin2, Peter Yichen Chen1
+1 Department of Computer Science, University of British Columbia
+2 University of California, San Diego
+ABSTRACT
+Coordinating two players in a cooking task requires a vision-language agent to
+track changing scene states, sequence recipe steps, and allocate shared resources
+under a time budget. We introduce an Overcooked-inspired benchmark for eval-
+uating these capabilities in Unreal Engine environments constructed using coding
+agents. A single vision-language model controls both players from top-down vi-
+sual observations, selecting high-level actions while the engine executes naviga-
+tion. The benchmark contains 20 maps in five categories. These categories sup-
+port evaluation of centralized coordination under equipment contention, changing
+terrain, and handoff dependencies. A prop legend and pot ingredient-count indi-
+cators provide explicit visual cues, while grid-based destinations support spatial
+grounding. The evaluation compares four VLMs on all 20 maps, measuring task
+score, order completion, delivery precision, action acceptance rate, and model
+API expenditure. A memory ablation on the same 20 maps examines the effect
+of a shared, self-authored notebook while retaining six-response action history in
+both conditions. The strongest evaluated model, gpt-6-astra, achieves 26.2%
+mean order completion. Notebook memory has mixed score effects across mod-
+els, with positive mean differences for Claude and Qwen and negative differences
+for GPT and Gemini.
+1
+INTRODUCTION
+A cooking task can fail even when individual actions appear sensible. A player may chop the correct
+ingredient while blocking a board needed for an urgent order, or wait beside a boiling pot instead
+of working elsewhere. Efficient cooking requires tracking unfinished operations, assigning comple-
+mentary work, and revising schedules as equipment and ingredients become available. This raises a
+broader question: can a vision-language model (VLM) use visual observations and structured task
+information to coordinate interdependent work under order deadlines?
+Overcooked-AI examines cooperation with humans (Carroll et al., 2019), MindAgent studies multi-
+agent task allocation (Gong et al., 2024), and Collab-Overcooked introduces resource isolation and
+process-oriented evaluation (Sun et al., 2025). Visual-agent benchmarks evaluate interaction across
+games, embodied environments, and graphical interfaces (Paglieri et al., 2025; Liu et al., 2025; Yang
+et al., 2025). We study centralized scheduling across kitchens with different spatial and operational
+constraints, using a common multimodal interface to connect kitchen state, recipes, orders, and
+player assignments.
+We introduce DuoCook, an Overcooked-inspired benchmark in Unreal Engine where a single VLM
+controls two players from a shared context. Its 20 maps span five categories: basic, shared equip-
+ment, dynamic, dynamic with shared equipment, and separated workspaces (Section 3.2), introduc-
+ing equipment contention, terrain changes, and required handoffs. The model assigns both players’
+work to maximize delivery score under deadlines, time-dependent tips, and a streak bonus, making
+centralized coordination the evaluation target. Coding agents construct kitchens through SimWorld
+Studio (Kang et al., 2026), followed by manual refinement and actor-contract verification (Sec-
+tion 3.1).
+1
+arXiv:2610.31511v1  [cs.AI]  22 Oct 2026
+
+
+The controller receives a top-down kitchen image, prop legend, task instructions, live-state infor-
+mation, and legal operations. The model selects actions and destination coordinates while the en-
+gine handles navigation. State changes trigger model calls, with simulation paused during model
+inference. The interface thus evaluates destination selection and scheduling with structured state
+assistance.
+The evaluation protocol compares four VLMs on all 20 maps across all five categories, reporting to-
+tal score, order completion rate, delivery precision, action acceptance rate, and API expenditure per
+episode. A memory ablation on the same 20 maps removes only the shared, self-authored notebook,
+measuring its effect on performance and API cost while retaining all other inputs.
+The paper makes two contributions:
+• A benchmark of 20 agent-generated kitchens for centralized two-player planning and coor-
+dination, with five map categories and a shared multimodal interface.
+• An evaluation protocol combining five performance, action-validity, and API-cost metrics
+with an ablation of shared notebook memory.
+2
+RELATED WORK
+2.1
+COOKING ENVIRONMENTS AND COOPERATIVE AGENTS
+Overcooked-AI studies coordination and cooperation with humans (Carroll et al., 2019), while
+ProAgent uses language models to infer teammate intentions (Zhang et al., 2024a).
+MindA-
+gent’s CuisineWorld supports centralized multi-agent scheduling (Gong et al., 2024), and Collab-
+Overcooked combines resource isolation, asymmetric knowledge, and communication to evaluate
+interdependent collaboration (Sun et al., 2025). DuoCook builds on these precedents with one visu-
+ally grounded controller for both players and map variations that expose resource and spatial depen-
+dencies. It evaluates centralized scheduling rather than inference about an independently controlled
+partner; neither multi-cook control nor required handoffs alone constitutes its contribution.
+ParaCookZhang et al. (2026) represents cooking tasks as directed acyclic graphs and measures
+concurrent execution efficiency.
+RobotouilleGonzalez-Pumariega et al. (2025) examines asyn-
+chronous, long-horizon planning, while CookbenchCai et al. (2025) combines recipe preparation
+with customer-intention recognition. Related planning benchmarks include WORKBENCHQiao
+et al. (2025) and Plan-over-GraphZhang et al. (2025b) for graph-structured workflows, Asyn-
+cHowLin et al. (2024) for ordering tasks with known durations, and TimeArenaZhang et al. (2024b)
+for scheduling in an interactive environment. PACEHuang et al. (2026) overlaps planning and ex-
+ecution through interleaved reasoning and action. These directions inform DuoCook’s scheduling
+demands, such as preparing another dish while soup boils.
+2.2
+VISUAL INTERACTION AND GAME BENCHMARKS
+Balrog evaluates planning and exploration across games (Paglieri et al., 2025), while VisualAgent-
+Bench spans embodied interaction, graphical interfaces, and visual design (Liu et al., 2025). Embod-
+iedBench covers semantic tasks, navigation, and manipulation (Yang et al., 2025); VideoGameBench
+evaluates raw visual gameplay, including a paused setting that separates some inference-latency ef-
+fects from action selection (Zhang et al., 2025a). DuoCook focuses on matched interventions within
+cooking workflows. Its engine-executed navigation, grid labels, and structured state assist the con-
+troller, so scores are not directly interchangeable with those from different observation and control
+interfaces.
+2.3
+PERSISTENT CONTEXT FOR INTERACTIVE AGENTS
+ReAct interleaves reasoning and action using interaction feedback (Yao et al., 2023), while Reflexion
+stores verbal reflections across trials (Shinn et al., 2023). DuoCook evaluates a shared notebook of
+self-authored observations with age-dependent retention. Removing this notebook while retaining
+six-response action history and current visual and structured inputs tests its effect on performance
+and inference cost.
+2
+
+
+Figure 1: Benchmark pipeline. Left: coding-agent kitchen construction, manual refinement, and
+actor-contract verification. Center: joint control of two players from shared multimodal inputs,
+illustrated by onion-soup preparation. Right: timed-order scoring and evaluation of score, order
+completion, delivery precision, action acceptance, and API expenditure.
+2.4
+GENERATED ENVIRONMENTS FOR EVALUATION
+Generated environments can support agent evaluation or serve as the output of a generative model.
+Procgen uses procedurally generated levels to evaluate agent generalization (Cobbe et al., 2020),
+while MarioGPT generates Mario levels from text (Sudhakaran et al., 2023). In DuoCook, coding
+agents build Unreal Engine kitchens from reference layouts and construction instructions, followed
+by manual refinement and actor-contract verification (Section 3.1). This process supplies the envi-
+ronments for evaluating cooking controllers.
+3
+SYSTEM AND TASK DESIGN
+Figure 1 summarizes the benchmark workflow, from kitchen construction to controller execution
+and evaluation.
+3.1
+MAP GENERATION WITH CODING AGENTS
+We construct kitchens in Unreal Engine using SimWorld Studio, which provides coding agents with
+Model Context Protocol (MCP) tools and Markdown skills for scene configuration and asset place-
+ment. Two separate claude-opus-5 processes author the generation prompt and build the scene,
+respectively. The authoring process reviews the SimWorld Studio architecture, then receives the
+game context, a reference image, and an actor naming and scene-structure contract. It produces a
+construction prompt with a completion checklist covering required appliances and VLM-controlled
+MetaHuman characters. The construction process executes this prompt with access to the game
+context, pipeline code, actor contract, and reference image. We then refine the scene manually and
+run a script to verify required actors and their names. Manual edits address decoration, collisions,
+visibility, and camera configuration. In a truck scene, for example, we moved rocks clear of the
+truck bed, adjusted the top-down camera’s yaw, added an isometric camera, and removed a truck
+wall to expose the kitchen.
+3.2
+MAP CONDITIONS
+The benchmark contains 20 functional maps based on Overcooked layouts, grouped by equipment
+sharing, terrain changes, and item transfers. The main evaluation uses all 20 maps; the memory
+ablation uses the same 20 maps. Appendix A lists source levels and evaluation subsets.
+3
+
+
+Table 1: Base tips by elapsed waiting time for a non-expired order. The thresholds correspond to
+45%, 70%, and 85% of the 3,000-step waiting limit.
+Zone
+Elapsed waiting time w (steps)
+Base tip
+Green
+0 ≤w ≤1,350
+8
+Yellow
+1,350 < w ≤2,100
+5
+Red
+2,100 < w ≤2,550
+3
+Last call
+2,550 < w < 3,000
+0
+All maps contain floors, counters, ingredient bins, pots, plates, chopping boards, and serving points.
+Bins, boards, and pots are fixed to counters, which block movement but support food and plate
+placement. Players move, carry and place objects, chop ingredients, plate food, and serve dishes.
+After serving, dirty plates appear in sinks for washing on sink-equipped maps; otherwise, clean
+plates reappear at their initial locations. The map categories vary the coordination required by these
+operations. Basic and shared-equipment maps have fixed terrain: the former allow independent
+order completion, while the latter require players to share stations such as chopping boards or pots.
+Dynamic maps introduce counters or floor sections that move back and forth every 1,000 steps,
+changing obstacles or traversable terrain; gaps remain inaccessible, preventing falls. Four dynamic
+maps require equipment sharing, and four do not. In separated workspaces, players cannot cross
+between regions and must pass ingredients or plates across counters, so neither can complete a dish
+alone.
+3.3
+COOKING TASK AND CONTROLLER OBJECTIVE
+A single VLM controls two MetaHuman players to maximize the score from preparing and serving
+orders within the episode horizon (Section 4.1). Menus include salads and soups, with recipes and
+order queues configured by level. Chopping and dish washing occupy a player throughout execution,
+whereas soup boils unattended, allowing concurrent work.
+Orders and scoring.
+Orders arrive every 1,000 steps, expire after 3,000 steps, and may be fulfilled
+in any order. Each delivery earns 20 points plus a time-dependent tip scaled by a combo multiplier:
+Ri = 20 + mib(wi),
+(1)
+where wi is the waiting time at delivery, b(wi) is the base tip (Table 1), and mi follows the schedule
+(1, 1, 2, 3, 4), capped at 4. Deliveries build the combo streak; an expired order resets the streak to
+zero. The multiplier applies only to tips.
+3.4
+MULTIMODAL AGENT INPUTS
+The controller receives kitchen images alongside task instructions, live state, legal operations, exe-
+cution feedback, and six-response action history (Figure 2).
+At each decision, both players share a top-down kitchen image with grid labels, a prop legend, and
+textual context (Figure 2). A map-specific system prompt of approximately 4,000 words provides
+kitchen rules and recipes, using the simulator’s menu, and is re-sent at every decision. Live-state
+reports player actions, positions, held items, and station claims, together with orders and preparation
+status. Game-UI information is supplied as text to reduce dependence on UI appearance. The
+engine lists legal operations based on kitchen state and station claims, without filtering by waiting
+orders; rejection feedback explains failures without suggesting corrective plans. Each player’s action
+history contains its six most recent responses, newest first, with actions, target cells, and execution
+acceptance. This history is retained in both experimental conditions. The memory-enabled condition
+additionally supplies a shared, self-authored notebook (Section 4.4).
+3.5
+GRID-BASED NAVIGATION AND HIGH-LEVEL ACTIONS
+Each map has an N × M grid with coordinates rxcy, where x and y denote row and column.
+The origin is randomly assigned per map and then fixed; the controller reads image labels to locate
+targets (Figure 2). Commands pair a destination coordinate with an action, such as pickup, chopping,
+4
+
+
+Figure 2: Input components retained in both memory conditions. Left: instructions, live-state JSON,
+legal operations, six-response action history, and execution feedback. Right: a top-down kitchen
+image with grid labels and pot indicators, plus a prop legend. The additional notebook used in the
+memory-enabled condition is not shown.
+or serving. Station interactions target the station cell; the engine handles the approach using a
+navigation mesh (NavMesh) that excludes counters and gaps. Incompatible action-target pairs and
+unreachable destinations return errors for the controller to revise and retry. State-change events
+trigger VLM calls, including action or cooking completion, order arrival or expiration, and terrain
+changes. The engine updates observations and pauses simulation during VLM inference. When
+one player finishes, the controller assigns its next action while preserving the other player’s ongoing
+action, which resumes after inference. Terrain changes interrupt movement, prompting the controller
+to select a destination and action from the updated scene and the engine to plan a new route.
+4
+EXPERIMENTS
+Our evaluation examines how a single model coordinates two players under equipment-sharing con-
+straints, changing terrain, and required item transfers. It consists of the main benchmark on 20 maps
+and a memory ablation on the same 20 maps.
+4.1
+EVALUATION SETUP
+The complete benchmark contains 20 functional maps. We evaluate all four VLMs on the same 20
+maps spanning all five categories, and compare memory conditions on the same 20 maps for all four
+models. Appendix A specifies the maps in each subset. The ablation covers all five categories. All
+reported aggregates refer to the maps included in the corresponding experiment.
+Evaluated
+models.
+The
+model
+roster
+consists
+of
+gpt-6-astra,
+claude-opus-5,
+qwen3.8-27b, and gemini-3.5-flash-lite. Each model controls both players through
+a single controller, and the two players can act concurrently.
+We access gpt-6-astra
+through the OpenAI API and claude-opus-5 through the Anthropic API; qwen3.8-27b and
+gemini-3.5-flash-lite are accessed through OpenRouter.
+Episode protocol.
+Each episode runs for 4,000 steps. This horizon applies to the main benchmark
+and the memory ablation. Controller calls follow state-change events, and the simulation pauses
+during inference, as described in Section 3.5.
+For each map, the initial state, number of orders, and order sequence are fixed and shared across
+models and memory conditions. Each model runs once on each of the 20 main-evaluation maps
+with memory enabled. For the ablation, we reuse those results on the same 20 maps and run each
+model once more on each of those maps with memory disabled. These settings match the starting
+conditions and order workload; subsequent trajectories depend on the model’s actions. We compute
+metrics for each episode and average them with equal weight across the 20 evaluation maps. Cate-
+5
+
+
+gory summaries use only the evaluated maps in that category. For the memory ablation, we compute
+the difference between conditions on each of the 20 maps and then average these paired differences.
+With one run per model, map, and condition, results are descriptive and do not estimate variability
+across repeated model runs.
+4.2
+EVALUATION METRICS
+We use five metrics to measure task performance, action acceptance, and inference cost. The same
+metrics apply to the main benchmark and the memory ablation.
+Total score.
+The episode score measures accumulated points under the scoring rules in Section 3.3.
+Each fulfilled order earns the base reward and combo-adjusted tip in Equation 1; orders may be
+fulfilled in any sequence.
+Order completion rate.
+Let Ncompleted denote the number of completed orders and Norders the
+total number of orders in an episode. Order completion rate is
+C = Ncompleted
+Norders
+.
+(2)
+This metric measures how much of the order workload the controller completes within the episode
+horizon.
+Delivery precision.
+Let Ncorrect denote the number of correct deliveries and Nserved the total
+number of dishes served. Delivery precision is
+P = Ncorrect
+Nserved
+.
+(3)
+It measures the fraction of serving attempts that satisfy an order, complementing completion rate by
+distinguishing successful deliveries from unsuccessful attempts.
+Action acceptance rate.
+Let Naccepted denote the number of player commands accepted by the
+engine and Nissued the total number issued. Action acceptance rate is
+A = Naccepted
+Nissued
+.
+(4)
+Commands are counted separately for each player, so a response assigning both players contributes
+two commands. Each retry counts as another issued command. Rejections include unreachable
+destinations and incompatible action–target combinations. Accepted commands remain counted
+even if they are later interrupted or do not advance an order. The metric therefore measures command
+validity under the supplied interface, while score and order completion measure task performance.
+Episodes with no issued commands are reported as N/A.
+Model execution cost.
+Model execution cost is the total amount spent on model API calls during
+an episode, reported in US dollars (USD). It includes all billed calls, including retries, and any
+charges for image inputs and action-history context. We report mean API expenditure per episode
+alongside task performance.
+4.3
+MAIN BENCHMARK EVALUATION
+The main evaluation compares the four models across all 20 maps using the visual observations,
+legend, and memory described above. We report overall performance in Table 2 and results for each
+map category defined in Section 3.2. The five metrics capture complementary aspects of perfor-
+mance: accumulated reward, coverage of the order workload, delivery correctness, action accep-
+tance, and execution cost.
+The benchmark is far from saturated. The strongest controller completes 26.2% of the order work-
+load and the rest complete 8.8–11.2%; most episodes end with nothing delivered, including 15 of
+6
+
+
+Table 2: Main benchmark performance, averaged with equal weight across 20 maps, with one
+episode per model and map. Arrows give the preferred direction. Delivery precision excludes maps
+with no deliveries; n gives the number of maps entering that mean. Bold values mark the best re-
+ported mean in each column.
+Controller
+Score ↑
+Completion (%) ↑
+Precision (%) ↑
+Acceptance (%) ↑
+USD/episode ↓
+qwen3.8-27b
+9.1
+8.8
+91.7 (n = 6)
+39.5
+0.27
+gemini-3.5-flash-lite
+11.9
+11.2
+81.0 (n = 7)
+32.1
+0.30
+claude-opus-5
+8.2
+8.8
+100.0 (n = 5)
+52.7
+4.61
+gpt-6-astra
+25.6
+26.2
+93.8 (n = 16)
+64.6
+5.18
+Figure 3: Mean order completion by map category. Each column averages the four maps in that
+category with equal weight.
+20 for claude-opus-5 and 14 of 20 for qwen3.8-27b. Differences between controllers are
+therefore differences between low absolute levels of competence rather than a ceiling effect.
+gpt-6-astra separates clearly from the rest, scoring more than twice the nearest alternative and
+leading on score, order completion, and action acceptance. Claude has the highest delivery precision,
+computed over the five maps on which it delivers at least one dish.
+Two categories present the strongest barriers. On maps combining changing terrain with shared
+equipment, three of four controllers deliver no dishes; gpt-6-astra is the sole exception, scoring
+on all four maps in this category (mean score 29.0). On separated-workspace maps, gpt-6-astra
+again scores on three of four maps, and qwen3.8-27b scores on one; claude-opus-5 and
+gemini-3.5-flash-lite deliver nothing across all eight of their episodes in this category.
+Terrain change with equipment contention, and required hand-offs across disjoint workspaces, re-
+main near-complete barriers for all but the strongest controller.
+Where controllers deliver at all,
+most deliver the right dish:
+precision is 100% for
+claude-opus-5, 93.8% for gpt-6-astra, 91.7% for qwen3.8-27b, and 81.0% for
+gemini-3.5-flash-lite.
+These precision estimates exclude zero-delivery episodes and
+use different map subsets, so they do not identify the causes of failure. Selection errors could
+also prevent any delivery.
+Action acceptance and task performance can rank models differ-
+ently:
+claude-opus-5 issues valid commands 52.7% of the time and scores 8.2, while
+gemini-3.5-flash-lite is valid 32.1% of the time and scores 11.9. This comparison moti-
+vates reporting both metrics but does not establish their overall association. Cost spans more than
+an order of magnitude and does not track performance: the strongest controller is also among the
+most expensive.
+Each model-map result comes from a single episode, and each heatmap cell averages four such re-
+sults. We report descriptive differences without estimating run-to-run variability. Low performance
+in the two hardest categories does not establish that those categories are unsolvable.
+7
+
+
+Figure 4: Effect of shared memory, as paired differences (with memory minus without) on the
+20 ablation maps. (a) Score difference: grey points are per-map differences, the marker is the
+equal-weight mean with a 95% percentile bootstrap interval over resampled maps. (b) API cost per
+episode under each condition, log scale. Intervals resample maps rather than repeated runs, since
+each model-map-condition result is a single episode; they summarize sensitivity of the mean to
+resampling the observed maps, not the distribution of individual map effects or run-to-run variability.
+The constructed maps are not a random sample from a specified population, so these intervals do
+not establish generalization beyond this suite.
+4.4
+MEMORY ABLATION
+We compare controllers with and without shared memory on all 20 maps. The memory-enabled
+results are reused from the corresponding main-benchmark episodes. For each model and map, the
+memory-disabled run uses the same initial state and order schedule, with only the shared memory
+removed.
+The shared memory is a notebook the two players fill in themselves. With any decision a player
+may attach up to three observations, each a tuple of grid cell, object kind, status, and an optional
+free-text note. Both players read the resulting table back on every subsequent call, rendered one
+row per observed cell, and each row carries the identity of whoever wrote it. Entries decay on an
+exponential forgetting curve with a 600-step half-life and are displayed in three confidence bands
+(just seen, fairly sure, hazy); hearsay from the partner decays twice as fast as first-hand observation.
+Nothing in it is validated against the simulator: it records beliefs, and a stale or mistaken row is part
+of what the condition tests.
+The shared store holds entries of the form (grid cell, object kind, status, optional note, author, write
+step). Entries are keyed by cell and kind, so a later write about the same cell replaces the earlier one;
+this is how a player corrects itself, and a write with status unknown deletes the row instead.
+A belief loses force with age. For an entry written at step ti and read at step t by player p, retention
+is
+r(p)
+i
+(t) = 2−(t−ti)/H(p)
+i ,
+H(p)
+i
+=
+H,
+written by p
+H/ρ,
+written by the partner,
+(5)
+with half-life H = 600 steps and hearsay ratio ρ = 2. A player’s own observation therefore keeps
+half its force after 600 steps, while the same observation read from its partner keeps half after 300.
+Retention depends only on the entry’s age and its authorship; it never consults simulator state, so a
+confidence value cannot encode anything the player has not been told.
+The model never sees retention r(p)
+i
+(t) as a number. It is shown as one of three ordinal bands: just
+seen above 0.75, fairly sure above 0.45, hazy above 0.20; and entries below 0.20 are dropped from
+8
+
+
+the rendered table. Each surviving row is annotated with its band and with whether the reader wrote
+it.
+The store holds at most 24 entries and at most 16 from any one author. When a cap is exceeded,
+the weakest beliefs are evicted first, ordered by retention with deterministic tie-breaking. Eviction
+never consults the simulator: dropping the entries that happen to be factually wrong would supply
+an answer key. The cap sits just below the number of addressable objects on these maps, so even a
+full store cannot amount to a complete description of the level.
+Shared memory does not help uniformly. The clearest benefit is for claude-opus-5, which
+gains +4.8 points (bootstrap 95% CI: [+1.0, +9.4] over resampled maps); this is the only model
+whose reported bootstrap interval excludes zero.
+The largest mean score decrease occurs for
+gemini-3.5-flash-lite, which has a mean difference of −8.1 points (CI: [−17.4, +1.8]).
+For qwen3.8-27b (+1.4, CI: [−6.6, +9.4]) and gpt-6-astra (−2.7, CI: [−12.4, +7.0]), the
+intervals span zero. These are descriptive map-resampling summaries; none of the intervals quanti-
+fies repeatability across model runs.
+Counting maps on which a controller scores at all, memory moves claude-opus-5 from 3 to
+5 maps and gpt-6-astra from 13 to 16, while leaving qwen3.8-27b unchanged at 6 and
+reducing gemini-3.5-flash-lite from 11 to 7. For Gemini, fewer maps yield a positive
+score with shared memory; aggregate counts do not reveal the individual map transitions.
+One
+hypothesis
+is
+that
+the
+notebook
+competes
+for
+attention
+with
+the
+task.
+For
+gemini-3.5-flash-lite, action acceptance falls from 56.4% to 32.1% with memory, and
+deliveries fall from 21 to 12 dishes. gpt-6-astra’s acceptance also declines (70.3% →64.6%),
+while its total dish count remains 23 in both conditions. These summaries do not establish an atten-
+tion mechanism; that interpretation requires trajectory-level evidence.
+Memory increases mean API expenditure for all four models. Claude and Qwen have positive mean
+score differences (+4.8 and +1.4), although only Claude’s reported bootstrap interval excludes zero.
+GPT and Gemini incur higher mean cost with lower mean scores. For Claude and Qwen, the value of
+the observed gains depends on the acceptable cost per score improvement and their stability across
+repeated runs.
+Conditions.
+The two conditions differ in one term. Both observations contain the scene image, the
+prop legend, the live-state JSON, the operation list, immediate failure feedback, and the six-response
+action history; the memory-enabled condition adds the rendered shared store. The action history
+appears in both conditions: it is written by the environment rather than the model, is never shared
+between players, and is held fixed so that the comparison isolates shared, self-authored memory
+from recency alone.
+Across the memory-enabled episodes, 40.1% of the entries a player read had been written by its
+partner (10,732 of 26,750). This records partner-authored notebook use, but does not by itself show
+that the information was unavailable through other inputs.
+This design tests whether a shared and decaying world model improves joint performance, and
+measures the additional inference cost of maintaining and reading it. Both conditions use the five
+benchmark metrics, aggregated over the same 20 maps.
+5
+LIMITATIONS
+Centralized two-player control leaves communication, private information, and adaptation to inde-
+pendent teammates outside the primary evaluation. Top-down observations and engine navigation
+reduce demands that would be present under first-person sensing or direct motor control. The prop
+legend, pot indicators, live-state JSON, and engine-computed legal-operation list provide additional
+information and assistance. Results therefore reflect planning under this combined interface, includ-
+ing selection among legal operations to advance waiting orders.
+Differences between maps can reflect several task properties, so performance across map conditions
+does not isolate the effect of resource sharing. The evaluation also does not isolate the contribution
+of the visual legend or pot indicators, which remain fixed. The memory ablation examines the effect
+9
+
+
+of adding a shared notebook while retaining action history, but memory can also change token usage
+and latency.
+Each model is run once per map and memory condition. Fixed initial states and order sequences
+provide matched scenarios, but a single run does not quantify variability in model responses or
+establish the stability of model rankings and memory effects across repeated runs.
+Generated maps can repeat structural patterns despite visual variation. Shared generation prove-
+nance and similar layouts must be considered when defining held-out evaluation. New maps also
+do not guarantee that recipes or task concepts are absent from model pretraining. Generalization
+beyond the tested kitchen distribution, including transfer to real collaborative work, would require
+additional evidence.
+Supporting episode logs, per-map metric tables, and analysis scripts are not included in the current
+manuscript artifacts. Aggregate results alone do not support a trace-based diagnosis of failures or
+independent recomputation of the reported effects.
+6
+CONCLUSION AND FUTURE WORK
+This paper develops the design of an Overcooked-inspired benchmark for visual planning and cen-
+tralized coordination in agent-generated Unreal Engine kitchens. Its 20 maps span five categories
+covering independent work, shared equipment, changing terrain, and required item transfers. The
+evaluation protocol compares four VLMs on all 20 maps using task performance, action acceptance,
+and API cost, with a memory ablation on the same 20 maps. Experimental conclusions apply to this
+evaluated suite. This provides a concrete way to investigate how a controller turns visual observa-
+tions into coordinated cooking actions.
+gpt-6-astra achieves the highest mean score (25.6), order completion (26.2%), and action ac-
+ceptance (64.6%), while Claude has the highest delivery precision among episodes with deliveries.
+Performance remains low, especially on dynamic maps with shared equipment and on separated-
+workspace maps. Shared notebook memory increases mean API cost for every model and has mixed
+score effects: Claude and Qwen improve in the observed means, whereas GPT and Gemini decline.
+These results describe one run per model, map, and condition; repeated runs are needed to assess
+the stability of these differences.
+AI USE STATEMENT
+We used claude-opus-5 to author scene-generation prompts and construct benchmark maps, as
+described in Section 3.1. We also used AI tools to polish the manuscript.
+REFERENCES
+Muzhen Cai, Xiubo Chen, Yining An, Jiaxin Zhang, Xuesong Wang, Wang Xu, Weinan Zhang,
+and Ting Liu. Cookbench: A long-horizon embodied planning benchmark for complex cooking
+scenarios. arXiv preprint arXiv:2508.03232, 2025.
+Micah Carroll, Rohin Shah, Mark K Ho, Tom Griffiths, Sanjit Seshia, Pieter Abbeel, and Anca
+Dragan. On the utility of learning about humans for human-ai coordination. Advances in neural
+information processing systems, 32, 2019.
+Karl Cobbe, Chris Hesse, Jacob Hilton, and John Schulman. Leveraging procedural generation to
+benchmark reinforcement learning. In International conference on machine learning, pp. 2048–
+2056. PMLR, 2020.
+Ran Gong, Qiuyuan Huang, Xiaojian Ma, Yusuke Noda, Zane Durante, Zilong Zheng, Demetri
+Terzopoulos, Li Fei-Fei, Jianfeng Gao, and Hoi Vo. Mindagent: Emergent gaming interaction. In
+Findings of the Association for Computational Linguistics: NAACL 2024, pp. 3154–3183, 2024.
+Gonzalo Gonzalez-Pumariega, Leong Yean, Neha Sunkara, and Sanjiban Choudhury. Robotouille:
+An asynchronous planning benchmark for llm agents. In International Conference on Learning
+Representations, volume 2025, pp. 83757–83792, 2025.
+10

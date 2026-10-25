@@ -1,0 +1,595 @@
+Preprint
+LACTOS:
+LOCAL
+ANOMALY
+DETECTION
+VIA
+CONDITIONAL TYPICALITY OF SUPERPIXELS
+Jihoon Hong1∗, Alireza Kheirandish1∗, Rohan Sanda2,3 & Sara Fridovich-Keil1
+1Georgia Institute of Technology, Atlanta, GA, USA
+2Stanford University, Stanford, CA, USA
+3Cohere
+{jhong392,akheirandish3,sfk}@gatech.edu
+rsanda@stanford.edu
+ABSTRACT
+Local anomaly detection is the task of identifying spatially confined anomalous
+or out-of-distribution (OOD) regions within an otherwise in-distribution (ID) im-
+age. Most existing methods are designed for a specific context, with a strong
+focus on industrial defect detection, where they achieve excellent performance
+on well-established benchmarks. However, we observe that these methods can
+exhibit significant performance drops in other contexts, especially when the inlier
+distribution is multimodal. To account for this inlier complexity, we propose LAC-
+ToS, a principled local OOD detection method based on statistical typicality and
+made tractable through two innovations: (i) grouping pixels into superpixels and (ii)
+using a computationally efficient proxy to estimate typicality. We evaluate LACToS
+across three diverse applications spanning medical imaging, human faces, and X-
+ray security screening. LACToS performs more robustly than prior methods across
+these benchmarks. The code is released here: https://github.com/voilalab/LACToS.
+1
+INTRODUCTION
+Image
+LACToS
+Heatmap
+Figure 1: Using a diffusion model pretrained on ID images
+only, LACToS is able to identify locally OOD regions in
+images across various tasks, including tumors in CT scans,
+anomalies such as scars on faces, and harmful objects such
+as scissors in X-ray baggage scans.
+Local anomaly detection is the task of
+identifying out-of-distribution (OOD)
+regions that are spatially confined
+within an otherwise in-distribution
+(ID) image. It is central to applica-
+tions such as industrial defect inspec-
+tion, medical image analysis, and se-
+curity screening, where an anomalous
+region may occupy only a small frac-
+tion of the image yet indicate a de-
+fect, tumor, or weapon. Unlike image-
+level OOD detection, which assigns
+a single anomaly score to an entire
+image, localized pixel-level anomaly
+detection involves generating a dense
+heatmap that indicates which pixels
+or regions of each outlier image are
+inconsistent with the inlier distribu-
+tion. This makes the problem espe-
+cially challenging: a local OOD detector must be sensitive to subtle local deviations while remaining
+robust to natural variation in normal image content.
+Prior work on localized anomaly detection has largely followed representation-based and
+reconstruction-based approaches. Representation-based methods extract local features from normal
+(inlier) training images, and score test patches using their distance from the learned distribution or their
+∗Equal contribution.
+1
+arXiv:2610.31538v1  [cs.CV]  22 Oct 2026
+
+
+Preprint
+likelihood under it (Cohen and Hoshen, 2020; Defard et al., 2021; Roth et al., 2022). Reconstruction-
+based methods instead reconstruct, inpaint, or denoise the target image under a prior for inlier images,
+and use the discrepancy between the input and its reconstruction as an anomaly signal (Mousakhan
+et al., 2024; Wu et al., 2024). Although both approaches have achieved strong empirical performance,
+especially for industrial defect detection (Bergmann et al., 2019), their anomaly scores are often
+heuristic: representation-based methods depend on the choice of feature and distance metric, while
+reconstruction-based methods typically collapse the distribution of inlier completions into a point
+estimate. Conformal and risk-control methods can provide statistical guarantees for calibrated seg-
+mentation outputs (Shen and Liu, 2025), but they generally rely on a large amount of OOD calibration
+data. Moreover, we empirically observe that these methods do not always generalize reliably beyond
+industrial defect detection.
+We present LACToS, a statistical method for local OOD detection that is designed to address these
+limitations of existing methods. Our approach is fundamentally reconstruction-based, but uses the
+key insight that the distribution of the reconstructions contains valuable information that is lost
+when reconstruction error is computed using a single sample or an aggregated point estimate. To
+leverage this richer distributional information towards improved local anomaly detection, we propose
+an anomaly metric based on statistical typicality, a measure of how representative a sequence of
+observations is for a given distribution. Our use of typicality is inspired by previous typicality-based
+OOD detection methods (Nalisnick et al., 2019; Osada et al., 2023; Barkley et al., 2026). However,
+these works are focused on image-level OOD detection where an entire image is classified as OOD,
+and to the best of our knowledge, using typicality for local anomaly detection has not yet been
+explored.
+We begin with the typicality score of Nalisnick et al. (2019), and adapt it to identify local rather
+than whole-image anomalies (Section 4.1). Instead of asking whether an entire image is typical with
+respect to the unconditional prior distribution, we ask whether each pixel is typical with respect to the
+inpainting posterior conditioned on all other pixels in the image. However, this substitution induces
+three major challenges: (i) failure to detect larger local anomalies that span multiple contiguous
+pixels, (ii) loss of statistical validity, because typicality testing requires sampling a sequence of i.i.d.
+observations, and (iii) prohibitive computational cost of performing posterior sampling separately for
+each pixel.
+LACToS tackles these challenges through two innovations: we partition images into superpixels
+and replace pixel-level typicality with superpixel-level typicality (Section 4.2), and we use a single
+denoising posterior as a common proxy for all inpainting posteriors. Our use of superpixels addresses
+challenges (i) and (ii), because a local OOD feature is more likely to be captured by a superpixel than
+a single pixel, and the individual pixels in each superpixel can be treated as independent observations
+to evaluate superpixel-level typicality. Our use of denoising rather than inpainting addresses challenge
+(iii), by dramatically reducing the number of posterior samples needed to estimate typicality. Through
+these innovations, we show that LACToS achieves strong quantitative and qualitative performance
+across a wide range of local OOD detection tasks including detecting tumors in CT scans, detecting
+unusual facial accessories in photographs, and detecting weapons in X-ray baggage scans.
+To summarize, we propose LACToS, a statistical approach to local OOD detection in images using
+an inlier diffusion model and typicality testing. Our method (1) is grounded in statistical typicality,
+and (2) is competitive with, and often more precise than, existing methods across diverse local OOD
+detection tasks with complex inlier distributions.
+2
+PRELIMINARIES
+In LACToS, we treat a diffusion model as an oracle denoiser that samples images consistent with its
+training distribution and a noisy input image. We provide a brief introduction to diffusion models and
+their use in posterior sampling in Appendix A. Here, we provide context on local OOD detection
+methods proposed in prior work, some of which inspired our use of statistical typicality in LACToS.
+OOD detection is studied at both the image and pixel (local) levels. Image-level OOD detection
+assigns a single anomaly score to an entire image, with the goal of identifying images that are not
+drawn from the inlier distribution seen during training. In contrast, we focus on pixel-level OOD
+detection, in which the goal is to produce a dense anomaly heatmap to localize anomalous regions
+2
+
+
+Preprint
+within each image. Formally, given an image x⋆, the goal is to estimate the ground truth anomaly
+mask m⋆. Previous works (Mousakhan et al., 2024; Wyatt et al., 2022; Defard et al., 2021) define
+an anomaly score f(x⋆, j) that captures how likely each pixel j ∈J is to be OOD, where J is an
+index set of size W × H over all pixels. Then, they compute an anomaly heatmap A with elements
+Aj = f(x⋆, j) for each pixel, fix some threshold τ, and set ˆm = 1{A ≥τ}. Many of these works,
+especially those using diffusion models, are reconstruction-based: they generate an in-distribution
+reconstruction of the input using posterior sampling and use discrepancies such as ℓ1, ℓ2, SSIM (Wang
+et al., 2004), LPIPS (Zhang et al., 2018), or feature-space distances as anomaly scores (Zavrtanik
+et al., 2021; Wu et al., 2024; Mousakhan et al., 2024; Pirnay and Chai, 2022). Although effective,
+these methods often collapse the distribution of plausible reconstructions into a first-order statistic,
+such as the mean reconstruction error, which does not capture the full reconstruction distribution and
+can reduce robustness to complex inlier distributions.
+Meanwhile, distribution-aware statistics have been explored across several image-level OOD detection
+methods. For example, EigenScore (Shoushtari et al., 2025) uses the eigenvalue spectrum of the
+posterior covariance, and DDPM-OOD (Graham et al., 2023) aggregates standardized reconstruction
+statistics. There are also typicality-based methods that compare the average negative log-likelihood
+of the samples with the entropy of the inlier distribution (Nalisnick et al., 2019; Osada et al.,
+2023; Barkley et al., 2026). Specifically, let (x(1), . . . , x(N)) be independent draws from the inlier
+distribution p. The (ϵ, N)-typical set is defined as
+T p
+ϵ,N =
+
+(x(1), . . . , x(N))
+
+−1
+N log p(x(1), . . . , x(N)) −H(p)
+ ≤ϵ
+
+,
+(1)
+where H(p) = Ex∼p[−log p(x)] is the entropy of p. By the Asymptotic Equipartition Property
+(Cover et al., 1991),
+−1
+N log p(X(1), . . . , X(N)) −−−−→
+N→∞H(p).
+(2)
+For image-level OOD detection, Nalisnick et al. (2019) estimate the deviation from typicality as
+ˆϵ(x(1), . . . , x(N)) :=
+−1
+N
+N
+X
+n=1
+log p(x(n)) −H(p)
+ ,
+(3)
+and classify a set of samples as OOD when ˆϵ exceeds a threshold. Typicality has been shown to be
+a more effective image-level OOD detection metric than likelihood, especially in high dimensions
+(Nalisnick et al., 2019; Osada et al., 2023).
+3
+MOTIVATION
+The local OOD detection problem has been extensively studied in the context of industrial defect
+detection. Prior works such as PatchCore (Roth et al., 2022), EfficientAD (Batzner et al., 2024),
+GLASS (Chen et al., 2024), and diffusion-based DDAD (Mousakhan et al., 2024) achieve excellent
+performance on widely used benchmarks such as MVTec AD (Bergmann et al., 2019) and VisA
+(Zou et al., 2022). However, we observe that these methods do not extend robustly to other OOD
+detection tasks, such as tumor detection, facial anomaly detection, and security screening using X-ray
+images, as shown in Table 1. One potential cause of this brittleness is the complexity of the inlier
+distribution. Industrial defect-detection datasets often have very structured inlier distributions, as
+products without defects are visually near-homogeneous, whereas CT scans, images of human faces,
+and X-ray baggage scans are far more heterogeneous even in the absence of anomalies. Moreover,
+defects in products are context-agnostic: a defective feature, such as a crack or fracture, is anomalous
+regardless of where in the image or product it occurs. In contrast, a dark region in a CT scan may be
+innocuous normal anatomy in one location, or indicative of a tumor in another.
+Specifically, when the conditional distribution over a local region given the rest of the image is
+multimodal, methods that rely on a first-order statistic may erroneously identify samples from a
+different inlier mode as anomalous. To illustrate this phenomenon through a toy experiment, we
+construct four inlier distributions with increasing complexity levels, and train a diffusion model
+on each inlier distribution. Each image contains four shapes, one per quadrant. In the upper-right
+quadrant, every inlier image contains a circle, which allows us to define all other shapes placed in that
+3
+
+
+Preprint
+quadrant as local anomalies. The other three quadrants can contain a wider variety of shapes, as shown
+in the top row of Figure 2, with the candidate shapes at each level occurring with equal probability.
+From level 1 to level 4, the set of shapes that can be placed in these three quadrants progressively
+grows, which increases the number of modes of the inlier distribution. We then introduce local
+anomalies in test images by replacing the top-right circle with a square, and evaluate two baseline
+methods, DDAD (Mousakhan et al., 2024) and PatchCore (Roth et al., 2022), on how well they can
+correctly identify only the square as an anomaly. The bottom row of Figure 2 demonstrates that
+at a per-image true positive rate (TPR) of 95%, the false positive rate (FPR) increases with inlier
+multimodality for both baseline methods. This trend holds across the TPR values shown in Figure 7.
+For more information on the experimental setup, please refer to Section B.
+4
+METHOD
+Level 1
+Level 2
+Level 3
+Level 4
+0.0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+FPR @ TPR= 95%
+Inlier Complexity
+Level 1
+Level 2
+Level 3
+Level 4
+DDAD 1 sample
+DDAD 20 sample mean
+LACToS 5 samples
+LACToS 1 sample
+LACToS 20 samples
+LACToS 10 samples
+PatchCore
+Figure 2: Multimodality Toy Experiment. (Top) Im-
+ages from the inlier distributions across different com-
+plexity levels. The top-right corner always contains a
+circle, while other corners can contain different shapes,
+with a wider variety of shapes at higher levels. (Bottom)
+False positive rates at true positive rate of 95%, evalu-
+ated on images that contain anomalous squares in the
+top-right corner.
+To tackle this problem, we propose LAC-
+ToS, a typicality-based pixel-level OOD
+detection method using diffusion models,
+which is much more robust to inlier mul-
+timodality.
+In Section 4.1, we first de-
+scribe an idealized extension of an exist-
+ing typicality-based metric for image-level
+OOD detection to pixel-level anomaly lo-
+calization, and several issues that limit its
+direct application. Then, in Section 4.2
+and Section 4.3 we introduce two key tech-
+niques, superpixels and a denoising proxy,
+that help overcome these issues and al-
+low for an effective and tractable approx-
+imation to pixel-level typicality. In Sec-
+tion 4.4, we additionally incorporate ex-
+tracted pixel-level features which can pro-
+vide more informative statistical context
+than color alone.
+Throughout, we use x⋆to denote the test
+image and subscripts to identify specific
+pixels or superpixels. Similarly, we use x
+(again with appropriate subscripts) to de-
+note the corresponding random variable under the prior or posterior, with Monte Carlo realizations
+indexed by superscripts.
+4.1
+TYPICALITY-BASED ANOMALY SCORE
+A natural extension of the existing typicality-based OOD detection metric in Equation (3) from
+images to pixels is conditional typicality. It is defined as
+f inp(x⋆, j) :=
+ −log p(x⋆
+j|x⋆
+−j)−H(p(xj|x⋆
+−j))
+,
+j ∈J ,
+(4)
+where the superscript inp stands for inpainting, x⋆
+j and x⋆
+−j are the values of pixel j and all remaining
+pixels in the test image and all other pixels, respectively, and p(xj|x⋆
+−j) is the distribution of prior-
+consistent values for pixel j when all other pixel values are fixed at their observed values x⋆
+−j.
+Intuitively, we define a pixel in x⋆to be OOD if it does not belong to the typical set with respect to
+this conditional data distribution p(xj|x⋆
+−j), given all other pixel values.
+Unfortunately, this direct extension of typicality to conditional distributions in Equation (4) is not a
+practical score for anomaly detection for the following reasons. (P1) Due to the spatial locality of
+pixel intensities and the smoothness of natural images, the value of a pixel given all others is often
+strongly constrained by nearby pixels. With conditional distributions that are concentrated on a tiny
+set determined by the neighboring pixels, the typicality score is unlikely to capture OOD features
+that span multiple adjacent pixels. (P2) In addition, a single pixel value is a sequence of length 1,
+4
+
+
+Preprint
+which is insufficient for the theoretical guarantees of typical sets (Equation (2)) to hold. Indeed, the
+typicality test of Nalisnick et al. (2019) has been shown to exhibit poor empirical performance on
+single samples (Chauhan et al., 2022). (P3) It is also computationally demanding to compute the
+anomaly heatmap A by approximating Equation (4), as f inp(x⋆, j) has to be evaluated for every
+pixel j ∈J . Using N posterior samples for a Monte Carlo estimate ˆp(xj|x⋆
+−j) of p(xj|x⋆
+−j) for
+each pixel would require a total of N × |J | posterior samples, which is computationally prohibitive
+at practical image resolution H, W. (P4) Finally, raw RGB values often do not capture sufficient
+information about local image contents, including semantic information, which can lead to subpar
+performance in anomaly detection tasks.
+4.2
+SUPERPIXEL-LEVEL TYPICALITY
+Figure 3: A fine-grained su-
+perpixel decomposition of an
+example image.
+Our first key insight is that superpixels (Ren and Malik, 2003;
+Achanta et al., 2012; Stutz et al., 2018), groups of spatially con-
+tiguous pixels that share similar color, can help us address (P1) and
+(P2), by grouping OOD pixels together into small groups that are
+easier to detect and can be treated as a sequence to estimate typicality.
+The latter requires Assumption 4.1, which captures the intuition that,
+within each superpixel, individual pixel values are independent and
+identically distributed. An example of superpixels is visualized in
+Figure 3.
+Concretely, we define S(x⋆) = {Sk ⊂J | k ∈K} to be a fine-
+grained superpixel partition of the pixels in J , which can be ob-
+tained using off-the-shelf superpixel algorithms (Achanta et al., 2012;
+Van den Bergh et al., 2012; Liu et al., 2011; Li and Chen, 2015).
+Here k indexes superpixels and Sk is the set of pixels in superpixel
+k. Let xSk denote image pixels in superpixel k, and x−Sk denote all other pixels.
+Assumption 4.1. [Conditionally i.i.d. pixel values within each superpixel] Given x⋆and S(x⋆),
+there exists a single-pixel distribution qinp
+k
+associated with each superpixel k ∈K such that
+xj | x⋆
+−Sk
+iid
+∼qinp
+k
+∀j ∈Sk.
+Under Assumption 4.1, we define the superpixel-level typicality score ginp as
+ginp(x⋆, k) =
+1
+|Sk|
+−log p(x⋆
+Sk|x⋆
+−Sk)−H(p(xSk|x⋆
+−Sk))
+ =
+−1
+|Sk|
+X
+j∈Sk
+log qinp
+k (x⋆
+j)−H(qinp
+k )
+.
+(5)
+where p(xSk|x⋆
+−Sk) is the conditional distribution of the superpixel given all other pixel values, and
+the last equality holds due to the conditional independence assumption (Assumption 4.1) on the
+pixels in Sk. We can then compute the pixel-level anomaly heatmap A by estimating the typicality
+score in Equation (5) using Monte Carlo sampling. For each superpixel k, this involves drawing
+M samples x(1), . . . , x(M) from the inpainting distribution pinp
+k
+:= p(x | x⋆
+−Sk), extracting pixels
+{x(m)
+j
+}j∈Sk,m∈[M], fitting a histogram ˆqinp
+k
+to estimate qinp
+k , and computing the estimate ˆginp(x⋆, k).
+Finally, for pixel-level scores it is natural to duplicate the same score over all pixels j ∈Sk, i.e.
+ˆf inp(x⋆, j) = ˆginp(x⋆, k) for all j ∈Sk, and apply Gaussian smoothing to smooth out the hard
+boundaries between superpixels.
+Estimating the superpixel-level typicality score ginp rather than the pixel-level typicality score f inp
+helps address these problems. (P1) By inpainting a group of similar pixels instead of a single
+pixel, ginp can better identify local OOD features that span multiple pixels than f inp. (P2) Under
+Assumption 4.1, we are given a sequence of |Sk| independent observations {x⋆
+j}j∈Sk for qinp
+k , which
+facilitates computing a typicality score for each superpixel. (P3) In terms of computational cost,
+the number of anomaly scores to evaluate is reduced from the number of pixels |J | to the number
+of superpixels |K|. We can also use a much smaller number of samples M ≪N to compute the
+histogram ˆqk for qinp
+k , since each posterior sample from pinp
+k
+translates to |Sk| samples from qinp
+k .
+5
+
+
+Preprint
+⋯
+𝐻
+𝑊
+𝐶
+𝑥∗
+𝜂1
+𝜂𝑀
+𝑦1
+𝑦𝑀
+𝜂𝑚iid∼N (0, 𝜎2𝐼)
++
+𝑝(𝑥|𝑦1)
+𝑝(𝑥|𝑦𝑀)
+𝐹∗
+⋯
+𝐹1
+𝑘,1
+𝐹1
+𝑘,5
+𝐹𝑀
+𝑘,1
+⋯
+𝑥1
+𝑥𝑀
+1
+2
+4
+ˆ𝑔(𝑥∗, 𝑘)
++
+𝐶𝑓
+{𝐶′
+𝑓, 𝐶}
+E
+⋯
+⋯
+⋯
+⋯
+ResNet
+Encoder
+𝐹𝑀
+𝑘,5
+𝐹∗
+𝑘,1
+𝐹∗
+𝑘,5
+⋯
+𝐹𝑀
+𝐹1
+𝑞𝑘
+For Superpixel k
+3
+3 4 5
+1 2
+𝐹∗
+3 4 5
+1 2
+𝐴
+3 4 5
+1 2
+3 4 5
+1 2
+𝐹1
+𝐹𝑀
+Figure 4: LACToS Overview. (1) Posterior Sampling. We sample noise independently from
+an isotropic Gaussian distribution and add it to the test image x⋆to create noised versions of x⋆
+denoted by ym. Then, using diffusion-based posterior sampling methods, we sample reconstructions
+xm ∼p(x|ym). (2) Feature Extraction. For x⋆and each sample xm, we pass the image through
+a pretrained ResNet model, extract activations, and compress them using an encoder to create a
+feature vector of dimension C′
+f + C for each pixel, where C is the original channel dimension. (3)
+Histogram Fitting. For a given superpixel k, we gather the features of the reconstructed pixels in
+the superpixel, and construct ˆqden
+k
+, a C′
+f + C-dimensional histogram. (4) Typicality Computation.
+Finally, using the fitted histogram, we compute the typicality of the pixel features in x⋆and report
+the anomaly heatmap A.
+4.3
+DENOISING POSTERIOR
+Although superpixel-level typicality reduces the required number of posterior samples from |J |N
+to |K|M, the cost remains prohitive for fine superpixel partitions. For instance, Figure 3 shows
+a 256×256 image partitioned into 2,600 superpixels (approximately 25 pixels per superpixel on
+average), which would require a total of at least 2600 posterior samples using a diffusion model. This
+cost could be reduced by partitioning the image into fewer, larger superpixels, but these may struggle
+to localize small anomalies and fail to satisfy Assumption 4.1.
+We overcome this problem (P3) by estimating qinp
+k
+for all k ∈K simultaneously using a small number
+of posterior samples. Instead of using different samples from each of the inpainting conditional
+distributions {pinp
+k }k∈K, we use the same M samples from the denoising conditional distribution,
+defined as
+pden(x) := Eη∼N (0,σ2I)
+
+p(x | x⋆+ η)
+
+.
+(6)
+For each Sk, we pool the pixel values across these samples to form {xm
+j }j∈Sk,m∈[M], which we use
+to fit a histogram for qinp
+k , and compute the anomaly score.
+Intuitively, pden serves as a shared relaxation of the superpixel-specific inpainting posteriors
+{pinp
+k }k∈K. In each pinp
+k , the complement x⋆
+−Sk is fully observed while x⋆
+Sk is left unobserved.
+For the denoising posterior pden, there is a tension between information on x⋆
+−Sk and lack of informa-
+tion on x⋆
+Sk, controlled by the noise level σ. With increasing σ, we lose more information about x⋆
+Sk,
+which is desirable, but we also lose information about the context x⋆
+−Sk. The following theorem infor-
+mally bounds the error introduced by replacing the inpainting posterior with the denoising posterior.
+Appendix section D states and proves the formal result and gives bounds without Assumption 4.1.
+Theorem 4.1. (Informal). Let ginp(x⋆, k) and gden
+σ
+(x⋆, k) be the anomaly scores obtained using
+the ideal inpainting distribution and the proxy denoising distribution with a noise distribution of
+N(0, σ2I), respectively. Under appropriate assumptions, the error can be bounded as
+ginp(x⋆, k) −gden
+σ
+(x⋆, k)
+ ≤αkσ + βkσ−γk
+for some positive constants αk, βk, and γk.
+6
+
+
+Preprint
+4.4
+FEATURE AUGMENTATION
+One final problem remains (P4): RGB values alone may not distinguish local ID and OOD features.
+To address this issue, (P4) we follow the convention of previous works (Mousakhan et al., 2024; Roth
+et al., 2022; Defard et al., 2021) and augment RGB values with additional features. Specifically, we
+extract the activations of the last three layers of a pretrained ResNet (He et al., 2016) ϕ, as later layers
+of convolutional neural networks are known to encode higher-level visual structure and have been
+widely used as transferable representations for downstream vision tasks (Razavian et al., 2014; Zeiler
+and Fergus, 2014). The high activation dimension, denoted as Cf, can increase histogram estimation
+error when few samples are available. We therefore use an autoencoder trained on each ID dataset to
+compress the features to dimension C′
+f(≪Cf); in our experiments we use C′
+f = 3.
+Algorithm Summary.
+Our complete algorithm, illustrated in Figure 4, can be summarized as
+follows. First, we generate M samples from the denoising conditional distribution pden through
+posterior sampling using a diffusion model. Second, each of the samples is passed through ϕ to
+extract features, which are then compressed using the trained encoder E. Third, the pixel values and
+the compressed features are concatenated, resulting in
+um
+j := (xm
+j , E(ϕ(xm)j)) ∈RC+C′
+f
+for each pixel j. Fourth, the augmented vectors um
+j that belong to each superpixel Sk are collected to
+form {um
+j }j∈Sk,m∈[M] and used to construct a histogram ˆqk, an estimate of the C + C′
+f-dimensional
+distribution qinp
+k . The fourth step is repeated over all superpixels, after which we can compute the
+anomaly map by computing the typicality of x⋆for each superpixel (Equation (5)), and finally apply
+spatial Gaussian smoothing to refine pixel-level anomaly scores across superpixel boundaries.
+5
+EVALUATION
+Datasets.
+We evaluate LACToS on three local anomaly detection datasets spanning medical imaging,
+human faces, and X-ray security screening (Table 4). In each case, the diffusion model in LACToS is
+trained only on ID images, and all methods are evaluated on a held-out test set. Each test set includes
+an equal number of ID images and images containing local OOD features.
+CHAOS (Kavur et al., 2019) provides abdominal CT scans of healthy patients. We train on 3,070
+inlier slices and construct a test set containing 100 healthy test slices and 100 locally anomalous slices
+acquired by adding synthetic tumor to each. Following common practice in CT image analysis (Wang
+et al., 2021; Thummerer et al., 2023; Su et al., 2019), we apply the provided body mask at evaluation
+to exclude background pixels. FFHQ (Karras et al., 2019) is a dataset of high-quality face images,
+which we treat as the inlier distribution. We train on a random subset of 5,000 images, and manually
+curate an OOD test set of 50 photographs of movie and television characters with prosthetics or
+atypical facial features (e.g., scars, metal implants), verified not to overlap with FFHQ. The ID test
+set contains 50 randomly selected held-out FFHQ images. DVXray (Ma et al., 2024) is a dataset
+of X-ray luggage scans, with an ID set of weapon-free bags and an OOD set containing weapons.
+We train on 5,000 inlier images and restrict the OOD test set to the scissors category, where targets
+are small and spatially confined. For randomly sampled scissor images, we used SAM 3 (Carion
+et al., 2026) to convert the dataset’s bounding-box annotations into segmentation masks, manually
+discarding images with visibly inaccurate masks for a final OOD test set of 72 images. We construct
+an ID test set that also contains 72 images, none of which contains a weapon.
+Baselines & Models.
+We compare LACToS against six strong baselines developed for industrial
+defect detection, spanning representation- and reconstruction-based methods. PatchCore (Roth
+et al., 2022) builds a coreset-subsampled memory bank of ID patch features from a frozen ImageNet-
+pretrained backbone and scores test patches by nearest-neighbor distance. SimpleNet (Liu et al.,
+2023) learns a feature adapter and a discriminator that separates adapted ID features from synthetic
+anomalies generated by injecting Gaussian noise in feature space. SuperSimpleNet (Rolih et al.,
+2024) extends SimpleNet with architectural and training improvements for fast, reliable surface
+defect detection. EfficientAD (Batzner et al., 2024) combines a lightweight student–teacher model
+with an autoencoder to detect local structural anomalies and violations of global logical constraints
+through feature discrepancies. GLASS (Chen et al., 2024) trains a discriminator to separate ID
+7

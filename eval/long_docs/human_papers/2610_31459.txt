@@ -1,0 +1,866 @@
+How Different, or Different How? Stance Granularity in Viewpoint
+Selection for Dialog Systems that Engage Users with Alternative Views
+Morita Tarvirdians*
+Reeve Lorena*
+Catharine Oertel
+TU Delft, Delft, The Netherlands
+M.Tarvirdians@tudelft.nl
+reevelorena@gmail.com
+c.r.m.m.oertel@tudelft.nl
+Abstract
+Systems that aim to help a user engage with
+viewpoints other than their own have to de-
+cide how different those viewpoints should be.
+Viewpoints are mainly represented on a scalar
+scale, too coarse to distinguish viewpoints that
+disagree with the user about different things.
+We introduce a selection policy in which a ban-
+dit sets how far viewpoints may sit from the
+user, and the policy selects the most novel view-
+point within that bound. We vary only its stance
+encoder, comparing a scalar score with Perspec-
+tivized Stance Vectors, which break a position
+into separate stances on concepts. We integrate
+it inside a dialog system and run a between-
+subjects study (N = 63). Concept-level stance
+produces more varied exposure sequences and
+broader coverage of the topic’s positions, but
+does not change how deeply users justify view-
+points or how accurately they reconstruct them.
+Finally, we analyze user–viewpoint relations
+at the concept level, showing that users recon-
+struct a viewpoint least accurately on concepts
+that one side took no position on, rather than
+on concepts where the two disagreed. Our find-
+ings open up opportunities for dialog systems
+that support engagement with alternative view-
+points by acting on which concepts a user and a
+viewpoint disagree on, rather than on distance
+alone.
+1
+Introduction
+Public discourse increasingly takes place in infor-
+mation environments such as social media feeds,
+search results and recommender systems, where
+people selectively encounter views consistent with
+their existing positions (Frey, 1986; Zarouali et al.,
+2021). In politically contentious settings this is
+associated with affective polarization, which in-
+creases hostility toward opposing groups and re-
+duces willingness to interact with them (Iyengar
+and Westwood, 2015; Iyengar et al., 2019). One
+* Equal contribution.
+You (participant) 
+“Food hunting is okay, 
+but trophy hunting is 
+cruel.”
+Viewpoint corpus
+…
+Viewpoint A 
+“Hunting for food 
+is still killing 
+animals.”
+Viewpoint B 
+“Eating game is fine, 
+but hunting is not a 
+good outdoor hobby.”
+SCALAR
+PSV
+against
+for
+1
+2
+3
+4
+5
+A B
+you
+you: 3 (neutral) · A, B: 2
+you A
+B
+hunt game
+hunter
+while hunting animals
+outdoor activity
+good
++
+0
+−
+0
+0
+−
+0
+−
+0
+0
++
+0
+−
+−
+−
+Selects A 
+“Hunting for food is still 
+killing animals.”
+Selects B 
+“Eating game is fine, but 
+hunting is not a good 
+outdoor hobby.”
+Asks (same in both conditions) 
+Q1 “Can you explain in your own words what you 
+understand this perspective to be saying?” Q2 ...Q5
+until k 
+viewpoints
+Figure 1: Two viewpoints a single stance score can-
+not tell apart. Under SCALAR both are rated 2 against
+the user’s 3, so neither is closer and the system picks
+arbitrarily. Under PSV they disagree with the user on
+different concepts (highlighted), so B is selected as the
+more novel. Both conditions then ask the same Socratic
+style questions, repeating until k viewpoints are shown.
+response is to structure exposure to perspectives
+other than a user’s own, drawing on perspective-
+taking, the process of understanding a situation
+from another person’s point of view (Reniers et al.,
+2022).
+Providing alternative views is not sufficient on
+its own, because the relation between a new view
+and a person’s existing position shapes how they
+process it (Lewandowsky et al., 2012; Zhou and
+Shen, 2024). A view close to what a user already
+holds adds little, while one far from it may be dis-
+missed rather than considered (Sherif and Hovland,
+1961). Which views a user sees should therefore
+depend on where that user stands, and several sys-
+tems select on this basis, choosing what to show
+next from the arguments a user has already been
+exposed to (Aicher et al., 2022, 2023b,a). Such a
+system compares each candidate viewpoint with
+the user’s own position, and a viewpoint can differ
+arXiv:2610.31459v1  [cs.HC]  22 Oct 2026
+
+
+from that position in two ways. It can differ in
+degree, by opposing the user more or less strongly,
+and in kind, by opposing a different aspect of the
+issue. Which of these differences a system selects
+on is an open question.
+How a system represents stance of a viewpoint
+decides which of the two it can act on at all. Stance
+is usually summarised as a single point on an or-
+dinal scale running from opposing to supporting a
+position, which records degree and discards kind.
+Two viewpoints that oppose different aspects of an
+issue can land on the same point of that scale, and a
+system comparing them with a user sees one value
+for both. Figure 1 shows this for hunting. Both
+viewpoints sit two steps from the user’s position,
+so a system using the SCALAR scale has no basis
+for preferring either, even though the aspects they
+disagree with the user about are not the same. A
+system that cannot see a difference cannot select
+on it, whatever rule it applies.
+Finer representations do exist. Perspectivized
+Stance Vectors (PSV), for example, record a sep-
+arate stance toward each of several concepts in
+an issue (Plenz et al., 2025), so two viewpoints
+that oppose different aspects receive different vec-
+tors (Figure 1, right). What such a representation
+changes for a user has not been tested, because a
+system that adopts a new representation normally
+changes the rule that uses it at the same time, leav-
+ing the two effects confounded. We therefore keep
+selection policy–the rule that decides which view-
+point to show next– fixed and swap only the stance
+representation underneath it, comparing a single or-
+dinal score (SCALAR) with Perspectivized Stance
+Vectors (PSV). We implement this policy in a di-
+alog system that presents the selected viewpoints
+and asks users about each of them.
+Isolating the representation in this way lets us
+ask three questions. RQ1: How does represent-
+ing stance at the concept level, rather than as a
+single score, change the viewpoints shown to a
+user? RQ2: Does concept-level stance represen-
+tation affect how fully users justify viewpoints and
+how accurately they reconstruct them? RQ3: How
+does the concept-level relation between a user’s
+stance and a viewpoint’s stance relate to recon-
+struction accuracy? Answering them contributes
+a viewpoint-selection policy that operates over in-
+terchangeable stance representations, an account
+of what each representation makes available both
+to users and across the full stance space, and a
+concept-level analysis of reconstruction that a sin-
+gle aggregate score leaves hidden.
+2
+Related Work
+Selecting viewpoints for a particular user draws
+on three lines of work. Argument retrieval defines
+how candidates are found. User-conditioned selec-
+tion makes that choice depend on the recipient and
+on what they have already seen. Work on stance
+supplies the signal that relates a candidate to a user.
+We review each below, asking in each case how the
+relation between a user and a candidate viewpoint
+is represented, since that representation is what we
+vary.
+Argument retrieval and user-conditioned selec-
+tion.
+Argument retrieval finds arguments relevant
+to a query, including arguments with particular ar-
+gumentative properties (Wachsmuth et al., 2018).
+Argument recommendation conditions that selec-
+tion on the recipient. Brenneis et al. (Brenneis et al.,
+2021) introduce a dataset for evaluating argument
+recommenders from personal attitudes and interac-
+tions with arguments, more recent work incorpo-
+rates user or stakeholder perspectives (Heinisch
+et al., 2024; Aicher et al., 2022), and Perspec-
+tiveArg2024 formulates perspective-aware argu-
+ment selection as a retrieval task (Falk et al., 2024).
+These approaches establish user and perspective
+information as retrieval signals, but differ in how
+they represent the relation between a user and a
+candidate argument.
+Selection can also unfold over a conversation,
+with the user’s current state and the arguments al-
+ready shown affecting what comes next. Aicher
+et al. (Aicher et al., 2022, 2023a) model exposure
+histories and user positions in argumentative dialog
+systems to identify arguments that broaden subse-
+quent exposure, showing that selection can operate
+as a policy over an evolving interaction rather than
+as one-shot retrieval. Our policy similarly selects
+over a session rather than in one shot.
+Stance as a retrieval signal.
+Stance provides a
+direct signal for distinguishing arguments in con-
+troversial discussions. Methods exist for identify-
+ing the position expressed toward a topic or tar-
+get (Durmus et al., 2019; Kobbe et al., 2020), and
+stance has been incorporated into retrieval and rank-
+ing through stance-aware query expansion (Kiesel
+et al., 2021) and stance-aware re-ranking for com-
+parative retrieval (Reimer et al., 2023). These ap-
+proaches treat stance as a property attached to an
+
+
+argument. In our setting stance instead defines the
+space in which candidates are compared, so that the
+distance between a user’s stance and a candidate
+determines eligibility and the stance representation
+determines which differences a policy can distin-
+guish.
+Conditioning on stance distance is supported by
+work on how arguments are processed.
+Social
+Judgment Theory models messages relative to a
+receiver’s existing position (Sherif and Hovland,
+1961), and studies of belief revision and misin-
+formation show that the discrepancy between in-
+coming information and prior beliefs affects how
+that information is processed (Durmus and Cardie,
+2018; Zhao and Fink, 2021; Lewandowsky et al.,
+2012). This literature motivates conditioning selec-
+tion on user–viewpoint distance without specifying
+how that distance should be represented.
+Fine-grained stance representations.
+A com-
+pact stance representation characterizes an argu-
+ment’s position toward a target, but collapses dis-
+tinctions between positions on different aspects of
+an issue. Plenz et al. (Plenz et al., 2025) address
+this with Perspectivized Stance Vectors, which rep-
+resent an argument through its stances toward a
+shared set of issue-specific concepts, making agree-
+ment and disagreement explicit at the level of in-
+dividual concepts. They use concept-level stance
+to analyze agreement between arguments after re-
+trieval. We use it instead as the representation over
+which a viewpoint-selection policy operates.
+3
+Method
+We formulate viewpoint selection as a retrieval
+problem over a fixed corpus of viewpoints. Our
+methodology represents the stance of the partici-
+pant and candidate viewpoints, computes their dis-
+tance in the resulting stance space, and uses this dis-
+tance together with novelty to select and order five
+viewpoints. We integrate this selection policy into
+a dialog system that encodes the participant’s free-
+text stance and presents the selected viewpoints.
+Figure 2 illustrates this selection framework. The
+remainder of this section describes the viewpoint
+corpus, stance representations, selection policy, and
+the dialog system.
+3.1
+Viewpoint Corpus
+We use the animal-hunting corpus of Plenz et al.
+(2025), drawn from Debate.org. After filtering, the
+corpus contains 364 viewpoints (Appendix A). The
+xu “Food hunting is okay; 
+trophy hunting is cruel.”
+φ
+viewpoints v ∈ 𝒱
+SCALAR
+1
+2
+3
+4
+5
+v
+u
+d = |ku − kv| = 1
+PSV
+−0 +
+−0 +
+hunt game
+hunter
+while hunting animals
+outdoor activity
+good
+u
+v
+d = ‖Pu − Pv‖1 = 4
+π fixed
+same selection policy for both: PSV top, SCALAR bottom
+ε-greedy: pick δ
+2
+4
+6
+8 10
+1
+2
+3
+4
+eligible: unseen, d ≤ δ
+u
+δ
+far
+u
+1
+2
+3
+4
+max novelty
+seen
+v +3
+v′ +1
+v +1
+v′ 0
+1 2 3 4 5
+next viewpoint
+v1
+v2
+v3
+v4
+v5
+φ varies
+φS
+φP
+u = φ(xu),  φ(v) for all v
+Figure 2: Viewpoint-selection framework. Only the
+stance encoder φ varies. It maps the participant stance
+and the candidate viewpoints into a scalar or a concept-
+level (PSV) space, giving the distance d. The policy π
+is identical in both conditions. An ε-greedy mechanism
+sets the bound δ, and the most novel unseen viewpoint
+within it is selected, repeating five times
+original corpus provides Perspectivized Stance Vec-
+tors (PSVs) over 100 concepts. For selection we
+reduce this to a fixed five-concept signature, hunt
+game, hunter, while hunting animals, outdoor activ-
+ity and good. Concepts were ranked by how much
+their stance varies across the corpus, how often they
+take a non-neutral stance, and how well they sepa-
+rate pro from con arguments, and the top five were
+retained (Appendix B). The reduction preserves
+the structure of the full 100-concept representation,
+which yields a closely matching clustering of the
+corpus (adjusted Rand index .92).
+3.2
+Stance Representations
+A stance representation encodes a position so that
+two positions can be compared numerically. We
+compare a scalar representation with a concept-
+level representation based on PSVs.
+SCALAR.
+A stance is encoded as an ordinal value
+ka ∈{1, . . . , 5}, from strongly against to strongly
+for, following a common stance operationalization
+(Chuang et al., 2026). The distance between two
+stances is dS(a, b) = |ka −kb|. This representa-
+tion distinguishes five overall positions but does
+not encode which aspects of the issue produce the
+difference.
+PSV.
+Following Plenz et al. (2025), a stance is
+encoded as an N × 3 one-hot matrix P, with each
+
+
+row representing a stance (against, neutral, or for)
+on concept i. Distance is the number of concept–
+stance changes between two positions:
+dP(Pa, Pb) =
+N
+X
+i=1
+3
+X
+j=1
+|Pa,ij −Pb,ij|.
+With N = 5, the representation can encode 35 =
+243 positions, of which 35 occur in our corpus.
+3.3
+Selecting and Ordering Viewpoints
+We formulate viewpoint selection as retrieval over
+a fixed corpus, because rather than generating new
+content, the system selects one unseen viewpoint
+at each step. Let V be the corpus (Section 3.1),
+ϕ : Σ∗→S the stance encoder, and d a distance
+over the resulting stance space (Section 3.2). A
+participant’s stance is u = ϕ(xu), where xu is their
+own view on the topic, written as free text before
+the session.
+Let H denote the viewpoints already shown. At
+each step, the policy first restricts selection to un-
+seen viewpoints within a distance bound δ of the
+participant’s stance. This defines the eligible set:
+W = {v ∈V \ H : d(ϕ(v), u) ≤δ}.
+(1)
+Distance alone does not determine which eligible
+viewpoint is selected. To favor viewpoints that add
+new stance information, we score each candidate
+by the stance features it introduces that have not
+appeared in previously shown viewpoints:
+nov(v, H) =
+σ(v) \
+[
+h∈H
+σ(h)
+,
+(2)
+where σ(v) is the set of stance features associated
+with v. Under PSV, these are the five concept–
+stance pairs; under SCALAR, the feature is the sin-
+gle ordinal stance level.
+The policy then selects the eligible viewpoint
+with the highest novelty score:
+π(u, H) = arg max
+v∈W
+nov(v, H).
+(3)
+Ties are broken by smallest distance and then uni-
+formly at random. If no unseen viewpoint satisfies
+the distance bound, the nearest unseen viewpoint
+is selected. Figure 2 illustrates these three stages.
+Distance and novelty serve complementary pur-
+poses. The distance bound limits how far a view-
+point may differ from the participant, measured
+as the difference between overall ratings under
+SCALAR and the L1 distance between concept-
+level stance vectors under PSV. Novelty favors
+viewpoints that introduce stance features not cov-
+ered by the session history. Without novelty, the
+policy could repeatedly select nearby viewpoints
+with highly similar positions.
+The stance representation determines how both
+criteria operate. SCALAR encodes five overall po-
+sitions and assigns one feature to each viewpoint,
+making novelty binary. At any given distance from
+the participant, at most two scalar positions are
+possible. PSV represents each viewpoint through
+five concept–stance pairs, allowing novelty to re-
+flect which aspects of the issue have not yet been
+encountered.
+At the start of each session, an ε-greedy ban-
+dit (Sutton and Barto, 2018) selects δ from the
+distances available in that condition. The bound
+remains fixed throughout all five viewpoints. The
+bandit’s arm values are updated between sessions
+using the depth of participants’ answers (Sec-
+tion 4.3); responses do not change the sequence
+within the current session.
+Dialog system.
+The policy runs inside a text-
+based dialog system. Each turn presents a view-
+point unchanged from the corpus, framed as the
+view of a person identified by an arbitrary unisex
+first name. Five names are used, with no further
+information provided about these individuals. The
+system then asks five fixed Socratic-style questions
+(Danry et al., 2023; Ang et al., 2023) that scaffold
+perspective-taking by asking the participant to artic-
+ulate each position from the speaker’s point of view
+(Reniers et al., 2022). They move from restating
+the position, through the reasons and assumptions
+behind it, to how it relates to the participant’s own
+view (Appendix C). Participants answer in free text.
+A session presents k = 5 viewpoints and therefore
+25 written answers from each participant. The ban-
+dit uses the depth (Section 4.3) of these answers
+to update its arm values, informing the distance
+bound selected for subsequent sessions.
+4
+User Study
+4.1
+Study Design and Procedure
+We conducted a between-subjects study on Should
+animal hunting be allowed?. The study was online.
+Participants first completed a consent form, the
+perspective-taking subscale of the Interpersonal
+Reactivity Index (IRI-PT) (Davis, 1983), and wrote
+their own view on the issue as free-text. Then they
+
+
+interacted with the dialog system (Section 3.3),
+followed by the reconstruction task (Section 4.3).
+4.2
+Participants
+Participants were auto-balanced between the two
+conditions. Of 79 participants, 63 completed the
+study, 31 in SCALAR and 32 in PSV condition.
+They were recruited through personal networks and
+were not compensated. Conditions did not differ
+on IRI-PT, gender, or age bracket (Appendix E).
+4.3
+Measures
+Exposure (RQ1).
+From session logs, we count
+distinct exposure sequences and the concept–stance
+pairs covered per session. We also replay the policy
+over the full corpus for every possible participant
+position.
+Justification depth (RQ2).
+To measure whether
+participants gave reasons rather than merely restat-
+ing a viewpoint, each written answer is scored from
+0 (bare assertion) to 3 (two or more distinct rea-
+sons), following Trénel (2004); Steenbergen et al.
+(2003). This measure reflects the role of addressing
+reasons in engaging with opposing positions (Kuhn
+and Udell, 2007). Scores are averaged across the
+five answers for each viewpoint and rescaled to
+[0, 1].
+Reconstruction accuracy (RQ2, RQ3).
+After
+each session, participants reconstruct one randomly
+selected viewpoint by labeling each of its five con-
+cepts as against, neutral, or for. We compare the
+reconstructed profile ˆP with the true profile P us-
+ing 1 −L1( ˆP, P)/(2N), yielding scores from 0 to
+1, with chance at 1/3.
+Target specificity (RQ3).
+We score the recon-
+struction of one randomly selected viewpoint
+against all five viewpoints shown in the session.
+Specificity is the score difference between the tar-
+get and the other viewpoints, adjusted by the score
+expected from a reconstruction with no knowledge
+of the target. It therefore measures whether the
+reconstruction identifies the intended viewpoint be-
+yond what could be explained by how distinct the
+session’s viewpoints are.
+Concept-level relation (RQ3).
+For each con-
+cept, we classify the participant’s and viewpoint’s
+stances as matching, opposing, or involving at least
+one neutral stance. We also test whether errors on
+differing concepts tend to reflect the participant’s
+own stance, comparing observed errors with a per-
+mutation null.
+4.4
+Analysis
+Only the condition comparison of reconstruction
+accuracy was pre-specified; all other analyses are
+exploratory. We report estimates with confidence
+intervals and apply Holm correction within test
+families. Per-concept outcomes are analyzed using
+binomial GEE with participant-clustered standard
+errors, and justification depth using a mixed model
+with participant random intercepts. The corpus
+replay covers all participant positions and distance
+bounds, with 100 seeds per setting.
+5
+Results
+5.1
+Concept-Level Stance Individualizes and
+Broadens Exposure
+RQ1 asks how concept-level stance representation
+changes the viewpoints shown to participants. Fig-
+ure 3 shows each viewpoint’s distance from the
+participant in the representation used for selection.
+Because the panels use different scales, we com-
+pare counts rather than distances across conditions.
+We count distinct distance sequences, each defined
+by the five distances in presentation order; sessions
+with the same distance sequence count as one even
+if they show different viewpoints.
+Sequences.
+The 31 SCALAR sessions produced
+6 distinct distance sequences, compared with 24
+across the 32 PSV sessions. Under SCALAR, the
+first viewpoint matched the participant’s stance in
+all 31 sessions, the second was one step away in
+all 31, and the third was one step away in 27. The
+fourth and fifth returned to the participant’s stance
+in 23 and 26 sessions, respectively. The sequence
+is fully determined by the participant’s stance and
+the distance bound, with each of the 9 observed
+combinations producing exactly one sequence (Ap-
+pendix F). Over the condition as a whole, 82 of
+the 155 viewpoints shown (52.9%) sat at the par-
+ticipant’s own stance. Under PSV the first view-
+point matched the participant on all five concepts
+in 20/32 sessions. The second sat at the furthest
+distance the bound allowed in 27/32, after which
+distance fell across the remaining slots, with means
+of 7.1, 6.1, 3.6 and 2.5 at slots 2 to 5.
+Coverage.
+The issue has 15 concept–stance com-
+binations, one for each of the three stances on each
+of the five concepts, and a session covers those its
+
+
+viewpoints take between them. PSV sessions cov-
+ered 13.7 of the 15 on average (SD 2.2), against
+11.0 under SCALAR (SD 2.4). All 15 appeared
+in 22 of 32 PSV sessions and in 1 of 31 under
+SCALAR.
+Distance and coverage.
+At each sequence posi-
+tion, participant distance was strongly correlated
+with the number of newly introduced concept–
+stance combinations under both PSV (ρ = .72–.95)
+and SCALAR (ρ = .73–1.00), where both measures
+varied. Thus, more distant viewpoints tended to in-
+troduce more new combinations, linking exposure
+to disagreement with the novelty criterion used by
+the policy.
+Corpus replay.
+To test whether these patterns
+depended on the participants sampled, we replayed
+the deployed policy across the full corpus for all
+possible participant positions, 5 scalar ratings and
+243 PSV profiles. We evaluated every distance
+bound using 100 seeds. Each SCALAR rating–
+bound combination produced exactly one sequence.
+At the widest bound, PSV covered all 15 combina-
+tions in every run, compared with a mean of 12.7
+(SD 1.2) under SCALAR, which covered all 15 in
+only 5% of runs (Appendix G). At the narrowest
+bound, mean coverage was 9.1 under PSV and 8.3
+under SCALAR; PSV selected the nearest unseen
+viewpoint as a fallback in 52.5% of selections. The
+corpus contained at most two scalar rating levels
+at any given distance, compared with a median of
+6–12 PSV profiles at each L1 distance from 4 to 8.
+Overall, concept-level stance representation pro-
+duced more varied distance sequences and broader
+coverage of concept–stance combinations. The
+distance bound constrained how far selected view-
+points could differ from the participant, while nov-
+elty shaped which viewpoints were selected within
+that constraint.
+5.2
+Reconstruction Is Hard Under Both
+Representations
+RQ2 asks whether concept-level stance affects jus-
+tification depth and viewpoint reconstruction.
+Participants reconstructed 43.9% of concept
+stances under SCALAR (68/155) and 48.7% un-
+der PSV (78/160), OR 1.22 [0.72, 2.06]. Both
+conditions sit above the 33.3% chance level. We
+re-ran the comparison without the 21 “not sure” an-
+swers, without the four participants whose stance
+was unresolved, without each participant in turn,
+0
+1
+2
+3
+4
+L1 on the 1–5 Likert scale
+SCALAR   (n = 31 sessions, 1 unresolved stance)
+1
+2
+3
+4
+5
+Position in sequence
+0
+2
+4
+6
+8
+10
+L1 in 5-concept PSV space
+PSV   (n = 32 sessions, 3 unresolved stance)
+δ = 2
+δ = 4
+δ = 6
+δ = 8
+δ = 10
+condition mean
+one session
+unresolved stance
+Figure 3: Distance between each viewpoint and the
+participant by sequence position. Top: SCALAR; bot-
+tom: PSV. Scales differ and should not be compared
+vertically. Lines show sessions; thick lines are condi-
+tion means, dashed lines the four sessions with unre-
+solved participant stance, and jitter separates identical
+sequences.
+and against the second labelling of the same view-
+points. The odds ratio stayed between 1.10 and
+1.41 throughout, so the small PSV advantage is
+steady and never becomes reliable (Appendix H).
+We score each participant’s description not only
+against the viewpoint they were asked about but
+also against the other four they saw. It fitted the
+intended viewpoint best for 24 of 32 participants
+under PSV and 13 of 31 under SCALAR. That gap
+opens more easily when a session’s five viewpoints
+are far apart, because one description can then fit
+only one of them, while in a session of similar
+viewpoints the same description fits all five about
+equally well. SCALAR sessions were the tighter
+ones (mean distance 5.3 against 6.3). The size
+of the advantage does not differ between condi-
+tions (+0.055 [−0.07, 0.18]), and subtracting what
+a reconstructor with no knowledge of the target
+would score on the same sessions leaves it there
+(Appendix I).
+Justification depth, scored on the answers par-
+ticipants wrote during the session, showed no con-
+dition difference either. It averaged 0.44 under
+SCALAR and 0.40 under PSV (b = −.04 [−.15,
+.07], 1,575 turns), with similar response length
+(30.7 against 28.6 words) and no condition dif-
+
+
+ference on any question, although the common-
+ground question (Q5, Appendix C) was the hardest
+in both conditions (0.19 against 0.60 on the ques-
+tion asking for reasons).
+Across all 63 participants, the longer someone
+spent answering during the session, the better their
+reconstruction accuracy afterwards (OR 1.45 per
+SD of time on task [1.09, 1.93]). However, jus-
+tification depth during the session fell from one
+viewpoint to the next, by 0.013 of the scale per slot,
+or about 0.05 between the first viewpoint and the
+fifth (p = .001). It did not depend on how far a
+viewpoint sat from the participant’s own stance in
+either condition, so participants did not write shal-
+lower answers about the viewpoints they disagreed
+with most.
+Stance representation therefore changed which
+viewpoints participants saw (Section 5.1) without
+changing how well they understood them.
+5.3
+Neutral Positions, Not Disagreement, Are
+Hardest to Reconstruct
+Participants were right on 55.6% of concepts where
+they and the viewpoint took the same side (79/142),
+51.2% where they took opposite sides (22/43), and
+34.9% where at least one side was neutral (44/126),
+against chance at 33.3% (Table 1). Accuracy was
+higher where they agreed than where either side
+was neutral (OR 2.09 [1.20, 3.65], Holm p = .029),
+and no different where they disagreed (OR 1.19
+[0.59, 2.42], p = .63). Disagreeing with a view-
+point therefore did not make it harder to read.
+The shortfall sat where the participant was neu-
+tral, at 24% (11/45), below chance and below agree-
+ment (OR 0.28 [0.13, 0.61], p = .001). Where only
+the viewpoint was neutral it was 42% (22/53), no
+different from agreement. Participant-neutral labels
+were also the least stable when re-measured, 10 of
+25 changing, so we treat this split as exploratory.
+The pattern held in both conditions (p = .85)
+and under offline re-measurement (OR 1.86, Holm
+p = .048).
+Within PSV, accuracy fell as participant and
+viewpoint differed on more concepts, OR 0.82 per
+L1 unit [0.72, 0.92], about 0.67 per concept, over
+29 participants (Figure 4). The slope stayed be-
+tween 0.74 and 0.88 across adjustments for text
+features, participant extremity, slot, offline stance
+labels, concept relation, and dropping each par-
+ticipant in turn. It was steepest where participant
+and viewpoint agreed (OR 0.68 [0.50, 0.93] against
+0.98 where either was neutral), so distance cost ac-
+Relation
+Scalar
+Psv
+All
+Same side
+35/65 (.54)
+44/77 (.57)
+79/142 (.56)
+Opposite sides
+9/19 (.47)
+13/24 (.54)
+22/43 (.51)
+Either neutral
+24/70 (.34)
+20/56 (.36)
+44/126 (.35)
+participant
+5/28 (.18)
+6/17 (.35)
+11/45 (.24)
+viewpoint
+11/27 (.41)
+11/26 (.42)
+22/53 (.42)
+both
+8/15 (.53)
+3/13 (.23)
+11/28 (.39)
+Table 1:
+Reconstruction accuracy by participant–
+viewpoint stance relation, shown as correct/total (accu-
+racy). Chance is .33. Participant stances were extracted
+at runtime under PSV and post hoc under SCALAR.
+curacy even where they agreed. Under SCALAR we
+found no such association (OR 0.96 [0.84, 1.11]).
+The interaction was not reliable (p = .33) and the
+two distance scales are not comparable, so this is
+not a condition difference.
+Where participant and viewpoint agreed, 33 an-
+swers were still wrong. Of those, 21 said the view-
+point held no position and 12 gave the opposite
+one. Nine of the 21 were “not sure” answers, and
+without them the split is even, so we cannot say
+participants tended to leave a stance unattributed
+rather than reverse it.
+Participants might have substituted their own
+stance for the viewpoint’s when reconstructing it.
+When their stance differed from the viewpoint’s,
+two incorrect labels were possible, only one of
+which matched their own stance, giving a chance
+rate of 0.5. Participants used their own stance in
+21 of 35 PSV errors and 23 of 48 SCALAR errors.
+These proportions were close to the permutation-
+null rates of 47% in both conditions (p = .063 and
+p = .439, respectively). The PSV result points in
+the predicted direction, but the difference amounts
+to only about four errors across 19 participants.
+With so few errors, we cannot distinguish this pat-
+tern from chance, so we treat it as inconclusive.
+6
+Discussion
+We investigated whether the stance representation
+a policy uses to select viewpoints changes what a
+user encounters and what they take away from it.
+In RQ1, we investigated whether representing
+stance at the concept level, rather than as a single
+score, changes which viewpoints are selected. It
+does. Both conditions ran the same selection policy,
+so the difference came from the encoder alone, PSV
+produced 24 distinct exposure sequences against 6
+under SCALAR, and participants encountered more
+of the concept–stance combinations available on
+the topic. Replaying the deployed policy over the
+full corpus and all possible participant positions

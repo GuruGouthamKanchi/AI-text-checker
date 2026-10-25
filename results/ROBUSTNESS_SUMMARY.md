@@ -21,8 +21,8 @@
 | **T5 Paraphrase** | Seen in Train | Detection_Recall | 83.00% | 93.00% ± 1.87% | 93.83% ± 1.25% | **+10.83%** |
 | **Llm Prompt Light** | Seen in Train | Detection_Recall | 84.00% | 94.17% ± 1.25% | 95.17% ± 0.24% | **+11.17%** |
 | **Llm Prompt Heavy** | **HELD OUT (Unseen)** | Detection_Recall | 84.50% | 94.50% ± 1.41% | 95.33% ± 0.85% | **+10.83%** |
-| **Commercial Quillbot** | **HELD OUT (Unseen)** | Detection_Recall | 0.00% | 66.67% ± 23.57% | 83.33% ± 23.57% | **+83.33%** |
-| **Commercial Undetectable.Ai** | **HELD OUT (Unseen)** | Detection_Recall | 0.00% | 0.00% ± 0.00% | 0.00% ± 0.00% | **+0.00%** |
+| **Commercial QuillBot (Anecdotal)** | **HELD OUT ($n=2$)** | Detection_Recall | 0.00% | 66.67% ± 23.57% | 83.33% ± 23.57% | **+83.33%** |
+| **Commercial Undetectable.ai (Anecdotal)** | **HELD OUT ($n=2$)** | Detection_Recall | 0.00% | 0.00% ± 0.00% | 0.00% ± 0.00% | **+0.00%** |
 
 ---
 
@@ -48,9 +48,9 @@ In strict compliance with Project Rules 1 and 2, the following empirical finding
 3. **Contrastive Advantage:** The contrastive / min-max formulation (λ=0.2) outperformed standard cross-entropy retraining on the held-out family because it regularized the internal representations to be invariant to syntactic shifts rather than overfitting to specific seen ngram replacements.
 
 ### B. Cases Where Retraining Hurt (The Specificity vs Robustness Trade-off)
-- **Empirical Human FPR Inflation:** Adversarial retraining **increased the False Positive Rate on clean human text** from the baseline of 12.00% up to 31.33% ± 3.70% (Round 1 Plain Cross-Entropy), 32.67% ± 3.30% (Round 3 Contrastive λ=0.2), and 36.33% ± 3.27% under λ=0.5.
+- **Empirical Human FPR Inflation:** Adversarial retraining **increased the False Positive Rate on clean human text** from the baseline of 12.00% ($n=150$) up to 31.33% ± 3.70% (Round 1 Plain Cross-Entropy), 32.67% ± 3.30% (Round 3 Contrastive λ=0.2), and 36.33% ± 3.27% under λ=0.5.
 - **Root Cause of Specificity Degradation:** When the sentence model is penalized for missing paraphrased AI text (which features informal conversational transitions, contractions, and direct clause structure), its internal boundary shifts, causing natural, simple human sentences to be falsely flagged.
-- **Takeaway for Production:** While adversarial retraining successfully recovered detection recall on the held-out `llm_prompt_heavy` attack (+10.83% gain) and `commercial_quillbot` (+83.33% gain), it degraded human precision. Production deployment requires higher penalty weighting on clean human false positives or post-retraining temperature calibration.
+- **Takeaway for Production:** While adversarial retraining recovered detection recall on the held-out `llm_prompt_heavy` attack (+10.83% gain; $n=120$) and anecdotal commercial QuillBot (+83.33% gain; $n=2$), clean human FPR simultaneously increased by +20.67 percentage points (from 12.00% to 32.67%; $n=150$). Undetectable.ai ($n=2$, anecdotal) remained unrecovered at 0.00% recall. Production deployment requires higher penalty weighting on clean human false positives or post-retraining temperature calibration.
 
 ### C. Commercial Tool Vulnerability (`commercial_manual`)
-- Ingested samples from commercial paraphrasers (QuillBot, Undetectable.ai) exhibit mixed evasion: simple fluency rewrites are easily caught by the retrained sentence model, but aggressive structural re-ordering with synonym replacement creates the largest detection margin drop.
+- Ingested samples from commercial paraphrasers (QuillBot, Undetectable.ai) are strictly anecdotal ($n=4$ total, $n=2$ per tool; Rule 8). They exhibit mixed evasion: QuillBot is partially caught by the retrained sentence model (50.00% - 83.33% recall across seeds), but Undetectable.ai completely evades detection (0.00% recall). Large-scale empirical validation ($n \ge 30$) remains future work.

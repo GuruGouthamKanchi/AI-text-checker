@@ -1,0 +1,536 @@
+SpectralCanary: Embarrassingly Simple
+Low-Frequency Traces for T2I Dataset-Use Auditing
+Sy-Tuyen Ho1
+Anirudh Satheesh
+Soham Chawathe1
+Huy Nghiem1
+Yongkyun Lee∀
+Andrew Adams Schoen∀
+Furong Huang∀, 1
+∀All Purpose AI
+1University of Maryland
+Auditing whether a text-to-image (T2I) model was fine-tuned on a particular image collection is difficult: a model
+can absorb collection-level visual characteristics without reproducing training images. Proactive dataset-use
+auditing plants a shared signal in a dataset before release, then later checks whether that signal appears in a
+suspect model’s generated outputs. Existing approaches often trade off verifiability, fidelity, robustness, and de-
+ployability. We introduce SpectralCanary, which uses a smooth low-pass mask to blend a fixed canary image
+into every collection image while leaving captions unchanged and requiring neither auxiliary generation nor per-
+image optimization. A lightweight verifier detects the transferred signal in suspect-model outputs. Across eight
+tests on the Pokemon dataset and three realistic data transformations, spanning two architectures families,
+SpectralCanary achieves the highest average per-generation TPR@1% FPR (91.1%) and fixed threshold model-
+level accuracy using 30 generations (94.8%) among the evaluated methods. Across five datasets spanning artis-
+tic, medical, satellite, and fashion domains with SD3.5, SpectralCanary averages 92.4% per-generation TPR@1%
+FPR while preserving the released images (SSIM 0.989, LPIPS 0.022) with a near-zero mean change FID (mean
+ΔFID 0.05) across datasets. Matched-energy ablations on Pokemon and ROCOv2 support our design choice,
+low-frequency placement transfers more reliably compared to mid/high-frequency placement. Under the eval-
+uated adaptive attacks, the most effective removal requires aggressive modification and incurs more than 25
+ΔFID points. These results identify low-frequency visual signals as effective carriers for collection-level T2I
+audit traces.
+Project: https://hosytuyen.github.io/projects/SpectralCanary
+Code repository: https://github.com/hosytuyen/SpectralCanary
+Contact: stho@umd.edu
+1. Introduction
+Creative and scientific image collections embody substantial human labor, expertise, and investment.
+Adapting text-to-image (T2I) models to such collections can support legitimate personalization, edu-
+cation, design, and scientific communication [7, 11, 27]. The same capability, however, allows a third
+party to fine-tune and deploy a model on a collection without the rights holder’s consent, attribution, or
+compensation. Because a model can absorb a collection’s visual characteristics without reproducing
+individual images, rights holders may have little evidence that their work was used [14, 22]. Practical
+dataset-use auditing can strengthen accountability and licensing compliance while allowing images
+to remain available for legitimate use.
+We study proactive dataset-use auditing, commonly termed data traceability or unauthorized data-use
+verification in prior works. A practical method should satisfy four requirements. (Req. 1) Collection-
+level verifiability. It should provide evidence from black-box outputs even when no training image
+is reproduced. (Req. 2) Fidelity and utility preservation. Protected samples should preserve their
+original appearance and the utility of models trained on them, avoiding harm to legitimate use while
+resisting easy filtering. (Req. 3) Pipeline robustness. The trace should remain detectable across
+Preprint
+arXiv:2610.31659v1  [cs.CV]  22 Oct 2026
+
+
+Owner
+Protected 
+Collection
+Visual 
+Canary
+Protect 
+Copyright
+Collection
+Verifier
+Unauthorized
+T2I model
+Verify 
+Black-box query
+H
+i
+g
+h
+F
+r
+e
+q.
+Low 
+Freq.
+H
+i
+g
+h
+F
+r
+e
+q.
+Low 
+Freq.
+Copyrighted 
+Image
+Visual 
+Canary
+FFT
+FFT
+H
+i
+g
+h
+F
+r
+e
+q.
+Low 
+Freq.
+iFFT
+Protected 
+Image
+(b) Spectral Hybridization
+(a) Audit Workflow
+(c) Visual Fidelity: Original-Protected Pairs
+Attacker
+Figure
+1.
+SpectralCanary overview. (a) Auditing workflow. An owner protects a collection before release, then
+queries a suspect T2I model and tests whether its generated outputs contain the canary. (b) Spectral hybridization.
+SpectralCanary blends a fixed canary through a smooth low-pass mask 𝑀𝑐with strength 𝛼, retaining most of the remaining
+spectrum. A lightweight verifier trained on original–protected pairs detects the trace in model generations. (c) Visual
+fidelity. Original–protected pairs across five datasets, including sparse sketches.
+model architectures, after augmentation such as image regeneration or recaptioning. (Req. 4) Op-
+erational deployability. The protection transform should be model-agnostic and scale efficiently to
+large collections without auxiliary generation or iterative per-image optimization.
+Prior approaches typically sacrifice at least one requirement. Reactive auditing: limited collection-
+level evidence (Req. 1). Membership and similarity tests rely on sample-specific evidence that gen-
+eralization may erase [14, 22]. Pixel-level watermarks: limited robustness (Req. 3). Weak signals
+may be attenuated by augmentation, regeneration, or fail to transfer across model backbones [14, 35].
+Explicit canaries: fidelity and robustness trade-offs (Reqs. 2–3). Repeated templates can be con-
+spicuous and filterable, while recaptioning can remove textual triggers [26]. Adjacent data-poisoning
+objectives. Poisoning induces chosen behavior rather than provides evidence of dataset use. Persis-
+tent behavior may not be unique or reliably elicited, so it does not by itself establish use of a particular
+collection [12, 34]. Across proactive methods, auxiliary generation, filtering, and iterative optimization
+can also limit deployability (Req. 4) by increasing computational cost or requiring external models,
+domain-specific assumptions [12, 14, 26]. These limitations motivate a subtle, transferable, caption-
+independent, and inexpensive trace.
+We propose SpectralCanary, whose key design choice is the frequency band used for the shared
+trace. Before release, the dataset owner chooses one fixed canary image. For each collection image,
+SpectralCanary mixes a small amount of the canary’s low-frequency Fourier content into the original
+while retaining most of its spectrum and leaving its caption unchanged (Fig. 1(b)). The protected
+spectra are thereby shifted toward a common low-frequency target, creating a collection-level signal.
+Low frequencies encode broad spatial structure that neural networks preferentially learn [25, 38] and
+SpectralCanary
+2
+
+
+that is important to T2I generation [18, 40]. This motivates our hypothesis that a weak low-frequency
+trace can transfer during fine-tuning. The dataset owner then queries a suspect model and uses a
+lightweight verifier to test whether its generated outputs contain the trace (Fig. 1(a)). Importantly,
+SpectralCanary uses a single deterministic transform requiring no caption changes, auxiliary gener-
+ator, or per-image optimization.
+We evaluate all four requirements.
+Robustness tests cover a convolutional latent-diffusion U-
+Net [27], a transformer-based rectified-flow model [7]; data augmentation, image regeneration [43],
+and recaptioning. Direct baselines include pixel-level traces (SIREN [14], DIAGNOSIS [35]) and ex-
+plicit canaries (EnTruth [26]). We also adapt Silent Branding [12] but report its evaluation separately
+in Appx. Q, because it targets visual branding rather than dataset-use auditing.
+Auditing effectiveness and robustness. For per-generation discrimination, AUC measures verifier-
+score separation, while TPR at 1% FPR measures detection of outputs from protected-data mod-
+els. Across eight Pokemon settings, SpectralCanary achieves 98.0% AUC and 91.1% TPR. In fixed-
+threshold model-level verification using 30 generations, it achieves 94.8% average accuracy under
+the same settings. Fidelity and utility preservation. SSIM and LPIPS compare original and pro-
+tected images, while ΔFID measures the change in generative quality. Across five visual domains
+with SD3.5, SpectralCanary achieves 99.5% AUC and 92.4% TPR with SSIM 0.989, LPIPS 0.022, with a
+near-zero mean change FID (ΔFID 0.05). On sparse Sketch-Scene drawings, it achieves 100% AUC
+and TPR with SSIM 0.997 and LPIPS 0.002. Operational deployability. Protection takes 0.39 seconds
+per image on our CPU setup (Appx. E). Mechanism and boundary. In matched-energy ablations
+on Pokemon and ROCOv2, we show that low-frequency placement transfers more reliably compared
+to mid/high-frequency placement. Within the evaluated adaptive attacks, effective removal requires
+aggressive modification and incurs more than 25 ΔFID points.
+Our main contributions are:
+• We identify low-frequency visual structure as an effective carrier for weak collection-level traces
+during T2I fine-tuning. In matched band size and perturbation energy ablations on Pokemon and
+ROCOv2 with SD1.5, we show that low-frequency placement yields higher per-generation TPR than
+mid/high-frequency placement.
+• We introduce SpectralCanary, a deterministic and caption-preserving spectral hybridization
+method.
+It protects each image with one inexpensive transform, requiring neither an auxiliary
+generator nor per-image optimization.
+• We jointly evaluate per-generation discrimination, KS-based multi-query auditing, fixed-threshold
+model-level verification, image fidelity, generative utility, robustness, and protection cost across two
+architecture families, five datasets, three direct auditing baselines, an adapted poisoning baseline,
+and three realistic data transformations. This evaluation establishes a strong empirical operating
+point and characterizes the boundary under adaptive spectral replacement.
+2. SpectralCanary
+Problem setup. Let 𝒟= {(𝑥𝑖, 𝑡𝑖)}𝑁
+𝑖=1 be the defender’s image–caption collection, with 𝑥𝑖∈[0, 1]𝐻×𝑊×3.
+Given a canary 𝑣⋆, protected fraction 𝛿∈(0, 1], blending strength 𝛼∈[0, 1], and Gaussian bandwidth
+𝑐> 0, SpectralCanary constructs protected collection ˆ
+𝒟and trains verifier 𝑓𝜃(Alg. 1). A third party
+may fine-tune a T2I model 𝒢on ˆ
+𝒟. The defender audits its black-box generations against clean refer-
+ence scores (Alg. 2).
+Threat model. The algorithm and released collection are public. 𝛿, 𝛼, and 𝑐may be known. The
+defender retains the originals, 𝑣⋆, and 𝑓𝜃and has only black-box access to 𝒢. The audit provides
+calibrated statistical evidence, not cryptographic attribution or white-box robustness. Revealing the
+canary spectrum enables the idealized inversion below.
+SpectralCanary
+3
+
+
+Algorithm 1: Protection and Verifier Training
+Require: 𝒟, 𝑣⋆, 𝛿, 𝑐, 𝛼
+Ensure: ˆ
+𝒟, 𝑓𝜃
+1: Construct 𝑀𝑐using Eq. 2
+2: ℐ𝛿←UniformSubset([𝑁], ⌊𝛿𝑁⌋)
+3: 𝑉←ℱ𝑐(𝑣⋆); ˆ
+𝒟←𝒟
+4: for all 𝑖∈ℐ𝛿do
+5:
+𝑋𝑖←ℱ𝑐(𝑥𝑖)
+6:
+ˆ𝑋𝑖←𝑋𝑖+ 𝛼𝑀𝑐⊙(𝑉−𝑋𝑖)
+7:̃
+𝑥𝑖←Π8(ℜ[ℱ−1
+𝑐( ˆ𝑋𝑖)])
+8:
+ˆ
+𝒟[𝑖] ←(̃𝑥𝑖, 𝑡𝑖)
+9: end for
+10: Train 𝑓𝜃on ℐ𝛿using Eq. 5
+11: return ˆ
+𝒟, 𝑓𝜃
+Algorithm 2: Auditing a Suspect Model
+Require: 𝒢, 𝒫, 𝑓𝜃, clean-data reference scores ℛ, level 𝛾
+Ensure: 𝒮𝒢, 𝑝-value 𝑞𝒢, decision 𝑎𝒢
+1: 𝒮𝒢←∅
+2: for all 𝑝𝑗∈𝒫do
+3:
+Generate 𝑥𝒢
+𝑗∼𝒢(𝑝𝑗)
+4:
+𝑠𝑗←𝑓𝜃(𝑥𝒢
+𝑗)
+5:
+Add 𝑠𝑗to 𝒮𝒢
+6: end for
+7: 𝑞𝒢←KS+(𝒮𝒢, ℛ)
+8: 𝑎𝒢←𝟙[𝑞𝒢< 𝛾]
+9: return 𝒮𝒢, 𝑞𝒢, 𝑎𝒢
+Design motivation.
+Low frequencies encode broad structure that neural networks preferentially
+learn [25, 38] and that is important to T2I generation [18, 40]. They are therefore a plausible trace
+carrier. However, strong modification is visible. SpectralCanary uses a smooth low-pass mask to
+weight frequencies and a small blending strength to control the overall change. Our controlled study
+in Sec. 4.5 shows low-frequency placement yields higher detection rates than mid/high-frequency
+placement.
+Fourier convention. Throughout, ℱ𝑐denotes the centered channel-wise 2D discrete Fourier trans-
+form and ℱ−1
+𝑐
+denotes its inverse:
+ℱ𝑐= fftshift ∘DFT2,
+ℱ−1
+𝑐
+= IDFT2 ∘ifftshift .
+(1)
+We use unitary normalization and apply the transform channel-wise. Any matched forward–inverse
+scaling gives the same reconstruction because Eq. 4 is homogeneous in 𝑋𝑖and 𝑉. Real inputs and the
+real, conjugate-symmetric mask make the inverse real up to roundoff. Let Π8 denote clipping to [0, 1]
+followed by 8-bit quantization.
+Stage I: Constructing protected images. Alg. 1 uniformly selects |ℐ𝛿| = ⌊𝛿𝑁⌋images; only these are
+replaced and used to train the verifier (𝛿= 1 by default). For 𝑖∈ℐ𝛿, we resize 𝑣⋆as specified in
+Appx. A and compute 𝑋𝑖= ℱ𝑐(𝑥𝑖) and 𝑉= ℱ𝑐(𝑣⋆). We define a smooth radial low-pass mask:
+𝑀𝑐(𝑘, ℓ) = exp(−𝑟(𝑘, ℓ)2
+2𝑐2
+) ,
+(2)
+where (𝑘, ℓ) indexes the shifted Fourier grid, whose center is (𝑘0, ℓ0) = (⌊𝐻/2⌋, ⌊𝑊/2⌋), and
+𝑟(𝑘, ℓ) = √(𝑘−𝑘0
+𝐻
+)
+2
++ (ℓ−ℓ0
+𝑊
+)
+2
+.
+(3)
+Normalizing the two axes separately also accommodates rectangular images. The mask equals one at
+the spectral center and decays smoothly with radial distance; a smaller bandwidth 𝑐concentrates the
+weighting more tightly around the lowest frequencies. The protected spectrum is
+ˆ𝑋𝑖= 𝑋𝑖+ 𝛼𝑀𝑐⊙(𝑉−𝑋𝑖) = (1 −𝛼𝑀𝑐) ⊙𝑋𝑖+ 𝛼𝑀𝑐⊙𝑉,
+(4)
+where 𝛼∈[0, 1] is the blending strength and ⊙denotes elementwise multiplication. We export̃ 𝑥𝑖=
+Π8(ℜ[ℱ−1
+𝑐(ˆ𝑋𝑖)]). Eq. 4 moves each weighted coefficient toward target 𝑉. It combines shared term 𝛼𝑀𝑐⊙𝑉
+with image-specific term (1 −𝛼𝑀𝑐) ⊙𝑋𝑖. The collection mean shifts toward 𝑉, while variation contracts
+in low-pass-weighted frequencies. Appx. F reports learning dynamics. Fig. 1(c) and Appx. N show
+visual fidelity. The deterministic construction requires neither an auxiliary generative model nor
+iterative per-image optimization. Appx. E reports runtime.
+SpectralCanary
+4
+
+
+Training the verifier. Let 𝑓𝜃(𝑥) ∈(0, 1) denote the predicted probability that image 𝑥contains the
+protection signal. Using selected protected images as positives and their original counterparts as
+negatives, we minimize
+ℒver(𝜃) = −1
+|ℐ𝛿| ∑
+𝑖∈ℐ𝛿
+[log 𝑓𝜃(̃𝑥𝑖) + log(1 −𝑓𝜃(𝑥𝑖))] .
+(5)
+Training uses no model generations. Each original–protected pair shares semantic content, making
+the protection transform the only systematic label-aligned difference. This encourages but does not
+guarantee trace learning. Transfer to unseen generations is evaluated in Sec. 4.2.
+Stage II: Auditing a suspect model. Let ℛcontain clean-data reference scores and 𝒫be trigger-
+free audit prompts (collection captions in our experiments). For suspect model 𝒢, we collect 𝒮𝒢and
+apply a one-sided two-sample Kolmogorov–Smirnov test for larger suspect scores, rejecting at level 𝛾.
+Experiments use matched clean-data models. Deployment calibrates ℛon representative independent
+models. This yields the KS-based multi-query audit decision. AUC and TPR are per-generation
+discrimination metrics (Appx. A.1).
+Invertibility. If an attacker knows the canary spectrum 𝑉, blending strength 𝛼, and Gaussian band-
+width 𝑐, then 𝑀𝑐is known and Eq. 4 can be inverted as
+𝑋𝑖=
+ˆ𝑋𝑖−𝛼𝑀𝑐⊙𝑉
+1 −𝛼𝑀𝑐
+,
+(6)
+This recovers pre-export 𝑋𝑖exactly when 𝛼< 1, but clipping and quantization prevent exact recovery
+from the released image. Our threat model may reveal 𝛼and 𝑐but keeps 𝑉private. These are threat-
+model assumptions, not security guarantees.
+3. Related Work
+Reactive and proactive auditing. Reactive methods test an already trained model using member-
+ship inference or similarity between generated and reference images [3, 20, 22, 24]. Such evidence
+can weaken when fine-tuning transfers collection-level characteristics without retaining identifiable
+information about individual samples. Proactive methods instead modify a collection before release.
+Anti-learning methods aim to prevent or redirect customization [1, 16, 31, 33, 44]. Proactive traceability
+aims to preserve customization utility while making later use statistically auditable.
+Proactive traceability. Pixel-level methods such as DIAGNOSIS [35] and SIREN [14] insert weak
+transformations or learned signals that can be detected in generated images. Their subtle signals pre-
+serve appearance, but can be attenuated by augmentation, regeneration, or model backbone changes.
+EnTruth instead inserts explicit canary samples containing a repeated template and textual trig-
+ger [26]. This coherent signal can transfer strongly, but the injected samples are conspicuous and
+caption triggers can be removed. Our direct comparisons span the two main proactive families in-
+cluding subtle pixel-level traces and explicit visual canary samples.
+Relation to poisoning. Data poisoning induces chosen behaviors such as concept corruption, repro-
+duction, or persistent branding [12, 34]. Persistence alone is insufficient for auditing. Auditing instead
+requires a collection-specific signal detectable under ordinary, trigger-free queries with controlled
+false positives. SpectralCanary targets this auditing objective rather than model corruption. Appx. S
+provides further discussion and a method taxonomy.
+4. Experiments
+SpectralCanary
+5
+
+
+4.1 Experimental Setup and How to Read the Results
+Our experiments ask four concrete questions. First, can SpectralCanary reveal that a model was
+trained on a protected collection, even when the model architecture or training data are changed?
+Second, does adding the trace visibly change the released images or make a model trained on them
+produce worse images? Third, is protection fast enough for a large collection? Finally, why do low
+frequencies matter, and what happens when an informed attacker tries to remove the trace?
+Datasets and models. We cover distinct image domains: charater art (Pokemon-BLIP-Captions [23]),
+sparse scene drawings (Sketch-Scene [4]), medical (ROCOv2 [28]), satellite (RSICD [17]), and fashion
+(FACAD [39]). We fine-tune Stable Diffusion v1.5 (SD1.5) [27] and Stable Diffusion 3.5 (SD3.5) [7]. The
+main experiments use LoRA, a common parameter-efficient form of T2I adaptation. Appx. G repeats
+the key test with full-parameter fine-tuning.
+Comparisons and stress tests. We compare with SIREN [14] and DIAGNOSIS [35], which modify
+training images, and EnTruth [26], which adds explicit canary samples. Appx. Q separately adapts
+Silent Branding [12], whose original goal is visual branding rather than dataset-use auditing. On
+Pokemon, we test each method under ordinary training and after three realistic changes to the training
+set: image augmentation, diffusion-based recreation of each training image (image regeneration) [43],
+and automatic recaptioning with Qwen2.5-VL 7B [2].
+How to read the metrics.
+We distinguish the embedded trace from two evaluation levels.
+Per-
+generation discrimination scores each generated image independently and asks whether outputs from
+protected-data models receive higher verifier scores than outputs from clean-data models. AUC sum-
+marizes this score separation over all thresholds.
+TPR at 1% FPR is the fraction of outputs from
+protected-data models detected at a threshold that falsely flags at most 1% of outputs from clean-
+data models; thus, a TPR of 90% means detecting about 90 of 100 protected-data-model outputs while
+flagging about 1 of 100 clean-data-model outputs. At the model level, we evaluate two decision pro-
+tocols.
+KS-based multi-query auditing combines scores from 30 generated images in a statistical
+test and reports the rejection rate on protected-data models.
+Fixed-threshold model-level verifica-
+tion aggregates 30 generations from each held-out model and applies a threshold fixed after inde-
+pendent calibration, reporting TPR, FPR, precision, F1, and accuracy (Appx. H). For image fidelity,
+lower LPIPS [42] means that a protected image is closer to its original. For generated-image qual-
+ity, ΔFID = FIDprotected −FIDclean [29]; values near or below zero indicate no measured quality loss,
+whereas large positive values indicate degradation. Unless stated otherwise, SpectralCanary uses
+𝛼= 0.02, 𝑐= 0.20, and 𝛿= 1. Every model-training and image-sampling setting is repeated with three
+independent runs. Detailed protocols are in Appx. A.
+4.2 Per-Generation Discrimination Survives Changes to Models and Training Data
+SpectralCanary has the strongest average per-generation discrimination across the eight Poke-
+mon settings. Fig. 2 reports per-generation TPR for both model families under ordinary training,
+training-time augmentation, prompt recaptioning, and image regeneration. SpectralCanary averages
+91.1% TPR at 1% FPR, compared with 73.2% for the next-best method. Its weakest individual result
+is 65.9% under SD3.5 with training-time augmentation; the best competing method has a worst-case
+result of only 19.4%. No method wins every individual setting: DIAGNOSIS is strongest for ordinary
+SD1.5 training, and EnTruth is strongest for SD3.5 with training-time augmentation. The complete
+per-generation AUC, TPR at 5% FPR, and run-level results are in Appx. C. Appx. J separately reports
+KS-based multi-query auditing across query budgets, showing that more queries generally provide
+stronger evidence of training on protected data.
+Per-generation discrimination translates well to fixed-threshold model-level verification. We
+aggregate 30 generations per held-out model, following Li et al. [14], and apply a threshold indepen-
+dently calibrated for each method–architecture pair and fixed across transformations. Fig. 3 reports
+model-level accuracy across the same eight settings. Each method–architecture–transformation set-
+ting includes five clean-data and five protected-data models, yielding 320 held-out models across the
+SpectralCanary
+6
+
+
+EnTruth
+SIREN
+DIAGNOSIS
+SpectralCanary
+85.3
+93.9
+76.2
+95.3
+19.4
+35.9
+88.1
+91.7
+19.4
+73.2
+66.3
+91.9
+6.9
+18.8
+63.6
+92.0
+44.4
+37.2
+6.9
+52.6
+99.9
+2.3
+88.3
+8.2
+0.4
+13.0
+43.9
+1.7
+0.4
+32.2
+97.7
+100.0
+79.2
+65.9
+93.6
+100.0
+92.5
+100.0
+65.9
+91.1
+SD1.5 SD3.5 SD1.5 SD3.5 SD1.5 SD3.5 SD1.5 SD3.5 Worst
+Avg.
+None
+Aug.
+Recap.
+Regen.
+Summary
+Method
+TPR@1% FPR ↑
+0
+25
+50
+75
+100
+TPR (%)
+Figure 2.
+SpectralCanary maintains strong per-generation discrimination across model and data changes. Each
+cell reports per-generation TPR at 1% FPR. “Worst” is the lowest of a method’s eight results, and “Avg.” is their mean.
+EnTruth
+SIREN
+DIAGNOSIS
+SpectralCanary
+100.0
+82.0
+100.0
+90.3
+78.7
+50.0
+100.0
+90.0
+50.0
+86.4
+100.0 100.0
+52.3
+50.0
+100.0 100.0
+99.7
+50.0
+50.0
+81.5
+100.0
+63.7
+100.0
+88.6
+50.0
+73.1
+100.0
+65.0
+50.0
+80.1
+100.0 100.0
+99.6
+58.5
+100.0 100.0 100.0 100.0
+58.5
+94.8
+SD1.5 SD3.5 SD1.5 SD3.5 SD1.5 SD3.5 SD1.5 SD3.5 Worst
+Avg.
+None
+Aug.
+Recap.
+Regen.
+Summary
+Method
+Accuracy ↑
+0
+25
+50
+75
+100
+Accuracy (%)
+Figure 3.
+SpectralCanary is more consistent across transformations and models than the baselines. Each cell is
+Acc. “Worst” is the lowest of a method’s eight results, and “Avg.” is their mean.
+four methods.
+SpectralCanary achieves 94.8% average model-level accuracy, showing that its per-
+generation discrimination signal supports dataset-use decisions at the model level. Appx. H provides
+the detailed protocol and TPR, FPR, precision, and F1 results.
+4.3 The Same Setting Works Across Five Image Types
+We next test whether the same SpectralCanary setting works beyond Pokemon by asking three ques-
+tions: Does a single generated output support reliable per-generation discrimination? Do the pro-
+tected images still resemble the originals? Does training on those images degrade model outputs?
+SpectralCanary performs well on all three questions. At a per-generation FPR of 1%, it achieves
+an average per-generation TPR of 92.4% across outputs from models trained on protected data. The
+protected images remain close to their originals: average LPIPS is 0.022, where zero means identical
+images. Training on the protected images causes almost no average change in model output quality:
+mean ΔFID is 0.05, where zero means no change. On the sparse Sketch-Scene drawings, Spectral-
+Canary achieves 100% per-generation TPR with LPIPS 0.002. The hardest dataset is RSICD, where it
+achieves 78.9% per-generation TPR with LPIPS 0.048.
+Fig. 4 compares all methods. Each point shows one method on one dataset. Good results appear near
+the upper-left corner: high per-generation TPR with little change to either the training images or
+the trained model’s outputs. SpectralCanary’s green points remain near this region across all five
+datasets. DIAGNOSIS changes the original images little but usually provides weak per-generation
+discrimination. SIREN works well on some datasets but poorly on others and makes the largest image
+SpectralCanary
+7

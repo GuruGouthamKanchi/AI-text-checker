@@ -1,0 +1,691 @@
+When to Follow the Teacher:
+Advantage-Based On-Policy Distillation
+Mahdi Sabbaghi*1, George Pappas1, Hamed Hassani1, and Adel Javanmard2
+1University of Pennsylvania
+2University of Southern California
+Abstract
+Online Policy Distillation (OPD) often outperforms offline methods such as Supervised Fine-Tuning
+(SFT) by training on trajectories sampled directly from the student. However, standard OPD trains the student
+to follow the teacher at every state of the trajectory, assuming that teacher guidance is always beneficial. We
+instead distinguish between what the teacher prefers and what actually helps the current student succeed.
+We introduce Advantage-Based On-Policy Distillation (AOPD), which weights teacher actions by their
+counterfactual advantage under the student. Teacher actions that improve the student’s expected outcome are
+reinforced, while those that do not are downweighted.
+Directly computing these advantages requires trying alternative teacher actions at each step and running
+new rollouts from each. Instead, we show that the AOPD objective can be estimated using only standard
+student rollouts and their terminal rewards. Our estimator uses teacher importance weights on the student-
+sampled actions to provide unbiased advantage-weighted supervision, without any additional rollouts or
+reward evaluations. This allows AOPD to focus teacher supervision on actions that help the current student
+while preserving the rollout efficiency of standard OPD. Experiments on math, coding, and Medqa show
+gains over distillation and RL baselines in both external-teacher and self-distillation settings.
+§ https://github.com/Helloworld10011/AOPD
+1
+Introduction
+Knowledge distillation transfers capabilities from a stronger teacher to a smaller student model by training
+the student to imitate the teacher’s outputs. Offline distillation is a common approach that uses fixed teacher-
+generated trajectories. But this approach can lead to a mismatch between the training trajectories and the states
+the student generates itself. On-policy distillation (OPD) addresses this mismatch by querying the teacher
+along student-sampled trajectories, providing dense token-level supervision at the states the student actually
+visits (Agarwal et al., 2024; Lu and Lab, 2025; Song and Zheng, 2026; Ross et al., 2011; Li et al., 2026a).
+Although the trajectories now come from the student, the objective remains to match the teacher, without
+distinguishing which teacher actions improve the student’s chance of success (Liu et al., 2026).
+This limitation also applies to on-policy self-distillation (OPSD), which replaces the external teacher with
+a privileged version of the student itself, such as conditioned on ground-truth solutions (Zhao et al., 2026;
+Hübotter et al., 2026). Whether external or privileged, the teacher may choose an action from which it can
+solve the problem, while the student cannot complete the remaining steps correctly. Conversely, distillation
+discourages a valid student solution when it differs from the teacher’s preferred approach. Thus the question
+is whether the teacher action at every state increases the student’s chance of success. An action should be
+credited according to its impact on the student’s task success, not simply the teacher’s preference (Chen et al.,
+2026; Saadi and Wang, 2026).
+Prior attempts to mitigate this optimization misalignment rely on making the teacher supervision more
+selective. A common approach combines outcome-based reinforcement learning with distillation, but adding a
+*Correspondence can be made to: smahdi@seas.upenn.edu
+1
+arXiv:2610.31563v1  [cs.LG]  22 Oct 2026
+
+
+Figure 1: (left) The overall picture of our method. On the student sampled trajectories, not all the suggested
+actions by the teacher are useful to the student, and many suggestions are destructive. (middle) Performance
+comparison of our method with OPSD when training Qwen3-8B in non-thinking mode on Open-Thoughts.
+(right) Comparison with OPSD when training Qwen3-4B-Instruct on TACO for coding.
+reward term does not change which teacher actions the distillation term reinforces (Xu et al., 2025; Zhang
+et al., 2026b). Other methods downweight distillation when the teacher is uncertain, using entropy as a proxy,
+or when teacher tokens are implausible under the student (Jin et al., 2026; Wang et al., 2026). Alternative
+approaches validate teacher actions using auxiliary reward models (Saadi and Wang, 2026; Gu et al., 2026)
+or explicit intervention rollouts (Chen et al., 2026). These methods provide ways to identify useful teacher
+guidance, but rely on auxiliary signals or additional counterfactual trajectories. More importantly, they do not
+formulate the objective directly around the impact of the teacher action on the student’s expected task reward.
+Therefore, we ask:
+How should a distillation objective weight teacher supervision to improve the student’s eventual
+task success?
+We propose Advantage-based On-Policy Distillation (AOPD), the first formulation of on-policy distillation
+that directly weights teacher actions by their advantage under the current student. Intuitively, the advantage
+measures whether taking a teacher action and then letting the student finish the response improves expected
+final reward over following the student’s own policy. Since this advantage is defined with respect to the current
+student, the same teacher action can be useful for one student but unhelpful for another. AOPD therefore
+reinforces teacher actions with positive advantage and suppresses those with negative advantage. This is
+illustrated in Figure 1 (left).
+A direct estimate of these advantages would require generating new student continuations after alternative
+teacher actions. We instead derive an unbiased importance-sampling estimator of the AOPD objective using
+only the student’s on-policy trajectories and their terminal rewards. This allows AOPD to incorporate outcome-
+level rewards into token-level teacher supervision without learning a value function, generating counterfactual
+continuations or teacher rollouts, or relying on an external process reward model.
+Our contributions are summarized as follows:
+• AOPD algorithm. In Section 3, we provide an advantage-weighted formulation of on-policy distillation
+and derive an unbiased estimator of its objective, without additional rollouts or auxiliary models. We also
+discuss clipping the importance sampling weights.
+• Experimental results. In Section 4, we evaluate multiple model sizes on tasks such as math and coding
+under both external-teacher and self-distillation settings, showing improvements over OPD, OPSD, and
+GRPO. We further examine whether teacher actions are uniformly beneficial in an ablation study.
+• Reward improvement beyond imitation. In Section 5, we establish a reward-improvement guarantee for
+AOPD under an exact KL-proximal analysis and show that forward-KL OPD can reduce reward even with
+a stronger teacher. We further construct a two-state counterexample showing that simply adding an RL
+objective to OPD does not guarantee reward improvement.
+2
+
+
+2
+Related Work
+Offline supervision.
+Supervised fine-tuning and offline knowledge distillation learn from fixed demonstra-
+tions or teacher-generated trajectories (Hinton et al., 2015; Kim and Rush, 2016; Wen et al., 2023; Gu et al.,
+2024). As established in imitation learning, offline supervision suffers from covariate shift and compounding
+errors when the learned policy visits states absent from the training distribution (Ross et al., 2011; Bengio
+et al., 2015; Agarwal et al., 2024). This mismatch is particularly relevant for autoregressive reasoning, where
+early deviations change all subsequent steps drastically (Gu et al., 2024; Agarwal et al., 2024).
+On-policy reinforcement learning.
+On-policy RL instead learns from trajectories generated by the current
+policy and has become central to LLM alignment and reasoning through methods such as PPO, RLOO, GRPO,
+and related policy-gradient algorithms (Schulman et al., 2017; Ouyang et al., 2022; Ahmadian et al., 2024;
+Shao et al., 2024; Sabbaghi et al., 2026b). RLVR directly optimizes task reward but typically provides sparse
+outcome-level supervision and can struggle when useful trajectories are rarely sampled (Casper et al., 2023;
+Yue et al., 2025; Xu et al., 2025; Xiong et al., 2025).
+On-policy distillation.
+On-policy distillation combines on-policy sampling with dense teacher supervision
+by matching teacher and student distributions along student-generated trajectories (Agarwal et al., 2024; Gu
+et al., 2024; Lu and Lab, 2025; Li et al., 2026a; Song and Zheng, 2026). OPSD further uses a privileged
+version of the student itself as the teacher, often conditioning it on ground-truth solutions or other privileged
+information (Zhao et al., 2026; Hübotter et al., 2026; Penaloza et al., 2026; Ye et al., 2026). These approaches
+correct where supervision is provided, but generally still apply teacher supervision uniformly and throughout
+the student’s trajectory.
+Selective teacher supervision.
+Recent methods make this supervision selective using teacher uncertainty,
+teacher–student compatibility, local validity, verifier signals, or additional intervention rollouts (Jin et al.,
+2026; Wang et al., 2026; Saadi and Wang, 2026; Gu et al., 2026; Chen et al., 2026; Zhang et al., 2026a). These
+criteria identify when teacher guidance may be useful, but do not directly define usefulness by its effect on
+the student’s eventual task reward. AOPD instead introduces a new formulation for on-policy distillation
+that weights each teacher action by its advantage under the current student and estimates this signal from the
+existing on-policy rollouts and terminal rewards.
+3
+Method: Advantage-based On-Policy Distillation
+Let S denote the frozen student policy used to generate the current rollout batch, Sθ the policy being updated,
+and T the teacher policy. Given a prompt x, the student generates a response y = (y0, . . . , yH−1) according
+to S(y | x) = ∏H−1
+t=0 S(yt | ht), ht = (x, y<t), then ht ∼S(· | x) denotes a sampled trajectory up to step
+t. The terminal reward R(x, y) ∈[0, 1] indicates task success. We assume a shared token vocabulary V and
+access to teacher probabilities T(· | ht) at student-generated histories.
+Reverse-KL distillation.
+Reverse-KL distillation (Agarwal et al., 2024) minimizes:
+LRKL(θ) = 1
+H
+H−1
+∑
+t=0
+Eht∼S(.)
+
+KL
+ Sθ(· | ht)∥T(· | ht)
+
+.
+(3.1)
+At each step, the actions come from a ∼S(· | ht) and the expectation is over log-ratio log T(a|ht)
+S(a|ht) . Thus, the
+teacher evaluates actions already sampled by the student.
+Forward-KL distillation.
+Forward-KL distillation instead samples the action from teacher’s distribution at
+each step of the student sampled trajectory and minimizes the log-ratio log S(a|ht)
+T(a|ht) :
+LFKL(θ) = 1
+H
+H−1
+∑
+t=0
+Eht∼S(.)
+
+KL
+ T(· | ht)∥Sθ(· | ht)
+
+.
+(3.2)
+3
+
+
+Dropping the teacher entropy that is independent of θ, Equation (3.2) is equivalent to the following maximiza-
+tion objective:
+JFKL(θ) = Ex, y∼S(·|x)
+"
+1
+H
+H−1
+∑
+t=0
+Ea∼T(·|ht) [log Sθ(a | ht)]
+#
+.
+(3.3)
+The objective reinforces teacher-supported actions at student-generated histories ht. In practice, FKL and RKL
+objectives roughly reach the same performance, and we will develop our method for FKL. Critically, FKL
+reinforces the teacher actions without distinguishing whether they improve the student’s final task outcome.
+On-policy self-distillation.
+On-policy self-distillation (OPSD) (Zhao et al., 2026) uses the same objective
+above, but it replaces the external teacher with a privileged version of the student itself. Given privileged
+information y∗, such as the ground-truth solution, the teacher distribution becomes:
+TOPSD(a | ht) = S(a | ht, y∗)
+and the rollout is still generated from the unprivileged student S(· | ht). Our method makes no assumptions
+about how T is obtained and therefore applies directly to both OPD and OPSD.
+Our method: Advantage-based on-policy distillation (AOPD).
+Starting from the FKL objective in
+Equation (3.3), we preserve the teacher supervision at the same student-generated histories but change how
+teacher actions are weighted. Rather than reinforcing every teacher-supported action, we weight each action
+by its effect on the student’s expected reward. For a history h = (x, y<t), define:
+QS(ht, a) = Ey>t∼S(·|hta) [R(x, y<t a y>t)] ,
+VS(ht) = Ea∼S(·|ht)[QS(ht, a)]
+AS(ht, a) = QS(ht, a) −VS(ht).
+(3.4)
+These are the standard RL value and advantage function. The advantage AS compares the expected reward
+after taking a with the expected reward when the student follows its own action policy. We therefore modify
+the FKL objective by weighting each teacher action by AS(ht, a):
+JAOPD(θ) = Ex, y∼S(·|x)
+"
+1
+H
+H−1
+∑
+t=0
+Ea∼T(·|ht)
+h
+AS(ht, a) log Sθ(a | ht)
+i#
+.
+(3.5)
+Unlike the forward KL objective, AOPD assigns positive weights to teacher actions that improve the student’s
+expected reward and negative weights to those that reduce it. Both the advantage and the history distribution
+are defined under the frozen rollout policy S. In Theorem 5.1, we show that our objective increases the average
+reward with guarantee, whereas OPD has an arbitrary sign that depends on the advantage of teacher’s actions.
+Estimating AOPD from student rollouts.
+Directly evaluating QS for teacher actions would require separate
+student continuations from the teacher interventions. Instead, we estimate the entire objective using a student
+rollout yS ∼S(· | x) and its terminal reward RS = R(x, yS). At each step, let at = yS
+t and define
+wt = T(at|ht)
+S(at|ht) . The ratio wt converts expectations under the student into expectations under the teacher. We
+use centered rewards eRS = RS −b for a group with G responses, where b is a baseline independent of yS
+(e.g., the leave-one-out mean). The resulting estimator is:
+bJAOPD(θ) =
+eRS
+H
+H−1
+∑
+t=0
+h
+wt log Sθ(at | ht) −Ea∼T
+
+log Sθ(a | ht)
+i
+,
+wt := T(at | ht)
+S(at | ht)
+(3.6)
+In the following lemma, we show that the two terms within the sum estimate the contributions of QS −b and
+VS −b, respectively. So their difference obtains the desired advantage in Equation (3.5).
+Lemma 3.1 (Unbiased AOPD estimator). Assume that T(a | h) > 0 implies S(a | h) > 0 at every visited
+4
+
+
+Algorithm 1 AOPD with the unbiased estimator
+Require: Student Sθ, teacher T, reward function R, group size G
+1: for each training iteration do
+2:
+Freeze the rollout policy S ←Sθ.
+3:
+for each prompt x ∈B do
+4:
+Sample G independent responses y(i) ∼S(· | x).
+5:
+Compute terminal rewards Ri = R(x, y(i)).
+6:
+Set bi =
+1
+G−1 ∑j̸=i Rj for G > 1.
+7:
+Evaluate student and teacher probabilities at every visited history.
+8:
+Compute eJ(i)
+AOPD(θ) using Equation (3.8).
+9:
+L(θ) ←−
+1
+|B|G ∑x∈B ∑G
+i=1 eJ(i)
+AOPD(θ)
+▷differentiating only through Sθ.
+step. We have:
+E
+h
+bJAOPD(θ)
+i
+= JAOPD(θ)
+And the same identity holds for their gradients.
+The proof is given in Appendix B. When eRS > 0, AOPD reinforces the successful student action, with a
+larger update when the teacher also assigns it high probability. Unlike GRPO, this focuses the positive update
+on successful actions supported by the teacher. The second term suppresses alternative teacher actions, since
+the sampled student action already led to success. When eRS < 0, the signs reverse: AOPD suppresses the
+failed student action, especially when the teacher also favors it, while promoting alternative teacher actions.
+Thus, AOPD uses the teacher to distinguish which actions should be reinforced or corrected based on the
+rollout outcome.
+Clipping the importance sampling.
+Large importance sampling weights can make rare sampled tokens
+dominate the update, so we cap the importance sampling as:
+ewt = min
+ T(at | ht)
+S(at | ht) , c
+
+(3.7)
+In our experiments this constant is c = 4. We apply the same truncation to teacher probabilities in the second
+term without re-normalization: eT(a|h) = min{T(a|h), cS(a|h)}. The resulting estimator is:
+eJAOPD(θ) =
+eRS
+H
+H−1
+∑
+t=0
+"
+ewt log Sθ(at | ht) −∑
+a∈V
+eT(a | ht) log Sθ(a | ht)
+#
+.
+(3.8)
+We show in Corollary 5.3 that applying the same truncation to both terms preserves the advantage-weighted
+objective and its reward-improvement guarantee. We further discuss the impact of clipping on training in
+Appendix A. Algorithm 1 summarizes the final version of our algorithm.
+4
+Experiments
+We evaluate AOPD in two settings: (i) distillation from a stronger external teacher and (ii) self-distillation
+from a version of the student with privileged information. We compare AOPD against existing distillation and
+RL methods across math, coding, biology, and medical question answering.
+4.1
+Experimental Setup
+Tasks.
+We conduct our experiments across four tasks:
+Math: We train on Open-Thoughts (Guha et al., 2025) and evaluate on held-out Open-Thoughts problems,
+AIME24, AIMO-Validation-AMC (AMC), and HMMT (AI-MO, 2024a,b; Dekoninck et al., 2026).
+5
+
+
+Coding: We train on verified TACO problems (Li et al., 2023; Li, 2024) and evaluate on HumanEval,
+HumanEval+, and MultiPL-E (Chen et al., 2021; Cassano et al., 2022).
+Biology: We train on SciKnowEval (Feng et al., 2024) and evaluate on 50 held-out biology questions and the
+biology subset of MMLU-Pro (Wang et al., 2024).
+Medical QA: We train on MedMCQA (Pal et al., 2022) and evaluate on held-out MedMCQA and the separate
+MedQA benchmark (Jin et al., 2021).
+Models and configurations.
+Following previous work (Zhao et al., 2026; Ye et al., 2026), we use Qwen2.5
+and Qwen3 models of different sizes (Yang et al., 2025). For external-teacher distillation, we use Qwen3-
+1.7B as the student, with Qwen3-4B-Instruct as the teacher for math training and Qwen3-8B as the teacher
+for coding. For self-distillation, we use Qwen3-1.7B and Qwen3-8B for math, and Qwen2.5-7B-Instruct
+and Qwen3-4B-Instruct for biology, medical question answering, and coding. All Qwen3 experiments use
+non-thinking mode for both the student and teacher.
+Baselines.
+For external-teacher distillation, we compare AOPD with OPD using forward-KL (FKL) and
+reverse-KL (RKL) objectives (Agarwal et al., 2024; Lu and Lab, 2025), GRPO (Shao et al., 2024), SFT, and
+KDRL (Xu et al., 2025), which combines OPD and GRPO. For self-distillation, we compare with OPSD and
+GRPO, using the forward-KL objective for OPSD following previous work (Zhao et al., 2026; Jin et al., 2026).
+Within each comparison, we use the same number of training iterations, a batch size of 32, and the same LoRA
+adapters with (r = 64, α = 128), while selecting method-specific hyperparameters.
+Hyperparameters.
+To preserve the support required by the importance-sampling estimator in Equation (3.6),
+we disable top-p and top-k pruning for AOPD. We use a sampling temperature of T = 0.8, which we found
+effective for generating coherent Qwen responses. For OPD and OPSD, we use T = 1.1, top-p = 0.95, and
+top-k = 20, following Zhao et al. (2026) and the settings that reproduce their best performance. For the main
+Qwen3 math and coding experiments, we use a learning rate of 2 × 10−5 for AOPD.
+4.2
+External-Teacher Distillation
+We first evaluate AOPD with stronger external teachers on math and coding. For math, we use Qwen3-4B-
+Instruct as the teacher because it performs better on Open-Thoughts than Qwen3-8B in non-thinking mode.
+All methods train for 450 iterations on Open-Thoughts and 350 iterations on TACO. Math training uses a
+binary correctness reward. For coding, we use partial rewards based on five test cases, which we found more
+effective for training. We use G = 8 for GRPO and KDRL, following Xu et al. (2025), and G = 4 for OPD
+and AOPD. This is because our ablations show that larger groups provide little accuracy benefit for OPD and
+AOPD (Appendix A). For math, we use a maximum completion length of 8,192 tokens during training and
+16,192 tokens at evaluation.
+Results.
+Figure 2 compares OPD (FKL), GRPO, and AOPD during training. On math, OPD improves
+quickly and then plateaus, consistent with observations in previous work (Yang et al., 2026; Tan et al., 2026).
+On the other hand, GRPO improves more slowly and requires more iterations to converge. AOPD also
+improves rapidly at the beginning but also continues to improve later in training. This is because unlike
+standard OPD, which enforces uniform supervision, our objective dynamically adapts which teacher signals to
+follow as the student improves. Although OPD and GRPO achieve comparable Open-Thoughts evaluation
+rewards, OPD performs better on AIME24, as shown in Figure 2 (middle).
+On TACO, OPD makes little progress in evaluation reward, whereas AOPD improves and remains above
+GRPO (Figure 2, right). Nevertheless, OPD (FKL) improves HumanEval and MultiPL-E performance over the
+base model (Table 1). Overall, our finding across the experiments is that the all distillation methods achieve
+better performance on benchmarks regardless of the training reward.
+Table 1 shows the comparison for all methods across the math and coding benchmarks. For math,
+AOPD achieves the highest pass@1 on Open-Thoughts, AIME24, and AMC. It improves AIME24 by 2.4
+percentage points and AMC by 3.3 points over the baselines. For coding, AOPD achieves the best scores on
+HumanEval. However, GRPO achieves the highest HumanEval pass@10, while OPD (FKL) performs the best
+on MultiPL-E.
+6
+
+
+0
+150
+300
+450
+Iteration
+55%
+65%
+75%
+OpenThoughts eval reward
+OPD
+AOPD
+GRPO
+0
+100
+200
+300
+400
+Iteration
+0.10
+0.15
+0.20
+0.25
+0.30
+0.35
+0.40
+AIME accuracy
+OPD
+AOPD
+GRPO
+0
+100
+200
+300
+350
+Iteration
+30%
+35%
+40%
+45%
+TACO eval reward
+OPD
+AOPD
+GRPO
+Figure 2: Training progress under external-teacher distillation with Qwen3-1.7B as the student. (Left/middle)
+Open-Thoughts evaluation reward and AIME24 performance. (Right) TACO evaluation reward for coding.
+Math Training on Open-Thoughts
+Code Training on TACO
+OpenThoughts
+AIME24
+AMC
+HMMT
+HumanEval
+MultiPL-E
+Models
+pass@1
+pass@1
+pass@1
+pass@1
+HE
+HE+
+pass@10
+Avg. (7 lang.)
+Qwen3-1.7B
+56.6
+14.7
+40.1
+5.8
+68.3
+61.6
+82.5
+31.4
++ SFT
+68.0
+23.3
+53.5
+12.6
+69.5
+62.3
+82.4
+31.0
++ GRPO
+71.8
+22.3
+51.4
+10.6
+71.8
+64.0
+87.9
+31.1
++ KDRL
+72.8
+25.0
+55.8
+12.1
+71.5
+66.7
+84.4
+31.0
++ OPD (FKL)
+73.2
+32.1
+61.8
+16.0
+71.3
+66.5
+85.3
+33.3
++ OPD (RKL)
+72.0
+32.6
+61.0
+14.2
+68.3
+62.2
+81.8
+33.2
++ AOPD
+78.4
+35.0
+65.1
+15.8
+74.4
+68.9
+86.5
+32.5
+Table 1: External-teacher distillation on math and coding with Qwen3-1.7B as the student. The teachers are
+Qwen3-4B-Instruct for math and Qwen3-8B for coding.
+4.3
+Self-Distillation
+We next replace the external teacher with a version of the student conditioned on privileged information. For
+math, we use Qwen3-1.7B and Qwen3-8B, training for 400 iterations on Open-Thoughts with G = 4 for
+OPSD and AOPD. The maximum training completion length is 8,192 tokens. For the remaining tasks, we use
+Qwen2.5-7B-Instruct and Qwen3-4B-Instruct for biology, medical question answering, and coding. We train
+models for 300 iterations with a maximum completion length of 2,048 tokens on medical QA, and for 400
+iterations with a maximum completion length of 4,096 tokens on biology and coding.
+Math results.
+Table 2 compares GRPO, OPSD, and AOPD for both students. As Figure 3 shows, for
+Qwen3-1.7B, OPSD makes little progress on Open-Thoughts, consistent with previous work (Li et al., 2026b).
+This suggests limited benefit from the self-distillation signal in this setting. Nevertheless, AOPD reaches a
+comparable evaluation reward to GRPO and outperforms the baselines on all three math benchmarks. On
+AIME24, AOPD reaches 35.0%, improving over GRPO by 12.7 percentage points and OPSD by 19.4 points.
+For Qwen3-8B, OPSD is more effective and improves performance across the benchmarks. AOPD again
+achieves substantial gains in evaluation reward and benchmark performance, as illustrated in Table 2 and
+Figure 1 (middle). In particular, AOPD reaches 52.1% on AIME24, compared with 41.7% for OPSD, a gain of
+10.4 percentage points.
+Results with instruct models.
+We further evaluate AOPD across biology, medical question answering, and
+coding. As shown in Table 3, for biology, AOPD achieves the highest accuracy on SciKnowEval Biology and
+MMLU-Pro with Qwen2.5-7B, reaching 54.0% and 73.8%, respectively. For medical question answering,
+AOPD outperforms GRPO and OPSD on both MedQA and MedMCQA with both models. In particular,
+with Qwen2.5-7B-Instruct, AOPD reaches 74.8% on MedQA and 69.8% on MedMCQA, improving over
+OPSD by 2.7 and 3.2 percentage points. The training progress on MedQA is also shown in Figure 3. For
+coding, AOPD improves the evaluation reward significantly as shown in Figure 1 (right). AOPD achieves the
+7
+
+
+Qwen3-1.7B
+Qwen3-8B
+Method
+OpenThoughts
+AIME24
+AMC
+HMMT
+OpenThoughts
+AIME24
+AMC
+HMMT
+pass@1
+pass@1
+pass@1
+pass@1
+pass@1
+pass@1
+pass@1
+pass@1
+Base
+56.6
+14.7
+40.1
+5.8
+68.8
+27.5
+59.6
+14.2
++ GRPO
+71.8
+22.3
+51.4
+10.6
+78.5
+30.6
+63.8
+13.6
++ OPSD
+55.2
+15.6
+45.7
+6.4
+72.7
+41.7
+75.0
+18.4
++ AOPD
+70.2
+35.0
+61.4
+14.2
+84.6
+52.1
+78.6
+20.8
+Table 2: Math results for self-distillation on Open-Thoughts with Qwen3-1.7B and Qwen3-8B, both in non-
+thinking mode.
+Model
+Benchmark
+Base
+GRPO
+OPSD
+AOPD
+Biology
+Qwen2.5-7B-Instruct
+SciKnowEval
+20.0
+42.0
+41.0
+54.0
+MMLU-Pro
+71.3
+72.5
+71.6
+73.8
+Qwen3-4B-Instruct
+SciKnowEval
+36.0
+38.0
+44.0
+32.0
+MMLU-Pro
+84.5
+84.1
+84.9
+84.8
+Medical
+Qwen2.5-7B-Instruct
+MedQA
+61.5
+70.3
+72.1
+74.8
+MedMCQA
+56.5
+64.5
+66.6
+69.8
+Qwen3-4B-Instruct
+MedQA
+72.7
+71.1
+70.6
+76.8
+MedMCQA
+60.2
+59.8
+60.1
+61.6
+Coding
+Qwen2.5-7B-Instruct
+HE+
+76.0
+76.2
+76.8
+77.8
+MultiPL-E
+38.3
+39.9
+38.2
+38.5
+Qwen3-4B-Instruct
+HE+
+83.1
+84.2
+81.8
+85.1
+MultiPL-E
+55.9
+55.2
+53.3
+61.1
+Table 3: Self-distillation results across biology, medical question answering, and coding. AOPD outperforms
+GRPO and OPSD across all three domains.
+best HumanEval+ scores with both models. On MultiPL-E, AOPD reaches 61.1% with Qwen3-4B-Instruct,
+outperforming GRPO by 5.9 points, although it does not outperform GRPO with Qwen2.5-7B-Instruct.
+4.4
+Ablation: Is the teacher always useful?
+To test whether teacher-preferred actions necessarily benefit the student, we conduct a single-token intervention
+study with Qwen3-1.7B as the student and Qwen3-4B-Instruct-2507 as the teacher. We also consider a self-
+distillation setting, where the teacher is Qwen3-1.7B with access to privileged information. For a set of 512
+student response on Open-Thoughts, we select a position either (i) uniformly at random or (ii) by maximizing
+the KL divergence KL(T(·|h)∥S(·|h)) between the teacher and student distributions. We replace the student’s
+token with the teacher’s highest-probability token, then let the student complete the response greedily under
+the same 8192-token total budget. We compare the final answer of this intervention with the original response.
+The results are shown in Table 4. Teacher interventions cause both improvements and failures: with
+choosing the highest-disagreement position, teacher actions help (i.e., changing the reward to 1) in 9.6% of
+cases but harm (i.e., changing the reward to 0) in 9.8%. The high unchanged rate is expected as single-token
+interventions on the entire trajectory can rarely flip the final outcomes.
+Interestingly, the privileged self-teacher provides more helpful interventions than the external teacher at
+uniformly random positions (8.6% vs. 6.9%). This suggests that self-distillation can provide more beneficial
+guidance in some settings, despite using a smaller model. This further highlights the importance of selecting
+teacher guidance based on its contribution to the student’s reward rather than the teacher’s preferences alone.
+8

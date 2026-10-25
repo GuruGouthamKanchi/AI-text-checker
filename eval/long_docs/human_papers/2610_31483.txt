@@ -1,0 +1,561 @@
+Training Small Language Models for Transferable
+Tool Selection
+Zhaoyi Zhou1,2,∗, Akshayaa Magesh1, Jeongyeol Kwon1, Artem Kuriksha1, Daniel Jiang1, Andrea
+Zanette2, Ayush Jain1
+1Meta, 2Carnegie Mellon University
+∗Work done at Meta
+As LLM agents operate over corpora of more than ten thousand tools, selecting the right tool for
+a complex multi-step user instruction becomes a central bottleneck. Tool descriptions cannot all
+fit in context, and relevance-based retrievers only rank tools without knowing which are actually
+needed. Recent work instead leverages proprietary commercial LLMs like Claude or ChatGPT to
+drive a retriever, decomposing the instruction and selecting over retrieved candidates. We show that a
+small, open model can be trained via reinforcement learning to perform the same functionality. On
+ToolBench, a Qwen3-8B model post-trained with our recipe outperforms Llama-4-Maverick (402B).
+In addition, the trained model transfers directly to different retrievers and generalizes to new tool
+corpora in different domains.
+Date: October 22, 2026
+Correspondence: Zhaoyi Zhou at zhaoyiz@andrew.cmu.edu
+1
+Introduction
+Large language model (LLM) agents increasingly solve user tasks by invoking external tools (or APIs)1 e.g.,
+sending an email, booking a flight, or fetching data from the web, rather than producing an answer from the
+model’s learned knowledge alone. As agents are applied to real software ecosystems, the number of callable
+tools has grown to well over ten thousand in some public tool corpora (Qin et al., 2024; Shi et al., 2025), and
+enterprises add proprietary tools for internal use. At this scale, the model’s context overflows if every tool
+description is placed in it, so selecting the right tool becomes a bottleneck that precedes the actual execution.
+The classical solution is a retriever, which scores each tool by its similarity to the user instruction and returns
+a small set of high-scoring candidates for the agent to choose from. Retrievers come in two broad families.
+Lexical retrievers such as BM25 (Best Matching 25) (Robertson and Zaragoza, 2009) score a tool by how
+many query terms appear in its documentation, weighting rarer terms more heavily, and apply to any corpus
+without training. Dense retrievers such as COLT (Qu et al., 2024) instead embed the instruction and each
+tool description into a shared vector space with an encoder trained on the target corpus, and rank tools by
+embedding similarity. LLMs have also been introduced to assist a fixed retriever by rewriting queries (Chen
+et al., 2024; Kachuee et al., 2025), expanding documents (Lu et al., 2026; Senthil et al., 2026; Wu et al., 2025),
+or re-ranking candidates (Zheng et al., 2024b). However, a retriever can only assign a relevance-based ranking
+over tools; it does not know which of them the task actually requires. This is especially problematic when the
+user instruction contains multiple substeps and requires multiple tools.
+To address this, recent work places the LLM at the center of the selection workflow and uses the retriever as a
+meta-tool invoked on demand. Instead of consuming a single ranked list produced in one pass, the LLM drives
+retrieval across turns in a ReAct-style loop (Braunschweiler et al., 2025; Lumer et al., 2025a, 2026): a Plan
+stage decomposes the user instruction into substeps, a Retrieve stage fetches a set of relevant candidates,
+and a Select stage chooses the tools it judges necessary, repeating until the instruction is covered. Because
+the model, not the ranking function, decides which retrieved tools are required, this design directly handles the
+multi-substep, multi-tool instructions that a relevance ranking alone cannot address. Existing work performs
+1ToolBench (Qin et al., 2024) uses “tool” for a RapidAPI service that groups several APIs. In this paper the unit being
+selected is always an individual API, which we call a tool.
+1
+arXiv:2610.31483v1  [cs.LG]  22 Oct 2026
+
+
+USER TASK
+Book a hotel in NYC and a flight from SF to NYC.
+1  PLAN
+Trained model
+2  RETRIEVE
+External retriever
+Tool corpus
+3  SELECT
+Same trained model
+1. Book a hotel
+in NYC
+query
+1
+hotel_reviews
+Read hotel reviews
+2
+book_hotel
+Reserve a hotel room
+3
+hotel_details
+Get property information
+book_hotel
+Reserves a hotel room
+2. Book a flight
+from SF to NYC
+query
+1
+flight_status
+Track a flight
+2
+book_flight
+Reserve a flight ticket
+3
+airport_info
+Get airport information
+book_flight
+Reserves a flight ticket
+Final tool set
+{book_hotel, book_flight}
+Figure 1 Illustration of the Plan–Retrieve–Select tool selection workflow. The same trained model decomposes
+the request and selects a tool for each substep. Each substep issues one query to an external retriever, which filters
+candidates by score and retains at most K for the Select stage.
+tool selection with proprietary commercial models such as Claude or ChatGPT under careful prompt tuning.
+Since tool selection is a recurring sub-routine of the agentic tool-calling pipeline, we ask whether a small
+model can perform the task.
+While an off-the-shelf small model performs poorly on its own, fine-tuning specifically for tool selection is a
+viable solution. However, this raises the key technical challenge of transferability:
+• Transferability across tool domains. A tool-selection model trained on one domain of tools should be
+usable directly on another, so that a separate model need not be trained for every tool corpus.
+• Transferabilityacrossretrievers. Some tools carry specific tool names and thus favor exact string matching,
+whereas other tools are better found by semantic matching, so the preferred retriever depends on the
+underlying tool corpus. We want the model to work under a new retriever without retraining.
+These challenges are tractable under the studied framework because tool selection is built on the generalizable
+skills of the underlying LLM: decomposing the user instruction and matching a tool description to it. The LLM
+needs no domain-specific knowledge, and the workflow stays invariant to different retrievers. We therefore
+fine-tune Qwen3 models (Yang et al., 2025) with reinforcement learning to acquire these skills, and transfer
+them to new domains and retrievers (Figure 2).
+Our main contributions are as follows:
+• Training a small LLM for tool selection. We fine-tune off-the-shelf Qwen3 models (1.7B, 4B, and 8B) with
+RL. On ToolBench, their performance exceeds that of Llama-4-Maverick (402B) (Meta AI, 2025) with
+prompt tuning.
+• Domain transferability. The trained LLM transfers zero-shot across tool corpora: trained on ToolBench
+G3, it selects tools on G2, Gorilla, CRAFT, and TaskBench with no additional training.
+• Retriever transferability. A model trained over BM25 drives a domain-specialized dense retriever (COLT)
+at inference without retraining, retaining its learned selection behavior.
+2
+Related Work
+Tool retrievers.
+Conventional approaches treat tool selection as a single-shot retrieval over tool descriptions.
+ToolBench trains a Sentence-BERT retriever (Qin et al., 2024); ToolRet benchmarks tool retrieval and shows
+2
+
+
+Train
+ToolBench
+BM25 retriever
+Trained Qwen3
+PLAN + SELECT
+New tool domain
+New Retriever
+Transfer
+Figure 2 Once trained, our model directly transfers to other tool corpora in new domains and is compatible with new
+retrievers, without additional model training.
+that general-purpose IR encoders transfer poorly to tools (Shi et al., 2025); COLT adds a query–tool–scene
+graph to optimize for completeness (Qu et al., 2024); ToolGen represents each tool as a vocabulary token (Wang
+et al., 2025); ToolRerank adds hierarchy-aware reranking (Zheng et al., 2024b); and Gao and Zhang (2025)
+size the returned set per task instead of a fixed top-k. Beyond retrieval, MetaTool (Huang et al., 2024)
+benchmarks whether a model knows when and which tool to use.
+LLM-assisted retrieval.
+An LLM can also improve a fixed retriever. It can expand tool documents offline (Lu
+et al., 2026; Senthil et al., 2026; Wu et al., 2025; Lumer et al., 2025b), rewrite the query for single-pass
+retrieval (Chen et al., 2024; Kachuee et al., 2025), or operate the retriever across turns: iterative LLM
+feedback (Xu et al., 2024), mid-conversation re-querying (Lumer et al., 2025a), short-term tool memory (Lumer
+et al., 2026), and ReAct-style retrieval with one query per decomposed substep (Braunschweiler et al., 2025).
+Our workflow follows the multi-turn design, but trains a small model instead of prompting a large one.
+Action generalization in RL.
+Standard RL assumes a fixed action set, whereas our actions are tools from a
+corpus that could change between training and deployment. Prior work handles large or changing action sets
+by learning action representations (Dulac-Arnold et al., 2015; Chandak et al., 2019, 2020), and generalizes
+zero-shot to unseen actions by inferring their representations from action information acquired separately from
+the task (Jain et al., 2020, 2022). Our Select stage is such a policy over a varying action set of the retrieved
+tools, with each represented by its documentation. The LLM supplies these representations implicitly without
+a separately trained action encoder.
+RL-trained LLM agents.
+DeepAgent (Li et al., 2026) trains an end-to-end deep reasoning agent covering tool
+discovery and execution. Zhang et al. (2024) derive DPO preferences for single-shot query rewriting from a
+frozen retriever’s rankings, and ToolRL (Qian et al., 2025) studies reward design for tool learning. None of
+them study transferability in tool selection. Beyond tool selection, RL has also been applied to other search
+problems: open-domain QA (Jin et al., 2025; Song et al., 2025; Chen et al., 2025; Sun et al., 2025), query
+generation (Jiang et al., 2025), web agents (Zheng et al., 2025; Li et al., 2025; Qi et al., 2025), and retriever
+training from agent trajectories (Zhou et al., 2026).
+3
+Method
+Given a user instruction x and a tool corpus T too large to fit in the model’s context, tool selection asks for
+the subset T ⊆T of tools that x requires. Rather than training a corpus-specific dense retriever, we let a
+single small model π operate a lightweight, corpus-agnostic retriever R to find these tools. We first define the
+workflow through which π drives R (§3.1), and then describe how π is trained: supervised fine-tuning (§3.2)
+followed by reinforcement learning (§3.3). Unless otherwise stated, R is BM25 (Robertson and Zaragoza,
+2009), which requires no training and applies to any corpus. The transfer to new tool domains in §4 therefore
+comes from the trained model rather than from a retriever fitted to the target corpus.
+3
+
+
+Algorithm 1: Tool-selection workflow.
+Input: User instruction x; model π; retriever R; score threshold τ; candidate cap K
+Output: Predicted tool set T
+// Plan
+1 Model πPlan decomposes x into substep texts s1, s2, · · · , sn; T ←∅
+2 foreach substep text si do
+// Retrieve
+3
+Retriever R scores every tool by si.
+4
+Ci ←Set of tools with score above τ.
+5
+Truncate Ci to top-K tools according to score.
+6
+if Ci = ∅then continue
+// Select
+7
+Model πSelect selects one tool id from Ci given si.
+8
+T ←T ∪({id} ∩Ci).
+9 end
+10 return T
+3.1
+The tool-selection workflow
+The LLM drives the retriever through a three-stage workflow (Figure 1 and Algorithm 1): a Plan stage
+decomposes the user instruction into substeps, a Retrieve stage fetches relevant candidates, and a Select
+stage chooses the tools it judges necessary, repeating until the instruction is covered.
+Plan.
+A user instruction often contains several requests. For instance, “book a flight from San Francisco to
+New York City and find a hotel in New York City” naturally splits into two. Because the retriever scores tools
+against the whole query, the terms of one request interfere with retrieval for the other. The model therefore
+first decomposes the instruction into an ordered list of substeps, each a short natural-language description of
+a single required capability.
+Retrieve.
+For each substep, the retriever scores all tool descriptions against the substep text in a single
+query. We keep tools scoring above a threshold τ and truncate them to the top K, which filters out irrelevant
+tools and bounds the context loaded at the Select stage. Unless otherwise stated, τ = 3 and K = 15. We
+train with BM25, but any retriever that scores tools against a substep, such as COLT (Qu et al., 2024), a
+dense retriever trained on the ToolBench corpus, can be substituted at test time without retraining.
+Select.
+The descriptions of the candidate tools are loaded into the LLM’s context, and the LLM selects the
+tool that best fulfills the substep. This assumes that each substep can be solved by exactly one tool and that
+substeps are independent, i.e., no substep needs the output of another. The selected tools are accumulated
+across substeps, and their union is returned as the final tool set. The same model π serves both LLM stages
+under two different prompts (Appendix D). We write πPlan and πSelect only to indicate which prompt is
+used. Each LLM call is stateless and sees only the user instruction (Plan) or the current substep with its
+≤K candidates (Select), so the per-call context is bounded regardless of corpus size or plan length.
+3.2
+Data Curation for Supervised Fine-Tuning
+Reinforcement learning from an off-the-shelf base model is slow to start as the base model rarely completes the
+workflow successfully, so we warm-start the policy with supervised fine-tuning (SFT) on synthetic trajectories
+before the RL stage (§3.3). We use Llama-4-Maverick as the teacher model to create the training examples.
+Gold tool filtering.
+We assume access to a reference gold tool set for each query in the training data, but
+this set can be noisy. For instance, ToolBench (Qin et al., 2024) collects gold tools from a reference solution
+trajectory, so some gold tools are not determined by anything the user wrote, and others are redundant
+near-duplicates. Training on such tools would teach the agent to select tools that the instruction does not
+call for. Therefore, our filter keeps a (query, gold tool) pair only if the tool can be identified from the query
+4
+
+
+alone. A deterministic first pass keeps any pair whose query and tool documentation share a content word.
+The remaining pairs go to the teacher model, which keeps only those whose query contains a paraphrase or
+synonym of the tool’s function. The resulting curated gold set is used for both training and evaluation.
+Plan decomposition.
+Given the surviving gold tools, the teacher model decomposes each user instruction into
+substeps, matching each substep to one of them. It may emit fewer substeps than gold tools, because some
+gold tools, though relevant, are unnecessary for the instruction. These unused gold tools are removed from
+the gold set as an additional round of filtering.
+Reasoning generation.
+The generated substeps and the gold tools determine the tool-selection trajectory,
+but we still generate reasoning text so that the model can more easily learn how to act in the Plan and
+Select stages. For Plan, given the user instruction and the generated substeps, the teacher model writes the
+reasoning that justifies the decomposition. We do not reuse the teacher’s reasoning from the decomposition
+step itself, because the teacher saw the gold tools there and its reasoning would leak them. For Select, the
+teacher model writes the reasoning that justifies picking the gold tool among the candidates retrieved for the
+generated substep. A validation step flags any reasoning that names a tool outside the candidate set or leaks
+candidate indices, and triggers regeneration when a violation occurs.
+Fine-tuning.
+We collect the reasoning and actions generated during data curation in JSON format and form
+(prompt, reasoning + action) pairs for all rounds of LLM generation (prompt templates in Appendix D). We
+then apply standard SFT so that the model learns the basic thinking pattern and output format for both the
+Plan and Select stages, preparing it for RL (§3.3).
+3.3
+Reinforcement Learning
+Starting from the SFT checkpoint, we further train the model with RL for better performance (§4). For
+training stability, we decouple Plan and Select into separate stages: when training Select, we use the
+high-quality substeps generated by the teacher model instead of the model’s own plans. Each stage is then a
+single stateless LLM call with its own reward, so we can train it with standard GRPO (Shao et al., 2024). The
+remaining question is how to design the Plan and Select rewards without additional human annotation.
+Plan reward.
+The Plan stage is rewarded based on substep text quality, which is reflected by the candidate
+set retrieved with this text. A plan is good when every gold tool is retrieved by one substep at a high rank
+and there are no redundant substeps. Therefore, we treat the substeps as a set and measure its precision and
+recall against the gold tools.
+Suppose the user instruction has N gold tools, and the planning stage emits n substeps. Running substep i
+through the retriever yields a ranked candidate list Ai. We try to match every list Ai with a gold tool. We
+walk the substeps i in order and scan each Ai in descending order of score. The first gold tool that has not
+been matched previously is matched to Ai, and we move on to the next substep. If no such gold tool is found,
+Ai is unmatched.
+Let ncov be the number of matched substeps. Then precision is the fraction of substeps that are matched:
+precision = ncov
+n .
+Precision penalizes unmatched substeps, encouraging every substep to match a unique tool.
+Let i1, i2, · · · , incov be the substeps that are matched with a gold tool, and the matched gold tool appears in
+rank ρj for substep ij. Recall is the fraction of gold tools covered, graded by rank:
+recall = 1
+N
+ncov
+X
+j=1
+1
+ρj
+.
+Recall encourages every gold tool to be matched at a higher rank, i.e., the retriever is more confident with the
+gold tool.
+5
+
+
+The planning reward combines precision and recall by their harmonic mean, i.e., F1 score:
+Rplan = F1(precision, recall).
+Select reward.
+Selection is scored by exact match against the substep’s gold. Because each substep targets
+a single gold tool g (§3.1), the Select reward is
+Rsel = 1
+
+selected = {g}
+
+,
+which is 1 only when the policy picks exactly the gold and nothing else. This terminal reward is, per substep,
+the quantity the evaluation exact-match metric measures.
+4
+Experiments
+Our experiments answer three questions about the trained agent.
+(i) Success Rate. How does a small,
+locally-hosted tool-selection agent compare against inference-only baselines that drive the same task with
+a much larger, general-purpose model accessed by prompting alone (§4.1)? (ii) Domain generalization. Does
+an agent trained on a single tool corpus transfer, with no retraining, to unseen corpora and domains (§4.2)?
+(iii) Retriever generalization. Is the learned policy tied to the retriever it trained on, or can the retrieval backend
+be swapped at test time for a stronger, domain-specialized one (§4.3)? To answer these questions, we train
+the Qwen3 model family at three model scales (1.7B, 4B, and 8B) on the ToolBench G3 (Qin et al., 2024)
+training split, which contains 21,361 user instructions over a corpus of 1,419 APIs for the model to select. Each
+user instruction in this benchmark requires multiple tools and can be decomposed into several independent
+substeps, so it aligns with our assumption.
+4.1
+Tool Selection Success Rate
+1.7B
+4B
+8B
+0
+10
+20
+30
+40
+50
+Success Rate (%)
+Base
+SFT
+SFT+RL
+Figure 3 Effect of training on ToolBench G3 (test
+split, 2,124 instructions). Success rate for Qwen3 at
+three scales, run through the same Plan–Retrieve–
+Select workflow untrained (Base), after SFT, and
+after SFT followed by RL (SFT+RL).
+We report evaluation results on the test split of Tool-
+Bench G3, which contains 2,124 user instructions. Suc-
+cess rate is defined with an exact-match metric: tool
+selection on one user instruction is considered successful
+if and only if the selected tool set matches exactly with
+the filtered gold tool set of §3.2, and the success rate is
+averaged over all tested user instructions. Prior work
+on tool retrieval mostly reports ranking metrics over the
+retrieved list, such as Recall@K and NDCG@K (Qin
+et al., 2024; Qu et al., 2024; Shi et al., 2025), or complete-
+ness, whether every gold tool appears in the top-K (Qu
+et al., 2024; Shi et al., 2025). These credit a candidate
+list that contains the gold tools. Our metric is stricter:
+the agent must commit to a set, and both a missing tool
+and an extra tool count as a failure.
+Figure 3 shows the effect of training: we compare the
+success rate of the untrained Qwen3 model, the model
+after SFT, and the model after SFT followed by RL (SFT+RL), at three scales. An untrained model performs
+poorly under our Plan–Retrieve–Select workflow. This is expected, as the model has not learned how to
+decompose user instructions and select tools. SFT alone raises the success rate above 30% at every scale, and
+RL improves it further (e.g., from 36.2% to 41.5% at 8B).
+We further compare our SFT+RL model against the larger Llama-4-Maverick by prompting. We use four
+workflows to run Llama-4-Maverick, all with few-shot prompts and greedy decoding:
+• ReAct, a ReAct style workflow following ToolReAGt (Braunschweiler et al., 2025). We use BM25
+retriever and include plan decomposition to make a fair comparison with our workflow. After the same
+Plan stage as in our workflow, a ReAct loop is run for each substep: in every turn it writes its own
+6
+
+
+search query, observes the BM25 top-K candidates for that query, and either searches again (up to four
+times) or commits one tool. The union over substeps is the prediction. This differs from our workflow
+in two ways: 1) the model writes the retrieval query rather than reusing the substep text; 2) a substep
+may issue several retrievals rather than one.
+• Hierarchical search, following AnyTool (Du et al., 2024). No retriever is needed. Instead, the model
+walks the ToolBench taxonomy from category to tool to API, and a self-reflection turn re-enters the
+tree when the selection looks incomplete.
+• Search-R1-style (Jin et al., 2025): a single flat reasoning stream that interleaves <think>, <search>
+over BM25 (top-10 per search, up to six searches), and a final <answer> holding the tool set, without
+decomposition.
+• Our workflow (§3.1), with the untrained Maverick as planner and selector.
+Method
+Success Rate (%)
+Llama-4-Maverick (prompted)
++ ReAct
+28.4
++ hierarchical search
+8.6
++ Search-R1 style
+30.6
++ our workflow
+10.1
+Qwen3 (SFT+RL) + our workflow
+1.7B
+37.6
+4B
+40.3
+8B
+41.5
+Table 1 Tool-selection success rate on the ToolBench
+G3 test split (2,124 instructions) under exact match:
+an instruction succeeds if and only if the selected tool
+set equals the gold set. Llama-4-Maverick is prompted
+under four interaction protocols. Qwen3 models are
+trained with SFT followed by RL (§3). The best run
+is underlined.
+Table 1 shows that the Search-R1-style workflow pairs
+best with the untrained large model, reaching 30.6%
+success rate. However, this result still lags behind that
+of our trained model. Even the smallest 1.7B model can
+be trained to reach 37.6% success rate. Our workflow
+reaches only 10.1% success rate for Llama-4-Maverick,
+which further emphasizes the necessity of training when
+using our workflow. Given the same Llama-4-Maverick
+model, ReAct exceeds our workflow by 18%, at the cost
+of up to five model calls per substep instead of one.
+4.2
+Transferability across Benchmarks
+A tool-selection agent is only useful if it works on corpora
+it was not trained on, so we test the models trained on
+ToolBench G3 directly on four benchmarks. We choose
+them to probe two independent axes of transferability:
+how far the tool corpus and domain shift from the train-
+ing distribution, and whether the task needs a single tool
+or several. ToolBench G2 is the mildest shift: a larger,
+mostly-disjoint split of the same RapidAPI universe
+(11,474 tools, only ∼9% shared with G3) in the same multi-tool scenario. Gorilla (Patil et al., 2024) and
+CRAFT (Yuan et al., 2024) come from entirely different tool repositories and domains, exercising a much
+larger vocabulary shift. All user instructions in both benchmarks have exactly one gold tool, so no Plan
+stage is needed and thus we focus on the transferability of the Select stage. Finally TaskBench (Shen et al.,
+2024) is the multi-tool out-of-domain case: tasks from entirely different domains that each require several
+tools, evaluated over each split’s own tool inventory, so it is a comprehensive evaluation of both planning and
+selection.
+The results are shown in Table 2. On ToolBench G2 the trained agent transfers, though below its in-domain
+G3 score (∼24% vs. 40% at 4B). The 8× larger, mostly-disjoint corpus adds distractors and pushes gold
+deeper into the BM25 ranking. Even so, it beats the strongest untrained baseline (Maverick + Search-R1,
+20.8%). The same checkpoints have a clear transfer advantage on single-tool benchmarks (Gorilla and
+CRAFT) over Llama-4-Maverick, so the Select stage transfers across domains. The only exception happens
+on TaskBench, in which Llama-4-Maverick with the Search-R1-style workflow gives an 8 pp higher success
+rate than our method. This shows that the Plan stage requires some domain knowledge and thus the
+Search-R1-style workflow, which requires no decomposition, performs better. Nonetheless, our small model
+still beats Llama-4-Maverick on ReAct and our workflow, which both include a Plan stage.
+7
+
+
+Success Rate (%)
+Method
+ToolBench G2
+Gorilla
+CRAFT
+TaskBench
+Llama-4-Maverick (prompted)
++ ReAct
+15.6
+16.0
+18.0
+60.2
++ Search-R1 style
+20.8
+15.9
+41.0
+80.6
++ our workflow
+4.4
+9.2
+47.9
+36.9
+Qwen3 (untrained) + our workflow
+1.7B
+0.9
+5.5
+44.8
+5.8
+4B
+4.4
+8.7
+49.7
+45.6
+8B
+11.2
+8.0
+53.4
+55.3
+Qwen3 (SFT) + our workflow
+1.7B
+21.8
+17.6
+64.7
+54.4
+4B
+23.0
+14.5
+65.9
+59.2
+8B
+23.9
+26.8
+66.4
+66.0
+Qwen3 (SFT+RL) + our workflow
+1.7B
+23.7
+21.2
+67.9
+63.1
+4B
+23.5
+19.7
+68.2
+72.8
+8B
+25.8
+29.9
+69.0
+72.8
+Table 2 Transferability results to new tool domains. The Qwen3 models are trained on the training split of ToolBench
+G3, the same checkpoints as in Table 1. All numbers are success rates in percent (%). Column max underlined.
+4.3
+Transferability to new retrievers
+Our models are trained over BM25. The Retrieve step
+is an interface that returns a ranked candidate set, and
+any retriever that scores the corpus against a substep can
+fill it. We test this by swapping BM25 for COLT (Qu
+et al., 2024), a dense retriever trained specifically on the
+ToolBench corpus, and evaluate the models directly on the
+test split of ToolBench G3, without additional training.
+Figure 4 reports the success rate under each retriever.
+Swapping in COLT improves the success rate at every
+scale. This is because COLT is an expert retriever for
+ToolBench, and our model inherits the stronger retriever’s
+recall without any retraining.
+We nevertheless train
+with BM25 because it requires no corpus-specific train-
+ing, which ensures that the transfer results above do not
+depend on a strong in-domain retriever.
+1.7B
+4B
+8B
+0
+10
+20
+30
+40
+50
+Success Rate (%)
+BM25
+COLT
+Figure 4
+Swapping the retriever at inference on
+the ToolBench G3 test split. The same G3-trained
+(BM25) checkpoints are run with BM25 or COLT (Qu
+et al., 2024) behind the Retrieve step, with no ad-
+ditional training.
+4.4
+Ablations
+The ablation studies are all evaluated on the test split of ToolBench G3.
+Planner. We ablate the model used for the Plan stage, by replacing the trained 8B model with: 1) the
+untrained Qwen3-8B; 2) Llama-4-Maverick. We hold the Retrieve and Select stages fixed. As shown in
+Figure 5a, the trained planner is the best of the three. The much larger Maverick planner performs worst,
+indicating that training, not model scale, drives planning quality on this task.
+Candidate set size. We sweep the retrieved candidate set size K, i.e., the number of candidates handed to
+the Select stage, on the fixed 8B checkpoint. Success rate increases with K up to K = 20 and does not
+improve further at K = 30 (Figure 5b): a larger set is more likely to contain the gold tool, but additional
+candidates also act as distractors. We set K = 15 as our training and evaluation configuration to balance
+context consumption and performance.
+8

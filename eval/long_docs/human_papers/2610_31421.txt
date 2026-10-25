@@ -1,0 +1,586 @@
+HOW DEPTH GROWTH
+AND LOOPING SHAPE IN-
+CONTEXT LEARNING IN LANGUAGE MODELS
+Ferdinand Kapl1,2,3∗
+Kaitlin Maile4† Stefan Bauer1,2,3† Johannes von Oswald4†
+1 Technical University of Munich
+2 Helmholtz AI, Munich
+3 Munich Center for Machine Learning (MCML)
+4 Google, Paradigms of Intelligence Team
+ABSTRACT
+Looped and depth-grown language models reuse computations across depth and
+have attracted interest for their reasoning capabilities. Building on prior sugges-
+tive evidence of improved in-context-learning (ICL), we investigate how such
+reuse favors ICL, including how it shapes the acquisition, retention, and mech-
+anisms of this ability. Our analysis spans pretrained language models up to 3B
+parameters and controlled tasks. The experiments provide evidence for a shared
+inductive bias toward learning from context: grown and looped models rely more
+on information in context and, compared with a full-depth dense reference, ac-
+quire ICL earlier in controlled tasks and retain it more strongly when learning
+fixed associations in the weights is also possible. Tracing attention heads through
+training reveals that depth growth propagates early induction heads across layers.
+Ablations show that grown and looped models rely more strongly on induction-
+ranked heads for both few-shot performance and later-token prediction. Together,
+these findings provide evidence for a shared inductive bias toward learning from
+context and suggest that (soft) parameter reuse shapes how this ability develops
+and which attention mechanisms support it.
+1
+INTRODUCTION
+How a language model acquires its depth can shape the computations it learns. Depth growing trains
+an initially shallow network and progressively duplicates blocks of layers, allowing later training
+stages to reuse computations learned earlier. Looping instead repeatedly applies a shared block
+within each forward pass. Originally motivated by training efficiency (Fahlman & Lebiere, 1989)
+and parameter efficiency, respectively, both approaches have attracted renewed interest for their
+reasoning capabilities (Saunshi et al., 2024; 2025; Geiping et al., 2025). Although grown layers
+become independent after duplication, whereas looped layers remain tied, the two approaches can
+produce related patterns of iterative computation across depth (Kapl et al., 2026a;b).
+This reuse of computation may also favor in-context learning (ICL), as suggested by initial evidence
+in both grown and looped models (Kapl et al., 2026b). ICL is the ability to use information supplied
+in a prompt or sequence without updating the model’s parameters (Brown et al., 2020). A model
+that repeatedly refines its representations might also be better equipped to extract and apply patterns
+from context. Yet, improved reasoning performance alone does not establish this ability. Predictions
+can rely on associations stored in the weights, on information inferred from the current sequence, or
+on both. Moreover, a model’s improvement in predicting later tokens and its ability to learn a task
+from demonstrations are related but distinct measurements, with potentially different underlying
+mechanisms (Olsson et al., 2022; Yin & Steinhardt, 2025).
+Prior work provides promising evidence for a connection between depth reuse and ICL. Looped
+Transformers can learn synthetic regression and other data-fitting tasks with substantially fewer
+parameters than standard Transformers (Yang et al., 2024; Von Oswald et al., 2023). Studies of pre-
+trained language models also report improved adaptation from demonstrations in grown and looped
+models for synthetic reasoning tasks (Kapl et al., 2026b). Concurrently, Wang et al. (2026) report
+*Correspondence: ferdinand.kapl@tum.de.
+†Provided equal feedback and guidance.
+1
+arXiv:2610.31421v1  [cs.CL]  22 Oct 2026
+
+
+stronger gains with increasing context length and demonstration count in compute-matched looped
+mixture-of-experts models. What remains less understood is how these behavioral differences arise
+during training: whether growing and looping favor a context-based solution when memorization
+is also possible, how they affect the persistence of that solution, and how changes in attention-head
+mechanisms relate to the different measures of ICL.
+In this work, we investigate these questions through complementary experiments on natural lan-
+guage and controlled tasks. We compare dense baselines with depth-grown and looped models
+on language-model configurations with dense reference sizes from 360M to 3B parameters. We
+measure position-dependent token loss and scaling with the number of demonstrations for few-shot
+learning. We then use RegBench (Akyürek et al., 2024) to study learning previously unseen formal
+languages, and Omniglot-based tasks (Chan et al., 2022; Singh et al., 2023) to separate learning from
+context from learning fixed associations in the weights. Finally, we track induction and function-
+vector heads through training and intervene on them in the final models. Our contributions are the
+following:
+• Grown and looped language models benefit more from context.
+In the main 3B
+language-model comparison, both achieve larger early-to-late token-loss reductions than
+the dense baseline, with the grown model also attaining lower absolute late-token loss.
+Both models also achieve higher GSM8K accuracy across all demonstration counts. On
+RegBench, grown and looped models predict unseen formal languages more accurately,
+with their advantage emerging within the first string (Figures 1 and 2).
+• Growing and looping favor earlier acquisition and stronger retention of ICL. In con-
+trolled Omniglot tasks where both context and fixed class–label associations can solve
+training queries, grown and looped models retain higher ICL accuracy and exhibit lower
+in-weights learning (IWL) accuracy than the full-depth dense reference. When labels are
+reassigned in every sequence, removing a fixed class–label solution, both acquire ICL ear-
+lier than the same reference (Figure 3).
+• Depth growth propagates early induction heads across layers. Tracing final induction
+heads backward through training shows that strong heads in the grown model predomi-
+nantly descend from heads already exhibiting strong induction behavior in early growing
+stages. Layer duplication produces repeated patterns of this behavior across depth, while
+looped models exhibit analogous patterns across successive applications of their shared
+looped block (Figures 4 and 5).
+• Grown and looped models rely more strongly on induction heads for ICL. In the main
+language-model comparison, ablating induction-ranked heads causes larger drops in few-
+shot performance and larger increases in late-token loss than in the dense baseline. These
+interventions establish a greater contribution from induction-ranked heads to both behav-
+iors, while function-vector heads remain important (Figure 6).
+Together, these experiments show that constructing depth through (soft) parameter reuse shapes both
+the development of context use and the attention mechanisms supporting it.
+2
+RELATED WORK
+Grown Models.
+Model growth reduces training cost by starting with a smaller network (Fahlman
+& Lebiere, 1989). Language-model approaches use layer copying and progressive stacking (Gong
+et al., 2019; Reddi et al., 2023; Kim et al., 2024; Du et al., 2024), learned transformations between
+model sizes (Wang et al., 2023), or masked and function-preserving expansions (Yao et al., 2024;
+Chen et al., 2015; Gesmundo & Maile, 2023). Growth operators also shape model capabilities:
+MIDAS duplicates a central block of layers and improves reasoning at comparable language-model
+capabilities (Saunshi et al., 2024). Kapl et al. (2026a) find stronger reliance on later layers in grown
+models and propose LIDAS, which duplicates layers around the network’s center independently of
+existing block boundaries.
+Looped Models.
+Cross-layer parameter sharing provides computational depth with fewer weights,
+as in Universal Transformers (Dehghani et al., 2019), recurrent stacking for translation (Dabre & Fu-
+jita, 2019), and ALBERT (Lan et al., 2020), while Takase & Kiyono (2023) study its design choices.
+2
+
+
+Extensions add layer-specific low-rank adapters (Bae et al., 2025) or mixture-of-experts capacity
+(Csordás et al., 2024). Recurrence has also been studied for algorithmic length generalization (Fan
+et al., 2025), latent reasoning (Saunshi et al., 2025), and inference-time computation scaling (Geip-
+ing et al., 2025; Zhu et al., 2025). Other work retrofits recurrence into pretrained models (McLeish
+et al., 2025; Koishekenov et al., 2025) or explores hierarchical and compact recursive architectures
+for iterative refinement (Wang et al., 2025; Jolicoeur-Martineau, 2025).
+In-Context Learning.
+ICL enables adaptation from demonstrations without parameter updates
+(Brown et al., 2020). Studies show that Transformers infer unseen functions from examples (Garg
+et al., 2022), learn gradient-descent-like computations in restricted regression settings (Von Oswald
+et al., 2023; Gatmiry et al., 2024), and can be programmed to execute learning algorithms in context
+(Giannou et al., 2023). Data properties such as burstiness and dynamic meanings encourage ICL
+(Chan et al., 2022), which can decline as persistent associations are learned in the weights (Singh
+et al., 2023). Other work connects regular-language learning to in-context n-gram heads on Reg-
+Bench (Akyürek et al., 2024) and studies context-dependent representations and their competition
+with pretrained semantics through graph tracing (Park et al., 2025). These settings let us probe
+context use with and without competing in-weights solutions.
+Induction heads support pattern copying and are associated with improved later-token prediction (El-
+hage et al., 2021; Olsson et al., 2022). Their formation has been studied in controlled synthetic tasks
+(Singh et al., 2024) and language-model pretraining (Aoyama et al., 2026). Function-vector heads
+transmit task representations from demonstrations (Todd et al., 2024). Yin & Steinhardt (2025) find
+that few-shot performance depends primarily on these heads, many of which first exhibit induction
+behavior.
+Looped Transformers can match standard Transformers on synthetic data-fitting tasks with sub-
+stantially fewer parameters (Yang et al., 2024). Concurrent work (Wang et al., 2026) reports gains
+that increase with sequence length and demonstration count in looped mixture-of-experts language
+models under matched compute, parameter, and KV-cache budgets .
+Most closely related, Kapl et al. (2026b) identify shared depth-wise computational patterns in grown
+and looped models, show that grown models can benefit from inference-time repetition, and report
+improved adaptation from demonstrations on reasoning primitives. We extend this evidence to ICL
+acquisition, retention, and mechanisms across pretrained language models and controlled tasks. We
+test whether growing and looping favor context use when memorization is possible, trace induc-
+tion heads through layer duplication, and ablate induction and function-vector heads to assess their
+contributions to few-shot learning and token prediction.
+3
+IN-CONTEXT LEARNING OF DEPTH-GROWN AND LOOPED MODELS
+We first examine how growing and looping affect learning from context. After introducing the mod-
+els and measures (Section 3.1), we evaluate context use in language models (Section 3.2), adaptation
+to unseen formal languages on RegBench (Section 3.3), and ICL with and without an in-weights so-
+lution on Omniglot (Section 3.4).
+3.1
+MODELS AND EVALUATION MEASURES
+A dense model trains L independently parameterized Transformer layers from scratch. A depth-
+grown model instead begins with a shallower model and periodically duplicates a block of layers,
+after which the copies train independently. The main paper focuses on LIDAS (Kapl et al., 2026a),
+which selects the central layers without respecting earlier block boundaries. Comparisons with
+MIDAS (Saunshi et al., 2024) and at other model sizes (360M and 1.7B) appear in Appendix A.3.
+The language models start with block size b = 4 layers and add b layers at each growth event,
+copying both weights and optimizer moments while retaining the training schedule.
+A looped model reuses the same block of layers several times within each forward pass, with pa-
+rameters remaining tied throughout training. We write Loop p-b×r-c for p prelude layers, a block
+of b layers applied r times, and c coda layers, borrowing the naming conventions by Geiping et al.
+(2025). Its effective depth is p + br + c, with p + b + c unique layers. Our main 3B comparison
+uses a 36-layer dense reference (Bakouch et al., 2025), a LIDAS-grown model reaching that depth,
+3
+
+
+1
+16
+256
+4096
+Token index
+0.00
+0.02
+0.04
+0.06
+Δ NLL ↓
+(a) FineWeb-Edu
+256
+1024
+4096
+Token index x
+0.000
+0.006
+0.012
+0.018
+Δ[NLL(50) −NLL(x)] ↑
+(b) FineWeb-Edu
+0
+1
+2
+4
+8
+Shots k
+0
+6
+12
+18
+Accuracy (%) ↑
+(c) GSM8K
+Baseline
+LIDAS
+Loop 10-8 × 2-10
+Figure 1: Grown and looped models benefit more from context. In the 3B comparison, grown
+and looped models show greater context gains in (a) NLL relative to the dense baseline and (b)
+early-to-late loss reduction relative to the baseline per token position, although the looped model
+retains higher NLL. Both panels aggregate token losses in the same power-of-two position bins:
+(a) compares the binned loss directly with the baseline, whereas (b) first computes each model’s
+improvement from a fixed early token position (50) to the bin ending at x and then subtracts the
+baseline’s improvement. Dashed horizontal lines show mean ∆NLL over all positions. (c) Both
+models exceed the baseline’s few-shot GSM8K (Cobbe et al., 2021) accuracy, with larger gains for
+LIDAS. Results use 10,000 FineWeb-Edu documents and three demonstration seeds, respectively.
+Additional model sizes and exact experimental setup in Appendix B.
+and the Loop 10-8×2-10 model, which has 36 layer applications and 28 unique layers. All three
+models are trained on the same 100B tokens in the same order. Within each size, all models share the
+data and optimizer-step budget and have matched final inference FLOPs. Growing uses shallower
+networks during part of training, saving an estimated 26% of training FLOPs at 3B and 22% at
+both 360M and 1.7B. Looping reduces unique parameters while retaining the same effective depth.
+Appendix A reports the configurations and training schedules.
+In-Context Learning Measures. We evaluate language models using next-token negative log-
+likelihood (NLL, lower is better), a token-loss ICL-Score (Olsson et al., 2022), and few-shot task
+performance. The ICL-Score measures the reduction in mean NLL from early positions 40–60
+("50") to later positions 490–510 ("500"), with higher values indicating greater early-to-late im-
+provement. We use these token-loss windows to smooth potential single token position spikes and
+refer to the positions in the following by a single position for simplicity. In Figure 1(b), we instead
+average later losses over power-of-two bins ending at x, keeping the early reference fixed. This mea-
+sures improvement within each model, while we report individual token loss separately. Few-shot
+performance is measured through benchmark accuracy or token-overlap F1. Full protocols are given
+in Appendix B.
+3.2
+CONTEXT USE IN LANGUAGE MODELS
+We first compare how the different models use additional context in sequence modeling and few-shot
+tasks. These evaluations distinguish improvement with more context from absolute performance
+relative to the dense baseline. For sequence modeling, the depth-grown and looped models are worse
+at predicting early tokens compared to the baseline (Figure 1(a)), with the biggest gap for very early
+tokens (token index ≤8). After this peak, both models improve the prediction of tokens by lowering
+their NLL more, making better use of more tokens in the context. This is especially apparent when
+measuring the improvement of later tokens versus a fixed early position (50) and comparing it to
+the improvement of the baseline (Figure 1(b)). The looped model, which uses significantly fewer
+unique parameters, retains higher NLL than the baseline even at the end of the sequence. LIDAS
+4
+
+
+Dense
+12L
+Grown
+b = 3
+Loop
+2 × 6
+0.120
+0.125
+0.130
+0.135
+0.140
+TVD ↓
+(a) Test sequences
+1
+4
+7
+10
+String index
+−0.025
+−0.020
+−0.015
+−0.010
+−0.005
+0.000
+ΔTVD vs. dense ↓
+(b) Strings 1–10
+1
+10
+20
+30
+40
+50
+Symbol index
+−0.025
+−0.020
+−0.015
+−0.010
+−0.005
+0.000
+0.005
+ΔTVD vs. dense ↓
+(c) First string vs. rest
+String
+1
+2–10
+Baseline
+Grown b = 3
+Loop 2 × 6
+Figure 2: Grown and looped models predict unseen formal languages more accurately. In-
+context language learning on RegBench (Akyürek et al., 2024). (a) Test total variation distance
+(TVD) for the dense 12-layer, Loop 2×6, and Grown b = 3 model (mean ± standard error over four
+training seeds). (b) TVD relative to the dense model against in-context string index. (c) The same
+comparison by symbol index, separately for the first string and strings 2–10. Lower is better for all
+panels. Bands show standard errors. The looped model has width 256, versus 128 for dense and
+grown models: hyperparameters are selected on validation data, rather than matched in width. Panel
+(a) uses the full test set. Panels (b,c) retain only string indices present in every test sequence (strings
+1–10). Experimental setup and full details in Appendix C.
+matches the baseline around position 1000 and achieves lower NLL thereafter (solid line) and on
+average across positions (dashed line).
+On GSM8K (Cobbe et al., 2021) few-shot accuracy in Figure 1(c), the looped model, again using
+fewer parameters, keeps its advantage over the baseline across demonstration counts, but the base-
+line almost closes the gap at eight shots. The depth-grown model instead widens its performance
+improvement gap with additional examples, ending up around +7% above the baseline. GSM8K
+evaluates final answers extracted from generated solutions to new questions, so these gains reflect
+improved answer generation from in-context demonstrations, a setting relevant to practical few-shot
+prompting. As an additional comparison, Appendix Figure 9 reports separate averages over five
+multiple-choice and three generation tasks. At 3B, LIDAS improves on the baseline in both subsets,
+while the looped model’s advantage is concentrated in generation.
+3.3
+IN-CONTEXT LEARNING LANGUAGES: REGBENCH DATASET
+RegBench (Akyürek et al., 2024) tests adaptation to an unseen formal language. Each input con-
+catenates strings sampled from one deterministic finite automaton (DFA), with held-out automata
+used for testing. We measure total variation distance (TVD) between the predicted next-symbol dis-
+tribution and the uniform distribution over legal continuations. All models apply twelve layers per
+forward pass, with two unique layers for the looped model.
+In Figure 2(a), the grown and looped models achieve lower TVD than the dense baseline on novel
+languages. Their advantage increases over the first few strings, peaking around the fourth (Fig-
+ure 2(b)). When zooming in on the test sequences in Figure 2(c), both alternative training variants
+adapt faster to the new language by predicting symbols (akin to characters or tokens) within the first
+string better after roughly 15 symbols. Additionally, on average, after the first string the grown and
+looped model do not continue to increase their advantage with more symbols but keep a constant
+improvement. Appendix Figure 12 extends the comparison including DFA accuracy and additional
+grown models also evaluated with four training seeds, with the precise setup in Appendix C.
+5
+
+
+0
+10
+20
+30
+40
+Steps (millions)
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+ICL accuracy
+0
+10
+20
+30
+40
+Steps (millions)
+0.0
+0.1
+0.2
+0.3
+0.4
+0.5
+IWL accuracy
+0
+.25
+.50
+.75
+1
+Steps (millions)
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+ICL accuracy
+(a) Fixed labels: ICL vs. IWL
+(b) Reassigned labels
+Dense
+4L
+12L
+Grown b = 4
+Loop 4 × 3
+Figure 3: Growing and looping favor stronger retention of ICL, at the cost of in-weights learn-
+ing (IWL), and earlier acquisition of ICL when IWL is not possible. Solution preference and
+emergence of in-context learning on Omniglot-based tasks (Singh et al., 2023). (a) Training uses
+fixed class labels and P(bursty) = 1, so both context and in-weights associations can solve each
+training query. ICL is measured on held-out classes with labels reassigned per sequence. IWL is
+measured on training classes whose query class is absent from context. (b) Training follows the
+ICL probe setup using images from training classes, with labels reassigned in every sequence to
+remove a fixed class–label solution. Curves show mean accuracy, with bands indicating standard
+error across four (a) and eight (b) smoothed seed trajectories. Growth occurs at 50k and 100k steps.
+Experimental details in Appendix D.
+3.4
+IN-CONTEXT AND IN-WEIGHTS LEARNING: OMNIGLOT
+We next examine learning from context when fixed associations can also be stored in the weights,
+or when labels vary between sequences, removing the in-weights learning (IWL) solution. For
+that purpose, we use the Omniglot image-classification setup of Chan et al. (2022). Each sequence
+contains eight image–label pairs followed by a query image. In the fixed-label setting, every training
+class has a persistent label and the query class always appears among the context examples, with
+P(bursty) = 1, meaning that every training sequence contains multiple demonstrations of the same
+classes. The training query can therefore be answered either by matching it to the current examples
+in context or by learning its class–label association in the weights. We distinguish these capabilities
+with two probes: ICL accuracy on held-out classes with labels reassigned in each sequence, and
+IWL accuracy on training classes whose query class is absent from context. We compare dense
+models with 4 and 12 layers, a Loop 4×3 model, and a LIDAS-grown model that expands from 4 to
+8 layers at 50k steps and to 12 layers at 100k steps. All models have the same hidden width and use
+the same optimizer and batch size. We average over four training seeds for the fixed-label setting
+and eight for the ICL-only setting below. Appendix D gives the full setup.
+Figure 3(a) shows an early rise in ICL followed by a gradual decline as IWL improves, reflecting
+the transience of ICL observed by Singh et al. (2023). Over the shared training horizon, the grown
+and looped models retain higher mean ICL accuracy but lower IWL accuracy than the dense 12-
+layer model. The grown model has similar ICL and IWL accuracies to its four-layer reference, from
+which it first grows at 50k steps. The looped model attains similar ICL accuracy to the grown model
+but significantly lower IWL accuracy. These trajectories are consistent with growing and looping
+favoring learning from context relative to the full-depth dense model at the same effective depth.
+For looped models, this can come at the cost of weaker in-weights learning, while the grown model
+appears to inherit both capabilities from its shallow starting model.
+To test acquisition when a fixed class–label solution is unavailable (ICL-only), we train a different
+set of models with labels 0 and 1 reassigned independently in every sequence, mirroring the ICL
+probing setup on training images. Each sequence contains two classes with four examples each,
+followed by a query from one of them. In Figure 3(b), ICL accuracy emerges earlier for the looped,
+grown, and four-layer dense models than for the dense 12-layer model. By 1M steps, all four tested
+6
+
+
+configurations almost reach 100%. Thus, this setting does not differentiate how much ICL is attained
+but rather the timing and consistency of ICL emergence, given that ICL is the only correct solution
+to the training problem.
+4
+GROWING AND LOOPING INCREASE RELIANCE ON INDUCTION HEADS
+The behavioral results suggest that growing and looping favor learning from context. Returning to
+language models, we examine the attention mechanisms supporting this behavior. We first track
+induction behavior during training and across layers (Section 4.1), then ablate heads to test their
+contribution to context use (Section 4.2).
+4.1
+DEPTH GROWTH PROPAGATES EARLY INDUCTION HEADS
+0
+20
+40
+Steps (k)
+0.7
+0.8
+0.9
+Mean PS
+Baseline
+LIDAS
+Loop
+Figure 4:
+Induction behav-
+ior during training. Top-2%
+mean PS (3B), with heads rese-
+lected at each checkpoint. Ver-
+tical lines mark growth. Hollow
+circles show immediate post-
+growth scores.
+Attention-Head Measures. We characterize attention heads us-
+ing prefix-matching (PS) and function-vector (FV) scores.
+PS
+measures attention to the token following an earlier occurrence
+in repeated random-token sequences (Olsson et al., 2022). FV
+scores measure how much replacing a head’s output with its clean
+task mean restores correct-answer prediction when demonstration
+labels are shuffled (Todd et al., 2024). We use these scores to se-
+lect heads for ablation. Full evaluation protocols are given in Ap-
+pendix E.1. We first compare induction behavior during language-
+model pretraining by averaging PS over the top 2% of heads at
+each checkpoint, reselecting them as training progresses. Check-
+point and aggregation details are given in Appendices A.3 and E.1.
+In Figure 4, LIDAS develops higher PS than the dense baseline
+and finishes training with a higher score, while the looped model
+finishes close to the baseline. Early growth events temporarily
+disrupt prefix matching, followed by quick recovery during fur-
+ther training. These aggregate scores motivate tracing the heads
+responsible for the grown model’s strong induction behavior. Full
+trajectories of PS, function-vector scores, few-shot performance,
+and the token-loss ICL-Score appear in Appendix Figure 13.
+We next follow the twelve final top-2% PS heads in each 3B model through training (Figure 5, top).
+These identities remain fixed, unlike the checkpoint-wise selection for the average in Figure 4. For
+LIDAS, we trace the heads backward through layer duplication to the starting four-layer model.
+Copies share an ancestral trajectory until duplication, so we draw that shared path once.
+The twelve final LIDAS heads trace back to just four ancestors. Two of these, L2H9 and L2H10
+(zero-based indices), already have high PS before the first growth event and account for ten of the
+twelve final heads, highlighted in orange. The remaining two originate from initially low-scoring
+heads whose induction behavior develops later. Thus, most of the strongest final induction heads
+arise from copying and further training early induction heads. The original L2H10 retains high PS
+but is outside the final top-2% heads, while three of its copies are included.
+The final locations in Figure 5 (bottom) connect these lineages to repeated patterns across depth. In
+LIDAS, strong heads recur at the same head index in layers separated by multiples of the four-layer
+growth block, extending from early layers (L < 8) into later layers. In Loop 10-8×2-10, high-
+PS heads likewise recur across the two applications of the eight-layer shared block, highlighted
+in orange. These are separate applications of tied heads, whereas the grown model’s copies train
+independently. The dense baseline shows no comparable pattern of repetition by block size.
+FV heads likewise recur at the grown or looped block size, but emerge later than induction heads
+(Appendix Figure 14). In LIDAS, two ancestors give rise to six of the twelve final top-2% FV heads.
+7
+
+
+2048
+8192
+32768
+Step
+0.0
+0.5
+1.0
+PS
+Baseline
+0
+8
+16
+24
+32
+Layer
+0
+3
+6
+9
+12
+15
+Head
+2048
+8192
+32768
+Step
+LIDAS
+L2H9
+L2H10
+0
+8
+16
+24
+32
+Layer
+2048
+8192
+32768
+Step
+Loop 10-8 × 2-10
+0
+8
+16
+24
+32
+Layer
+0.00
+0.25
+0.50
+0.75
+1.00
+Prefix-matching score (PS)
+Figure 5: Depth growth propagates early strong induction heads across layers. Development
+and final location of individual induction heads. Top: smoothed prefix-matching scores (PS) of
+each 3B model’s twelve final top-2% heads over training (logarithmic step axis). LIDAS lineages
+follow layer duplication, with shared ancestral paths drawn once. In LIDAS, the twelve final heads
+trace back to four ancestors in the initial four-layer model. Two of these, L2H9 and L2H10, already
+have high PS before growth and account for ten of the twelve final heads. Bottom: final PS for
+every layer and head (zero-based indices). Among the final top-2% PS heads, orange highlights
+descendants of the early L2H9/L2H10 heads in LIDAS and heads within the repeated block in
+Loop 10-8×2-10. Other heads are blue. Black outlines identify final top-2% heads, except the
+original L2H9 in LIDAS, which shares a red outline with L2H10. Vertical lines mark growth events
+(top), four-layer intervals in LIDAS and loop-block boundaries (bottom). Selection, plotting, and
+evaluation details in Appendix E.2. FV heads show analogous repetition but emerge later (Appendix
+Figure 14).
+4.2
+INDUCTION HEADS CONTRIBUTE MORE TO CONTEXT USE
+The trajectories and locations reveal how induction behavior develops and repeats across depth. A
+high prefix-matching score alone does not establish a head’s importance for ICL. We therefore ablate
+heads in the final models to test their contributions to few-shot performance and token loss.
+Following the mean-ablation protocol of Yin & Steinhardt (2025), we rank final-checkpoint heads
+by PS or FV score and replace the outputs of the selected 1–20% with mean activations. For looped
+models, each head application is counted and ablated separately. Here we focus on exclusive induc-
+tion rankings, which first exclude the top 2% of FV heads, and exclusive FV rankings, which first
+exclude the top 2% of induction heads. We evaluate changes from each model’s unablated few-shot
+ICL (F1) and ICL-Score. Appendix F specifies the replacement means, indexing, and additional
+random controls.
+Consistent with observations by Yin & Steinhardt (2025), all three models in Figure 6(a,b) show
+greater few-shot ICL degradation from FV-head ablation and greater ICL-Score (token-loss differ-
+ence) reduction from induction-head ablation. At larger ablation fractions, exclusive induction-head
+ablation reduces few-shot performance and ICL-Score more in grown and looped models than in
+the baseline, indicating greater reliance on these heads. FV heads remain important in all models,
+but their ablation effects relative to the baseline vary across models and sizes for this comparison
+(Appendix Figure 20).
+Figure 6(c) shows the NLL increase by token position at 9% ablation. Beyond the first few tokens,
+FV-head ablation hurts early-token prediction more than induction-head ablation. The FV-ablation
+effect then largely plateaus, while the induction-ablation effect grows with position. Compared with
+the baseline, LIDAS and Loop 10-8×2-10 show smaller FV-ablation effects across most positions
+and larger induction-ablation effects at later positions. Within both models, induction heads even-
+tually become more important than FV heads for later-token prediction, whereas FV heads remain
+8

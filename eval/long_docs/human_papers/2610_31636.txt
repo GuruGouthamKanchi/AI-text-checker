@@ -1,0 +1,731 @@
+Can an Agent Debug a Web Corpus?
+Agentic Auditing of Slovak FineWeb2
+Marek Šuppa1,2
+Ivan Vykopal3,4
+Jaroslav Kopˇcan3
+1Comenius University in Bratislava
+2Cisco Systems
+3Kempelen Institute of Intelligent Technologies (KInIT)
+4Brno University of Technology
+Abstract
+Multilingual pipelines such as FineWeb2 apply
+one recipe across a thousand languages, leaving
+the failure modes of individual languages unan-
+ticipated. We use an LLM once, as a corpus
+debugger rather than a classifier: a tool-using
+agent explores the corpus through a read-only,
+budgeted API and compiles each finding into an
+executable test, which a native speaker then val-
+idates. On the 26.5M-document Slovak portion
+of FineWeb2, three runs costing $2.21–$2.84
+each found seven findings over four phenom-
+ena. The largest is a machine-generated con-
+tent farm of 1,408,437 documents (5.32%) that
+passed the pipeline’s filters, 86.6% of it passing
+even stricter thresholds. Blinded labels sup-
+port 6 of the 7 findings (defect rates .53–1.00
+against .08 in a random control) and do not
+support one. The compiled suite scans the full
+corpus in 0.7 s of wall-clock time without a
+GPU, against $12k–$90k per LLM classifica-
+tion pass. The best static sampling baseline
+validates more selectors than any agent run, at
+under half the cost. The agent contributes ex-
+act prevalence, a precision estimate checked
+against sampled documents, an account of why
+the pipeline missed each slice, and a reusable
+test. We release the framework, Slovak test
+suite, validation data and agent trajectories.
+1
+Introduction
+Pretraining corpora are now built by pipelines
+rather than by hand. FineWeb2 (Penedo et al.,
+2025) derives more than a thousand language-
+specific corpora from Common Crawl with one
+configurable recipe. That uniformity is what makes
+such resources feasible at all. One pipeline, en-
+gineered once, yields data for languages whose
+communities could never afford a bespoke crawl.
+It is also a structural blind spot, as the FineWeb2
+authors say themselves. Their language identifier
+confuses closely related languages, and they could
+not test each language individually, so they ask
+users to review the filtering for the languages they
+care about. Their one mechanism against cousin-
+language contamination, a high-affinity wordlist
+filter, is applied only to languages whose measured
+contamination exceeded 10%, and not to a mid-
+resource language like Slovak with a large, closely
+related neighbour.
+Reviewing a pipeline for one language is exactly
+the work that does not scale. Its established form
+is the manual audit (Kreutzer et al., 2022; Caswell
+et al., 2020), which is invaluable, and recent single-
+language audits still pay off (Signoroni and Rychlý,
+2026; Tatariya et al., 2026). But an audit is a one-
+shot artefact. It describes a corpus at one point in
+time, does not compose into machinery that can
+be re-run on the next crawl, and consumes expert
+attention linearly. The alternative, running an LLM
+over the data as a classifier, turns a curation prob-
+lem into an inference bill and still explains nothing.
+We explore a third option and use the LLM once,
+as a debugger. Our auditor is a tool-using agent
+that sees the corpus only through a small read-only
+API for aggregate SQL, conditional sampling, text
+search, sentence-level language identification, and
+defining and evaluating candidate detectors. It is
+asked, in deliberately generic terms, to find system-
+atic defects and substantiate them. Its prompt con-
+tains no taxonomy of expected problems, names no
+defect or neighbouring language, and describes the
+pipeline only by its steps (language identification,
+quality heuristics, deduplication). Each output is a
+finding with a description, a cheap executable se-
+lector, a prevalence measured on the whole corpus,
+and a precision for human validation to establish.
+The result is pytest for web corpora: a community
+contributes tests, and any future crawl or pipeline
+revision is checked against them for the cost of a
+scan over metadata the pipeline already computed.
+We instantiate it on Slovak1, which has five million
+1The framework, the adapter, the Slovak test suite, the vali-
+1
+arXiv:2610.31636v1  [cs.CL]  22 Oct 2026
+
+
+speakers and a large closely related neighbour, and
+whose 26.5M-document FineWeb2 slice is neither
+high-resource enough to have received a dedicated
+audit nor small enough to read.
+We frame an LLM, used once, as a corpus debug-
+ger whose output is a test rather than a label or a
+data-selection policy. We build a reusable audit en-
+vironment (DuckDB over Parquet, eleven read-only
+budgeted tools, a finding schema) with a FineWeb2
+adapter, and an agentic auditor that runs inside it
+under a fixed inspection budget and a prompt that
+names neither a defect nor a neighbouring language.
+Around it sits a three-stage workflow (discovery by
+the agent, validation by a native speaker, deploy-
+ment by a test runner with no model) in which
+validation can fail a finding. It failed one of our
+seven findings, which comes out at a .07 defect rate
+and ships flagged. Our audit of Slovak FineWeb2
+yields seven findings over four phenomena with ex-
+act corpus-wide prevalences and blinded human
+precision (Table 2), among them a 5.32% con-
+tent farm that the pipeline’s own language, du-
+plication and auxiliary-LID signals do not filter,
+and a language_score invariant that fails in 11
+of 12 FineWeb2 configurations. A per-run budget-
+matched comparison against four static selection
+strategies shows what the agent does and does not
+buy. It validates 2–3 selectors per run against 2–4
+for the baselines, so the best baseline finds more
+than any agent run, and each phenomenon it val-
+idated also lies within reach of a static strategy,
+although for the adult spam we analysed that strat-
+egy’s sample without running the model on it (§5).
+Its contribution is the measurement, the characteri-
+sation and the test. Finally, we release the Slovak
+regression-test suite, the patcher that turns it into a
+drop list, and the agent trajectories (Table 1). Every
+defect we report is a residual of an already heavily
+filtered corpus, and several are visible only because
+FineWeb2 publishes rich metadata.
+We ask four research questions.
+RQ1 Can an LLM agent with read-only tools
+discover systematic defects that a native
+speaker confirms?
+RQ2 Can these defects be compiled into cheap
+executable tests?
+RQ3 Do the agent’s findings lie outside the slices
+that static audit strategies select?
+RQ4 At a matched per-run inspection bud-
+dation package and the agent trajectories are released at https:
+//github.com/NaiveNeuron/agentic-corpus-debugger.
+get, does the agent surface more human-
+validated defects than the same model read-
+ing a statically selected sample?
+2
+Related Work
+Web corpora and their audits.
+FineWeb2
+(Penedo et al., 2025) extends the FineWeb recipe
+(Penedo et al., 2024) to over a thousand lan-
+guages using GlotLID (Kargaran et al., 2023)
+with a per-language confidence threshold, Gopher-
+and FineWeb-style quality filters, and global per-
+language MinHash deduplication with rehydration.
+Earlier multilingual web corpora (Ortiz Suárez
+et al., 2020; Xue et al., 2021; Conneau et al.,
+2020; Kudugunta et al., 2023; Nguyen et al., 2024;
+Burchell et al., 2025) share its architecture and its
+exposure to the LID error that Caswell et al. (2020)
+and Burchell et al. (2023) document. Audits of
+such corpora are an established genre, covering
+205 corpora by hand (Kreutzer et al., 2022), one
+English corpus in depth (Dodge et al., 2021), non-
+English Wikipedia (Tatariya et al., 2026) and Lom-
+bard (Signoroni and Rychlý, 2026). The WaC com-
+munity studies the same failure surface from the
+pipeline side (Jakubíˇcek et al., 2020; Barbaresi and
+Lejeune, 2020; Laippala et al., 2020). We are down-
+stream of these, asking how an audit can be made
+repeatable and executable. For Slovak, cleaning
+practice is established (Pikuliak et al., 2022) and
+Czech/Slovak is a known hard case for language
+ID (Tichý and Libovický, 2026). Sub-percent con-
+tamination still means hundreds of millions of to-
+kens (Blevins and Zettlemoyer, 2022), though we
+promise no downstream gains (Artetxe et al., 2022).
+Tests over data, and agents over data.
+Check-
+List (Ribeiro et al., 2020) argued that behavioural
+tests expose model failures that aggregate accuracy
+hides. We make that argument for corpora, and
+borrow the pattern of declarative data-quality asser-
+tions run on every build (Schelter et al., 2018), ex-
+cept that here the assertions must come from people
+who know the language. LLM agents have been ap-
+plied to corpus-linguistic discovery (Yu et al., 2026)
+and to the curation loop, where Kang et al. (2026)
+find that coding agents optimise data-selection poli-
+cies but tend to tune variants of a known policy.
+Ours optimises no downstream metric and outputs
+a test suite instead of a policy. We do not claim
+that LLMs are good language classifiers. The agent
+writes the tests that label the corpus and never la-
+bels it itself.
+2
+
+
+3
+The Audit Environment
+Corpus view.
+The adapter exposes a corpus as
+two DuckDB relations over Parquet. corpus_meta
+has one row per document without text and
+serves exact corpus-wide prevalence, while corpus
+is a deterministic 1-in-13 subsample with text
+(2,034,894 documents) for whenever reading is
+needed. That split keeps the environment inter-
+active, because metadata aggregates over 26.5M
+rows return in under a second while scanning
+100 GB of text does not.
+The columns are
+the corpus’s own metadata (URL, crawl, date,
+the pipeline’s language and language_score,
+minhash_cluster_size, the profanity-list count
+n_bad_words, the GlotLID top_langs distribu-
+tion, and the fastText, langdetect and Lingua predic-
+tions added by the ivykopal/fineweb2-slovak
+release), plus language-neutral derived columns
+(domain, size counts).
+Nothing in the schema
+names a language pair or a failure mode.
+Tools.
+The agent acts through eleven tools, each
+listed with its budget cost in Appendix A. They
+cover aggregation, sampling and single-document
+inspection, text search, host and crawl statistics,
+sentence-level language identification, two tools
+that measure and sample what a candidate rule
+selects, and save_finding. Aggregation is free,
+whereas every document read costs one inspection
+from a fixed budget, charged once per distinct id.
+Every call is logged to a JSONL trajectory, so an
+investigation can be replayed. The free aggrega-
+tion tool did not stop a query from returning doc-
+ument text, for example substr(text, 1, 120)
+grouped and counted, so text could in principle
+be read without spending budget. We checked ev-
+ery logged aggregate call. In the three protocol
+runs none returned document text: the queries that
+touch text return counts only. The fourth run in
+Appendix K returned text fragments in three calls,
+the most frequent 100- and 120-character document
+prefixes and extracted e-mail strings, and its inspec-
+tion count therefore understates what it read. Later
+versions of the environment refuse such queries.
+Agent loop and prompt hygiene.
+The agent runs
+one long trajectory in which it orients on statistics,
+forms a hypothesis, retrieves evidence and counter-
+evidence, refines or rejects it, measures prevalence,
+synthesises a selector, checks its precision and
+records a finding. Its system prompt (Appendix B)
+states the tools, the finding schema and the epis-
+1.
+Discovery
+LLM agent
+Actor/cost LLM agent, read-only API, ≤300
+inspections; $2.21–$2.84 per run
+Output candidate findings: selector, exact
+prevalence, expected precision, evidence
+2a.
+Labels
+human
+Actor/cost native speaker, blinded sample; 255
+labels
+Output defect rate with 95% interval
+2b.
+Verdicts
+model →
+human
+Actor/cost model proposes from the tabulated
+labels; annotator adopts
+Output status accepted or candidate
+3.
+Deployment
+test runner
+Actor/cost test runner without an LLM or
+GPU; 0.7 s wall-clock over 26.5M documents
+Output prevalence guards and invariants on
+each release; a drop list
+Validation
+Figure 1: The three stages. Every label is human. Ver-
+dicts are proposed by a model from those labels and
+adopted by the annotator, and only an adopted verdict
+assigns a status. Deployment uses no model.
+temic standard (systematic, reproducibly retriev-
+able, grounded in inspected documents, quantified),
+and asks for calibrated precision estimates and
+counter-evidence. Because it does not name any
+defect, failure mode or neighbouring language, dis-
+covery stays attributable to the agent. Appendix C
+verifies this mechanically and states exactly what
+the agent was told. We run it through the Claude
+Code CLI with only the audit tools and Claude
+Code’s tool-schema lookup enabled, and no shell,
+file or web access.
+Discovery, validation, deployment.
+The work-
+flow has three stages with different actors and costs
+(Figure 1). Discovery is where the agent works,
+and it produces candidates. In validation a na-
+tive speaker labels a blinded sample of each candi-
+date’s documents, after which a model tabulates
+that evidence and proposes a verdict per candi-
+date group that the annotator adopts or not (§4).
+Deployment runs the resulting tests without any
+model. Each test is a YAML file carrying its se-
+lector, an assertion about future corpora and its
+evidence (Appendix L), and a status: accepted
+when the blinded labels support it and the adopted
+verdict approves it, candidate otherwise. A suite
+is a directory of such files, executable against any
+corpus implementing the adapter interface.
+Release.
+The release (Table 1) is the artefact a
+second community would reuse: the environment
+and runner, the prompt, the suite, and every input
+to the numbers in this paper, from trajectories to
+verdicts. The paper’s tables are generated from
+these artefacts by script.
+3
+
+
+Path
+Contents
+CODE
+src/corpusaudit/
+adapter (DuckDB over Parquet), the
+eleven tools as an MCP server, test
+runner, patcher
+prompts/
+the agent and baseline prompts
+tests/
+the suite: 7 Slovak slice guards, 2
+metadata invariants
+DATA & RUNS
+out/runs/,
+out/baselines/
+trajectories (every tool call) and
+baseline outputs
+out/annotation/
+blinded package, guidelines, both
+label passes
+out/adjudication/
+candidate groups, verdicts, how they
+were reached
+ANALYSIS & REPORTS
+out/analysis/,
+out/REPORT.md
+every measurement, and a generated
+report per finding
+TOOLING
+scripts/,
+selftest/
+regeneration and checks, the
+drop-list writer; a synthetic-corpus
+self-test that needs no data
+Table 1: Layout of the released repository.
+4
+Experimental Setup
+Data.
+We audit the Slovak portion of FineWeb2
+(slk_Latn) as redistributed with extra LID meta-
+data by ivykopal/fineweb2-slovak.
+It holds
+26,470,482 documents from 351,844 hosts and 96
+Common Crawl snapshots (2013–2024), 438 words
+on average. No document scores below 0.667, the
+language_score threshold FineWeb2 publishes
+for slk_Latn. The auxiliary identifiers disagree
+with the pipeline label on 3.12% of documents.
+Models and settings.
+All three agent runs and all
+four baselines use claude-sonnet-5 through the
+Claude Code CLI (version 2.1.231) at its default
+sampling settings, and we set no temperature. Each
+agent run is capped at 300 document inspections
+and 250 turns, each baseline at 6 turns. We report
+inspections, tokens and USD for every run and
+baseline. A fourth claude-opus-5 run, outside
+this protocol, is reported in Appendix K.
+Baselines.
+Each baseline is a document-selection
+strategy that draws the same 300 documents the
+agent could have inspected and shows them to the
+same model, without tools or exploration. The
+model sees each document as its metadata and first
+400 characters, whereas the agent can read whole
+documents, and the baseline instructions drop the
+requirement that a finding be quantified and have
+no prevalence field. We then measure the preva-
+lence of each proposed selector ourselves, as for the
+agent. RANDOM samples uniformly. LOWCONF
+takes language_score < 0.8, which is 0.49% of
+the corpus, LID-DISAGREE any auxiliary identi-
+fier disagreeing with the pipeline label (3.12%),
+and HIGHDUP minhash_cluster_size ≥100
+(0.23%). The comparison changes two things at
+once. The agent chooses what to read, and it also
+has tools the baselines lack (aggregate queries,
+prevalence measurement, targeted sampling, de-
+tector evaluation). It therefore measures the whole
+agentic setup rather than adaptivity alone. For a
+fifth, profanity-ranked strategy we analyse only the
+sample it would draw, the 300 text-subsample doc-
+uments with the most profanity-list matches, and
+we did not run the model on it.
+Human validation.
+We drew 358 documents for
+blinded annotation by a native speaker: 25 for
+each of the 7 agent findings, 11–12 for each of
+12 sampled baseline candidates, and 40 uniform
+controls, excluding every document any agent run
+inspected, shuffled and shown without provenance,
+URL or metadata. The exclusion list was built
+from truncated tool logs, so one drawn document (a
+code-switched Czech/Slovak item) had in fact been
+shown to an agent run by evaluate_detector. It
+received no label, so no reported number changes.
+Each document gets a language label and a use-
+fulness label on the scales in Appendix M. A doc-
+ument is a defect if its language label is cs, mix,
+other or its usefulness label is junk. sk, sk-pred,
+good and noisy are not defects. Slice precision is
+the human-judged defect rate and the control gives
+the corpus base rate. This estimates precision, how
+often a selected document is a defect, not recall,
+how much of a phenomenon a selector catches.
+Of the 358 documents, 255 carry a label, none of
+them “uncertain” (labelled/drawn by source: agent
+slices 122/175, LOWCONF 26/36, LID-DISAGREE
+30/36, HIGHDUP 28/36, RANDOM 24/35, control
+25/40). The shortfall is not a per-selector choice:
+labelling ran in two passes with a clarified junk
+criterion between them, and the documents neither
+pass reached were dropped (Appendix M). Per-
+finding counts are in Table 2.
+Adjudication.
+The agent runs and the baselines
+saved 34 candidate files (9 agent and 25 baseline).
+They hold 7 distinct agent selectors and 23 baseline
+selectors counted per baseline, 21 distinct across
+baselines, since RANDOM and LOWCONF share
+two. They were clustered mechanically into 11
+groups by document overlap. A model, not the
+4
+
+
+save finding
+detector
+search / LID
+sample / inspect
+aggregate / stats
+LID and
+size counts
+adult
+word salad
+firebase
+1.41M docs
+short docs,
+duplicates
+0
+10
+20
+30
+40
+50
+60
+tool call
+0
+150
+300
+inspections
+used
+budget 300
+197
+Figure 2: The 67 events logged for the main run
+(65 audit tool calls plus a run_detector record per
+save_finding), by tool type (top) and with cumulative
+document inspections against the budget of 300 (bot-
+tom). The shaded span, events 41 to 49, is the firebase in-
+vestigation. The agent counts the *.firebaseapp.com
+and *.web.app hosts (1,408,437 documents), samples
+and evaluates the detector on them, and saves the finding
+at event 49. Run total 197 inspections.
+annotator, then tabulated, per group, the selector,
+exact prevalence, blinded label evidence, static-
+slice overlap and the auditor’s stated false positives,
+and proposed a verdict. The annotator read the
+tabulation and adopted the proposed verdicts with-
+out deliberating each one independently, although
+the labels themselves are human. Of the 24 de-
+cisions, 10 cover whole groups and 14 cover the
+members of G02, which was decided per candidate
+because its members’ defect rates ranged from .14
+to .81. In total there are 11 approve, 8 reject
+and 5 unsure decisions. With labels, the rule ap-
+proves at least .5 on at least five labels and rejects
+below it. Without labels, it rejects a selector its
+own auditor disqualified (a URL-keyword proxy,
+a closed list of domains from its own sample, a
+match on two documents) and otherwise marks
+it unsure. The one exception is the slo.* farm
+(G05), which at .07 is marked unsure rather than
+rejected so that the unsupported finding stays visi-
+ble. Two rows were corrected after adoption when
+seven labels lost in our tabulation were restored and
+attributed by selector (Appendix M); the correction
+adds one validated selector to each of RANDOM
+and LOWCONF in RQ4 and makes LOWCONF the
+best condition per run.
+5
+Results
+RQ1. The agent finds systematic defects that a
+speaker confirms.
+Across three runs the agent
+used 197, 180 and 173 of its 300 inspections and
+recorded 2, 4 and 3 findings. Figure 2 follows
+run 1 from its first free aggregate query to the
+saved content-farm finding at logged event 49, by
+which point it had spent 162 inspections. Run 1
+found the content farm and an adult keyword farm.
+Run 2 found the farm, Czech text labelled Slo-
+vak, an adult doorway network and a machine-
+translated farm on slo.* hosts. Run 3 found the
+farm, an adult word-salad farm and Czech/Slovak
+code-switched documents. Deduplicating selectors
+leaves seven, which collapse by document over-
+lap and nesting into four phenomena (Table 2):
+content farms on free-hosting subdomains (G01),
+Czech or code-switched documents labelled Slo-
+vak (G02), keyword-stuffed adult spam (G04) and
+the slo.* farm (G05). The largest is a content
+farm on *.firebaseapp.com and *.web.app with
+1,408,437 documents (5.32%) over 2,851 hosts.
+The farm is nearly absent before 2022, rises sharply
+from late 2022, peaks at 38.7% of the 2023-06
+crawl and is still present in the last crawl, while
+the adult spam peaks in 2020 and then fades (Fig-
+ure 3). At 1,011 words on average against a corpus
+mean of 438 it contributes 12.3% of all running
+words. All three runs found it independently, and
+we re-derived every statistic ourselves. The agent
+also volunteers evidence against its own hypotheses
+(Appendix J).
+Blinded human labels (Figure 4) support 6 of
+the 7 findings at .53–1.00, against .08 in the 25-
+document control (interval to .25), so 3 of the four
+phenomena are supported. The labels do not sup-
+port the slo.* farm, which comes out at .07, and
+it ships with status candidate (§4).
+RQ2. The compiled tests are cheap.
+All seven
+selectors are metadata-only, so the suite is exact
+over the full corpus. It runs over all 26,470,482
+documents in 0.7 s of wall-clock time on one ma-
+chine (about 13 s of CPU time across 20 cores),
+without GPU or LLM calls. Classifying every doc-
+ument with the same model instead costs $3.42 per
+thousand documents, measured on 400-character
+snippets batched twenty per call. That is $90,456
+per pass, or $12,309 at raw token prices without
+harness overhead, and it recurs every crawl. The
+comparison is not like for like. The tests are cheap
+because they reuse columns the pipeline and the re-
+distributor already computed in corpus-wide passes
+(language identification, auxiliary identifiers, pro-
+fanity counts, MinHash clusters), and a selector
+5
+
+
+Finding
+Group Runs Baselines
+Prev. %
+n P [95% CI] Ov. % Status
+firebase_content_farm_spam
+G01
+3/3
+LD, LC, R
+5.32 19
+.74 [.51,.88]
+13
+accepted
+adult_spam_farm_wordsalad
+G04
+1/3
+–
+0.39 19
+.84 [.62,.94]
+11
+accepted
+porn_spam_keyword_farm
+G04
+1/3
+–
+0.36 12
+.83 [.55,.95]
+11
+accepted
+slo_prefix_machine_translated_farm G05
+1/3
+–
+0.28 14
+.07 [.01,.31]
+0
+candidate
+porn_doorway_spam_network
+G04
+1/3
+–
+0.20 20
+1.00 [.84,1.00]
+10
+accepted
+czech_slovak_code_switched_docs
+G02
+1/3
+–
+0.17 21
+.81 [.60,.92]
+100
+accepted
+czech_text_mislabeled_as_slovak
+G02
+1/3
+–
+0.12 17
+.53 [.31,.74]
+100
+accepted
+Table 2: The seven distinct findings from three agent runs. Group: phenomenon group assigned mechanically by
+document overlap (Jaccard ≥0.8) or nesting; rows sharing a group are one phenomenon, so the seven findings
+are four defects. Runs: agent runs that produced the finding. Baselines: baselines that proposed an equivalent
+slice (Jaccard ≥0.8): R RANDOM, LC LOWCONF, LD LID-DISAGREE, HD HIGHDUP. Prev.: exact prevalence
+over all 26,470,482 documents. n: blinded labels. P: human-judged defect rate with Wilson interval. Ov.: largest
+share of the finding’s documents that the LOWCONF, LID-DISAGREE or HIGHDUP slice retrieves; the three G04
+selectors lie entirely inside the profanity slice n_bad_words ≥3 (§5). Status: as released in the suite. The released
+suite also holds two metadata invariants that are not slice findings (§5).
+0
+10
+20
+30
+40
+Content farm
+(% of crawl)
+38.7% in 2023-06
+8 recent
+crawls
+2013 2015
+2017
+2019
+2021
+2023
+Common Crawl snapshot (96, in order)
+0
+1
+2
+% of crawl
+Adult spam (G04)
+Czech text (G02)
+Figure 3: Share of each of the 96 Common Crawl snap-
+shots matched by the accepted selectors, in crawl order.
+The Firebase content farm (top, 5.32% of the corpus
+overall) is almost absent before 2022 and reaches 38.7%
+of the 2023-06 crawl. The adult spam family (union of
+the three G04 selectors) peaks around 2020 and falls
+from 0.53% of older documents to 0.06% of the eight
+most recent crawls (shaded), while Czech text (union of
+the G02 selectors) stays below 0.4% throughout.
+over raw text would cost a text scan. The LLM
+writes the test once, and that test runs at scale.
+RQ3. Static strategies reach every validated
+phenomenon.
+The question here is which static
+audit would have led to the seven findings. The
+two Czech findings sit entirely inside the LID-
+DISAGREE slice (overlap 100%), as the agent built
+them from the auxiliary LID columns, the failure
+mode a disagreement audit is designed to catch.
+The adult-spam family (G04) overlaps the three
+0
+.25
+.5
+.75
+1
+human-judged defect rate (95% Wilson CI)
+G01  Firebase content farm
+G02  Czech labelled Slovak
+G02  Czech–Slovak code-switching
+G04  adult keyword farm
+G04  adult doorway network
+G04  adult word salad
+G05  slo.* MT farm
+14/19
+9/17
+17/21
+10/12
+20/20
+16/19
+1/14
+defective/n
+accept
+control 2/25
+Figure 4: Human-judged defect rate for each of the
+seven agent findings, grouped by phenomenon. Bars
+are 95% Wilson intervals and the right-hand column
+gives defective documents over documents judged. The
+shaded band is the interval for 25 uniformly sampled
+documents (rate .08) and the dashed line is the accep-
+tance threshold of .5. Six findings clear it. The slo.*
+selector (open marker, .07) is indistinguishable from the
+random control.
+slices of §4 by at most 11%, but its selectors thresh-
+old the corpus’s own profanity count: the slice
+n_bad_words ≥3 (0.39% of the corpus) contains
+every G04 selector, and the 300 most profane doc-
+uments of the text subsample belong to G04 and
+to no other agent finding (Appendix M). We did
+not run the model on this profanity-ranked sample,
+so whether it would have proposed and measured
+the slice is untested. The slo.* farm falls outside
+every slice, with only 12 disagreements in 73,835
+documents (Figure 5), but the labels do not support
+it.
+6

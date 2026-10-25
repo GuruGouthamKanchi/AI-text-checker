@@ -1,0 +1,498 @@
+Preprint
+SQUARING-THE-SPHERE:
+DISTORTION-FREE
+AND
+SEAMLESS PANORAMA GENERATION VIA CUBEATLAS
+Xuhui Zuo∗, Chenjie Cao∗, Tengfei Wang, Junta Wu, Yisu Zhang, Chunchao Guo†
+Tencent
+∗Equal contribution.
+†Corresponding author.
+ABSTRACT
+Generating 360◦panoramas requires both local perspective fidelity and global
+spherical continuity. Existing representations face a trade-off: equirectangular
+projection (ERP) enables seamless panorama modeling but suffers from severe
+distortion and a domain gap to pre-trained image generators, whereas cubemaps
+preserve perspective geometry but often produce inconsistent faces and visible
+seams.
+We present SQUARING-THE-SPHERE, a panoramic image generation
+framework built on a novel representation CubeAtlas, which unfolds all cube-
+map faces into a single compact canvas. By arranging orientation-aligned, rotated
+polar regions alongside the equatorial faces, this representation preserves the per-
+spective geometry of cubemaps while organizing the cross-face relationships re-
+quired for seamless panorama assembly. It further enables a pretrained diffusion
+transformer to model the complete panorama jointly in a single pass, without al-
+tering the backbone architecture or positional encoding. While CubeAtlas has a
+token count comparable to ERP, its structured layout makes many dense attention
+interactions unnecessary. We therefore introduce a layout-aware sparse attention
+mask that preserves the interactions required for panorama continuity while re-
+moving geometrically irrelevant token pairs. As a result, CubeAtlas achieves bet-
+ter quality than ERP modeling with lower attention computation. Furthermore,
+we introduce a training-free super-resolution technique and a fusion scheme that
+enhance fine details in distortion-free perspective space before achieving the fi-
+nal ERP panorama. Experiments on various benchmarks demonstrate that our
+method improves geometric fidelity, cross-view consistency, and high-resolution
+visual quality over previous methods.
+1
+INTRODUCTION
+360◦panoramas serve as a fundamental visual medium for a broad range of immersive applications,
+including virtual and augmented reality, gaming, telepresence, and 3D world modeling (Hunyuan-
+World et al., 2025; HY-World Team et al., 2026; World Labs, 2025; Ji et al., 2026; Jia et al., 2026).
+Recent advances in image generative models have substantially improved the realism, diversity, and
+controllability of perspective image synthesis (Esser et al., 2024; Black Forest Labs, 2024; Wu et al.,
+2025; Cao et al., 2025). However, how to transfer the powerful generative priors learned in perspec-
+tive space to panorama generation remains an open challenge, as a panorama must simultaneously
+preserve local perspective fidelity and maintain globally coherent, seamless content over the entire
+sphere (Figure 1).
+In this paper, we identify the key challenge as selecting a panoramic representation compatible with
+pre-trained image priors. The two most common choices are equirectangular projection (ERP) and
+cubemaps. ERP represents the scene on a single equirectangular canvas, facilitating joint model-
+ing of the entire panorama (Zhang et al., 2024; Feng et al., 2023; Wu et al., 2026; Huang et al.,
+2026). However, its non-uniform spherical projection severely stretches polar regions, introduces
+geometric distortion, and departs from the perspective-image distribution learned by modern gen-
+erators (Liang et al., 2026). Cubemaps avoid ERP’s polar stretching by decomposing the sphere
+into six perspective faces (Tang et al., 2023; Kalischek et al., 2025). Although methods such as
+CubeDiff jointly model these faces through cross-face attention, preserving spatial continuity across
+face boundaries remains challenging. Therefore, unifying ERP’s global coherence with cubemaps’
+perspective fidelity remains a central problem for high-quality panorama generation.
+1
+arXiv:2610.31565v1  [cs.CV]  22 Oct 2026
+
+
+Preprint
+Zenith (Polar)
+Cross-Face Boundary
+Zenith (Polar)
+Cross-Face Boundary
+(d) CubeAtlas (Ours)
+Front
+Left
+Right
+Back
+Up
+Front
+Down
+Left
+Right
+Back
+(c) Cube Map
+(b) Equirectangular Panorama
+(a) Sphere Panorama
+Up!
+Up"
+Up#
+Up$
+Down!
+Down"
+Down#
+Down$
+Figure 1: SQUARING-THE-SPHERE reconciles global panorama continuity with perspective-
+face geometry. Upper: ERP represents the full panorama on a single canvas but severely stretches
+the polar regions; cubemaps preserve perspective geometry but introduce disconnected face bound-
+aries. CubeAtlas packs the four equatorial faces and rotated half-polar regions into a compact canvas,
+making their geometric adjacencies local for joint generation. Lower: SQUARING-THE-SPHERE
+produces seamless, geometrically coherent panoramas across diverse indoor and outdoor scenes,
+shown as ERP renderings with perspective crops.
+To address this trade-off, we propose SQUARING-THE-SPHERE, a framework built on a new
+panorama representation termed CubeAtlas. Rather than generating an ERP image or six indepen-
+dent cube faces, SQUARING-THE-SPHERE unfolds the complete cubemaps into a single image-like
+grid and enables a diffusion transformer (DiT) (Peebles & Xie, 2023) to model the entire panorama
+jointly in one forward pass, as illustrated by the CubeAtlas layout in the upper part of Figure 1. By
+combining half-polar rotation and packing for seam-aware yet compact face alignment with layout-
+aware sparse attention for efficient token interactions, SQUARING-THE-SPHERE promotes cross-
+view continuity without the cost of dense global attention. Crucially, our representation is compat-
+ible with existing DiT-based image generators without modifying their backbone architectures or
+positional encodings, thereby inheriting large-scale 2D image priors with minimal adaptation.
+Concretely, CubeAtlas re-arranges the six cubemap faces into a compact three-band, four-column
+layout, as detailed in Figure 2. For each equatorial orientation, it retains only the equator-adjacent
+half of the upper and lower faces, rotated to align with the corresponding equatorial view. This half-
+polar layout retains the local context needed to connect each polar region to its neighboring equato-
+rial faces while avoiding redundant polar tokens; complementary rotated copies are later combined
+to reconstruct the complete polar faces. Polar rotation aligns polar content with the correspond-
+ing equatorial views, turning otherwise discontinuous cross-face relationships into locally organized
+neighborhoods within the grid, thereby facilitating seamless grid-to-ERP assembly. We further in-
+troduce layout-aware sparse attention that preserves the intra-face and continuity-related interactions
+required for panorama generation while masking irrelevant token pairs. Specifically, full attention
+is retained within each latitude band for horizontal consistency, while cross-latitude communication
+is mediated solely by the equatorial band: upper and lower regions never interact directly, and each
+equatorial region attends only to the polar regions on the same left–right or front–back axis. Finally,
+we reproject the ERP into overlapping perspective cube views and apply a training-free 4× super-
+resolution model (Lu et al., 2026a) to each view. Low-frequency correction preserves coherent color
+and illumination in the final ERP, while linear blending of overlaps solves discontinuities.
+We summarize three contributions of this paper as follows:
+2
+
+
+Preprint
+FRONT
+RIGHT
+BACK
+LEFT
+UP
+FRONT
+RIGHT
+BACK
+LEFT
+DOWN
+Rotate Half-polar copies
+Rotate Half-polar copies
+Rotate
+Cube Faces
+Half-Polar Faces
+Figure 2: CubeAtlas representation. Four equatorial faces are unfolded into the central band. The
+upper and lower faces are rotated into orientation-aligned half-polar copies and placed next to their
+corresponding equatorial faces, forming a compact layout for joint generation.
+• CubeAtlas representation is proposed that unfolds an entire cubemap into a single com-
+pact canvas with orientation-aligned half-polar regions. It retains only the equator-adjacent
+portions of rotated polar copies to reduce redundant polar tokens while preserving the
+context required for full polar reconstruction. The representation preserves the perspec-
+tive geometry of cubemaps, while resolving cross-face discontinuities, enabling seamless
+panorama generation and direct reuse of 2D image priors from pre-trained DiT generators.
+• Layout-aware sparse attention retains full attention within each latitude band while re-
+stricting cross-band interactions according to the spatial structure of CubeAtlas. This struc-
+tured connectivity preserves the interactions needed for joint panorama modeling while
+avoiding unnecessary all-to-all attention among target tokens.
+• Comprehensive evaluation. We evaluate panorama generation from complementary per-
+spectives, including distributional fidelity, ERP and cubemap boundary continuity, equato-
+rial and polar perceptual quality, geometric distortion, text adherence, and human prefer-
+ence. Extensive comparisons and controlled ablations across diverse benchmarks demon-
+strate consistent gains in cross-face continuity and spherical geometric fidelity.
+2
+RELATED WORK
+360◦Panorama Generation. Existing panorama generators are largely distinguished by how they
+represent the sphere (Xia et al., 2026). ERP-based methods synthesize a single canvas, which facili-
+tates global generation (Chen et al., 2022; Zhang et al., 2024; Feng et al., 2023), but polar stretching
+creates a mismatch with the perspective-image distribution of pretrained generators. Panorama-
+specific adaptations address this mismatch through seam-aware processing (Wu et al., 2026; Kang
+et al., 2026; Lu et al., 2026b) or hybrid perspective–panorama training (Feng et al., 2026). Cubemap-
+based methods instead preserve perspective geometry while explicitly adapting the model to commu-
+nicate across separate faces. CubeDiff (Kalischek et al., 2025) jointly denoises six faces through in-
+flated attention and augments their latents with spherical UV coordinates, while DreamCube (Huang
+et al., 2025) uses spherical coordinates and synchronizes attention to improve boundary consistency.
+Although both support joint generation within a single forward pass, they retain separate face-wise
+spatial grids and introduce panorama-specific positional signals or operators to mitigate cross-face
+seams. Our method instead packs orientation-aligned cubemap faces into a single CubeAtlas canvas,
+turning cross-face adjacencies into local 2D neighborhoods and enabling seam-consistent panorama
+generation with the pretrained DiT’s native positional encoding and backbone structure.
+Image-to-Panorama Generation. Image-to-panorama methods extend a narrow-field perspective
+image into a complete environment. Earlier diffusion-based approaches typically formulate the task
+as panoramic outpainting, using camera-aware projection and inpainting to align the conditioning
+image with an ERP target (Wu et al., 2024). More recently, 360Anything (Wu et al., 2026) and HY-
+Pano 2.0 (HY-World Team et al., 2026) learn the perspective-to-ERP mapping directly from data in
+a geometry-free manner, without explicit camera metadata or camera calibration. SQUARING-THE-
+SPHERE shares this geometry-free formulation: it consumes the conditioning image as-is, without
+camera calibration, explicit input projection, or geometric inpainting. Unlike methods that directly
+3
+
+
+Preprint
+Intermediate CubeAtlas Result
+Final ERP Result
+Conversion
+Layout-aware Sparse Attention
+Ancient stone ruins with 
+majestic arches sit along a 
+misty coast, bathed in 
+warm, dramatic sunlight 
+filtering through clouds.
+Image 
+Encoder
+Text 
+Encoder
+C
+System prompt
+User prompt
+t
+❄
+❄
+MMDiT Block (Layout-aware Sparse Attention)
+⋮
+×𝑁
+🔥
+Noise Z
+MMDiT Block (Layout-aware Sparse Attention)
+L
+F
+R
+B
+L
+F
+R
+B
+Up
+Equator
+Down
+Up
+Equator
+Down
+Visible (Attends)
+Blocked (Masked)
+L
+F
+R
+B
+L
+F
+R
+B
+L
+F
+R
+B
+L
+F
+R
+B
+Figure 3: Overview of SQUARING-THE-SPHERE. Given a perspective image and text prompts, the
+DiT denoises the complete CubeAtlas in a single pass. Layout-aware sparse attention retains within-
+band interactions while restricting cross-latitude communication: for each pole, an equatorial region
+attends only to the two axis-aligned half-polar regions that reconstruct a complete polar face. The
+generated CubeAtlas is then fused and stitched into the final ERP panorama.
+generate ERP, it learns this mapping in the CubeAtlas, whose perspective-aligned layout is better
+matched to the target image prior.
+Priors from Generative Image Models.
+Large-scale diffusion and flow-based image genera-
+tors (Esser et al., 2024; Black Forest Labs, 2024; Wu et al., 2025) provide strong priors for high-
+fidelity, controllable perspective-image synthesis. Directly transferring these planar priors to ERP
+panoramas is nevertheless non-trivial: their standard spatial representations do not encode spherical
+periodicity or polar convergence. Recent training-free adaptations, e.g., SpheRoPE (Hirschorn et al.,
+2026) and SphereDiff (Park et al., 2026), modify positional encoding or use spherical projection at
+inference time to inject these spherical constraints into frozen generators (Hayakawa et al., 2026).
+Such methods demonstrate the useful panoramic priors already present in foundation models, but
+their generation capability must still be induced at inference time rather than learned in a panorama-
+specific representation. SQUARING-THE-SPHERE instead fine-tunes a pre-trained generative DiT
+on CubeAtlas formulations, preserving its perspective-image prior while learning joint cross-face
+generation in a representation designed for panoramic continuity.
+3
+METHOD
+We introduce SQUARING-THE-SPHERE, an effective approach for generating high-quality, seamless
+360◦panoramas, as provided in Figure 3. We first motivate the CubeAtlas layout by reviewing
+common panorama representations in Section 3.1. Then we describe model details in Section 3.2.
+3.1
+PANORAMIC REPRESENTATION
+A panorama captures a complete 360◦×180◦view of a scene from a fixed viewpoint, and the choice
+of how to lay this view out on a flat image plane has a decisive effect on generation quality.
+3.1.1
+PREVIOUS REPRESENTATIONS
+Equirectangular Projection (ERP). ERP maps longitude and latitude onto the horizontal and ver-
+tical axes of a 2 : 1 rectangular image, providing a simple and compact representation of the full
+sphere. However, its sampling becomes increasingly non-uniform toward the poles, causing se-
+vere horizontal stretching and departing from the perspective-image domain of pretrained diffusion
+models. This mismatch makes it difficult to generate faithful geometry in polar regions. Moreover,
+spherical continuity is split across the left and right image boundaries, requiring explicit handling of
+horizontal wrap-around.
+Cubemap. A cubemap projects the sphere onto six perspective faces, each with a 90◦Field-of-View
+(FoV). It avoids the severe polar stretching of ERP and better aligns with the perspective-image
+4
+
+
+Preprint
+domain of pretrained diffusion models. However, content that is continuous on the sphere is split
+across separate face boundaries. Without effective cross-face modeling, generated faces can become
+inconsistent in appearance, semantics, and geometry, resulting in visible seams along cube edges.
+3.1.2
+CUBEATLAS
+To unify both advantages, we propose a new representation that retains the perspective-face geome-
+try of cubemaps while organizing their cross-face relationships into a single image-like canvas. Let
+S denote the side length of each cube face in latent space. We denote the six standard cubemap
+orientations by Ω= {L, F, R, B, U, D}, corresponding to left, front, right, back, up, and down. The
+four equatorial orientations (L, F, R, B) are placed side by side in the central band. Jointly denoising
+this complete band in one forward pass allows the model to learn the horizontal continuity directly.
+The more challenging boundaries are vertical. In a conventional cubemap-cross representation, only
+the front face is directly adjacent to the upper and lower faces; the left, right, and back faces are spa-
+tially separated from their corresponding polar neighborhoods and receive incompatible positional
+relationships. CubeAtlas therefore creates an in-plane-rotated copy of each polar face for every
+equatorial orientation, such that its equator-adjacent half is vertically aligned with the correspond-
+ing equatorial face. We denote these upper half-regions by UL, UF, UR, UB, while the lower ones
+are DL, DF, DR, DB. The core layout of CubeAtlas can be presented as:
+CubeAtlas =
+"UL
+UF
+UR
+UB
+L
+F
+R
+B
+DL
+DF
+DR
+DB
+#
+∈R2S×4S×C,
+(1)
+where C is the number of latent channels. The equatorial band [L, F, R, B] has a shape S × 4S × C,
+while the upper and lower polar bands [UL, UF, UR, UB] and [DL, DF, DR, DB] each has a shape
+(S/2) × 4S × C. Thus, each equatorial face is locally connected to its corresponding upper and
+lower neighborhoods. Meanwhile, full attention within each polar band lets the differently oriented
+half-regions learn a consistent polar appearance, jointly resolving the cubemap seams.
+Although each pole is represented by four rotated copies, CubeAtlas retains only the equator-
+adjacent half of each copy. Its core canvas therefore has size 2S × 4S × C, equal to an ERP latent
+canvas at the same resolution, while retaining the perspective geometry of cubemap faces. This
+half-polar packing avoids redundant polar tokens and keeps the base computation comparable to
+ERP even before the further savings from our sparse attention mask. To encode horizontal periodic-
+ity, we append a context strip copied from the left edge to the right boundary before VAE encoding.
+The resulting CubeAtlas is processed as a single image in one VAE forward pass, producing the
+latent representation used for diffusion training.
+Direction-Aware Polar Blending
+𝛼→1
+𝛼→0
+𝛼−𝑡𝑟𝑎𝑛𝑠𝑖𝑡𝑖𝑜𝑛 𝑏𝑎𝑛𝑑
+ℱ012
+ℱ012
+ℱ034
+ℱ034
+Figure 4: The direction-aware
+polar blending mask.
+Representation Conversion.
+During training, panoramas are
+represented and supervised directly in CubeAtlas space. To re-
+main compatible with standard panorama rendering, storage, and
+evaluation pipelines, a generated CubeAtlas is deterministically
+converted into a standard cubemap and subsequently into ERP.
+The equatorial band directly provides the four lateral faces, while
+the rotated half-regions in the upper and lower bands provide
+complementary observations for reconstructing the two polar
+faces. All polar reconstruction and blending operations are per-
+formed in pixel space after decoding the CubeAtlas latents.
+We first form two complementary full-face fusions. For the up-
+per pole, the front- and back-aligned half-regions (UF, UB) are
+rotated back to their canonical orientations and joined to form a
+front–back (FB) estimate FFB
+U . Similarly, (UL, UR) form a left–right (LR) estimate FLR
+U . Because
+each pair contains complementary halves of the same polar face, joining them along their shared
+boundary recovers a complete face. We construct FFB
+D
+and FLR
+D
+for the lower pole in the same
+manner. The resulting FB and LR fusions are geometrically aligned estimates of the same polar
+face, supported by complementary directional observations. Although joint CubeAtlas generation
+already encourages them to be consistent, local differences may remain around complex structures
+near the polar center. We therefore combine two estimates using the direction-aware blending rule
+5
+
+
+Preprint
+as illustrated in Figure 4. For each reconstructed polar face, let (u, v) ∈[−1, 1]2 denote its nor-
+malized pixel coordinates. For p ∈{U, D}, the rule favors FFB
+p
+where |v| > |u| and FLR
+p
+where
+|u| > |v|, while smoothly blending them near the diagonals |u| ≈|v|. With blending width τ and
+[·]1
+0 = clip(·, 0, 1), we obtain:
+α(u, v) =
+|v| −|u| + τ
+2τ
+1
+0
+,
+Fp = α FFB
+p
++ (1 −α) FLR
+p
+,
+p ∈{U, D}.
+(2)
+This fusion preserves the directional consistency of all four polar observations and provides a smooth
+transition between the FB- and LR-dominant regions. The reconstructed upper and lower faces,
+together with the four equatorial faces, form a standard cubemap, which is finally reprojected into
+the output ERP panorama.
+3.2
+MODEL DESIGN
+Geometry-Free Panorama Generation.
+We build SQUARING-THE-SPHERE on a pre-trained
+image-editing DiT. The conditioning image is consumed directly: we neither estimate nor provide
+camera intrinsics, camera pose, or an explicit projection of the input onto the sphere. Instead, the
+model learns from data how to place the input content on the 360◦CubeAtlas layout and synthesize
+its surrounding context.
+The conditioning image follows the standard dual-path design. It is jointly encoded with the text by
+the frozen multimodal encoder (Bai et al., 2025) for semantic context, and independently encoded
+by the frozen VAE into clean visual condition tokens. These condition tokens are concatenated with
+noisy CubeAtlas target tokens, and the DiT operates on the joint text, target, and condition sequence.
+We fully fine-tune the DiT using the standard linear flow-matching objective, which predicts ϵ −x0
+from xσ = (1 −σ)x0 + σϵ, with σ sampled from a logit-normal distribution. We make no changes
+to the DiT architecture or its rotary position embeddings. Consequently, SQUARING-THE-SPHERE
+preserves the strong perspective-image prior of the base model while adapting it to joint panorama
+generation in CubeAtlas space.
+Layout-Aware Sparse Attention.
+Although the CubeAtlas canvas has a token count comparable
+to that of ERP, dense attention over all its regions is not always necessary to maintain panoramic
+consistency. A key advantage of CubeAtlas is that it makes geometrically adjacent faces locally
+connected while retaining a structured decomposition of the panorama. We exploit this property with
+a layout-aware sparse attention mask over target-to-target interactions; text and condition tokens
+remain globally connected to every target token.
+Specifically, we partition the target into upper, equatorial, and lower bands. We retain full attention
+within each band to preserve horizontal consistency, but block direct interactions between the up-
+per and lower polar bands. For cross-latitude communication, each equatorial face attends only to
+the polar half-regions aligned with its axis. For example, L attends to {UL, UR, DL, DR}, whose
+complementary halves reconstruct its neighboring upper and lower faces. Conversely, a polar query
+attends to all equatorial keys, allowing the equatorial band to serve as the cross-latitude bridge. Over-
+all, the layout-aware mask retains 75% of the target-to-target attention connectivity of dense atten-
+tion, as illustrated in Figure 3, while text and image-conditioning tokens remain globally connected
+to all target tokens. Blocking direct attention between some regions does not prevent information
+exchange: features can still propagate through the equatorial band across successive DiT layers.
+The mask therefore structures cross-region communication rather than separating the panorama into
+independently modeled regions. Our experiments further show that this structured sparsity supports
+cross-view consistency while improving efficiency.
+Panoramic Super-Resolution.
+To obtain high-resolution panoramas without heavy training, we
+apply a frozen 4× Pixel Diffusion Decoder (PiD) (Lu et al., 2026a) in perspective space. Specif-
+ically, the fused ERP is reprojected into six overlapping cubemap views with an enlarged FoV of
+92.79◦, which are independently enhanced by PiD and mapped back to the ERP domain. This pro-
+cess upsamples the base panorama by 4× along each spatial dimension, producing 10k ERP panora-
+mas. We linearly blend overlapping regions outside the FoV range of 90◦to suppress cross-view
+discontinuities. Since generative super-resolution may introduce low-frequency shifts, we further
+6
+
+
+Preprint
+CubeDiff
+DreamCube
+HunyuanPano
+HY-Pano-2.0
+Ours
+Figure 5: Qualitative comparison with perspective cubemaps. Our results enjoy superior cross-
+face structures and pole geometry compared to ERP-native and cubemap-based baselines.
+apply a correction strategy (Yue et al., 2025) to anchor the global color and illumination to the base
+panorama while retaining the generated high-frequency details.
+4
+EXPERIMENTS
+Implementation Details.
+We initialize SQUARING-THE-SPHERE from Wu et al. (2025). The
+VAE and Qwen2.5-VL condition encoder are kept frozen, while the denoising Transformer is fully
+fine-tuned for 8,000 steps with a global batch size of 64 and a learning rate of 10−5. We apply Flex-
+Attention (Guessous et al., 2024) for the sparse attention implementation. Each cubemap face in
+CubeAtlas has a resolution of 640 × 640, corresponding to a fused ERP panorama of 1280 × 2560.
+The super-resolution stage further upsamples the panorama by 4× along each spatial dimension,
+producing a 5120 × 10240 panorama with a horizontal resolution of 10K. Our evaluation bench-
+mark consists of 100 self-collected images, together with 100, 100, and 118 panoramas from the
+RealSee3D (Li et al., 2026), Laval-Indoor (Gardner et al., 2017), and SUN360 (Xiao et al., 2012)
+test sets, respectively. We compare against CubeDiff (Kalischek et al., 2025), DreamCube (Huang
+et al., 2025), HunyuanPano (HunyuanWorld et al., 2025), and HY-Pano-2.0 (HY-World Team et al.,
+2026) using their official inference configurations. Unless otherwise specified, all comparisons are
+conducted on the base-resolution outputs without super-resolution refinement, ensuring a fair com-
+parison across methods. Additional datasets and evaluation details are provided in Section B.
+4.1
+MAIN RESULTS
+Quantitative Results.
+Table 1 compares SQUARING-THE-SPHERE with representative panorama
+generation systems. The metrics cover distributional fidelity (FID, KID, and CLIP-FID), ERP and
+cubemap boundary continuity (SeamERP, SeamCube), equatorial and polar perceptual and geometric
+quality (Eq-* and Pole-*), and prompt adherence (TextAdh); full definitions are provided in Sec-
+tion D. SQUARING-THE-SPHERE achieves the lowest SeamCube on all four benchmarks, reducing
+the cube-edge error by 63–78% relative to CubeDiff. These results support the effectiveness of gen-
+erating a single canvas directly to eliminate cross-face discontinuities. Note that at SeamERP values
+around 0.01, further numerical differences may not translate into perceptible differences in bound-
+ary seams. We therefore interpret this metric together with the qualitative comparisons. SQUARING-
+THE-SPHERE also leads Eq-GI and Pole-GI on every benchmark and ranks first or second in Pole-IQ,
+demonstrating improved equatorial and polar geometry. Meanwhile, it achieves the best CLIP-FID
+on all three public benchmarks, leads FID and KID on RealSee3D and FID on Laval-Indoor, and ob-
+tains the highest TextAdh. These results confirm that SQUARING-THE-SPHERE improves spherical
+structure without sacrificing visual realism or textual consistency.
+Qualitative Results.
+Figure 5 compares SQUARING-THE-SPHERE with CubeDiff, DreamCube,
+HunyuanPano, and HY-Pano-2.0 using perspective cubemap views. Across diverse indoor and out-
+7

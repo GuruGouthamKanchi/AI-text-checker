@@ -1,0 +1,703 @@
+AgentVQA: A Unified Benchmark for
+Agentic Visual Understanding
+Advait Gupta1
+Sachin Konan2
+Tom Yin2
+Gabriel Sarch2*
+Zhuang Liu2*
+1University of Maryland, College Park
+2Princeton University
+Website
+Code
+Data
+AgentVQA
+Agentic Visual
+Understanding
+Web Agents
+A
+B
+C
+D
+Where can I
+change my
+password?
+A. [429,724]
+B. [1254,614]
+C. [783,942]
+D. [759,856]
+A
+B
+C
+D
+Where do I
+enter the
+CAPTCHA text?
+A. [865,901]
+B. [863,1020]
+C. [1057,922]
+D. [867,157]
+Egocentric Videos
+What gray
+object is below
+the TV?
+A. A box
+B. A shelf
+C. A laptop
+D. A soundbar
+What is above
+the piano?
+A. A mirror
+B. A lamp
+C. A plant
+D. A chair
+Robotics
+Is the path to
+the chip bag
+blocked?
+A. Cannot tell
+B. Yes
+C. No
+D. Partial reach
+What is the
+black gripper
+holding?
+A. Fork
+B. Towel
+C. Spoon
+D. Nothing
+Games
+How many times
+did Mario die?
+A. 1
+B. 2
+C. 3
+D. 4
+What is the
+character
+doing?
+A. Running
+B. Walking
+C. Talking
+D. Stands silent
+Spatial Planning
+Which way is
+the bus trying to
+go?
+A. Right
+B. Left
+C. Cannot say
+D. None
+What will you
+pass from Gate
+8 to 7?
+A. Nursing rm.
+B. Toilet
+C. Fountain
+D. None above
+Figure 1. The AgentVQA Benchmark. AgentVQA unifies five challenging agentic domains: Web Agents, Egocentric
+Videos, Robotics, Games, and Spatial Planning.
+Abstract
+Vision-language models (VLMs) can perform a broad range of tasks across diverse settings, yet their
+performance in agentic contexts remains poorly understood. Although online evaluations in simulators
+and real-world environments are essential for measuring interactive agent performance, they are costly and
+challenging to scale. Complementary offline VQA benchmarks can enable faster and more reliable comparisons
+across agentic domains, yet existing benchmarks remain limited and fragmented. To address this gap, we
+introduce AgentVQA, an offline benchmark for evaluating VLMs on realistic agentic scenarios across five agent
+domains: Web Agents, Robotics, Egocentric Videos, Games, and Spatial Planning. We build AgentVQA by
+manually selecting 1000 challenging, real-world agent examples from 23 source datasets and adapting them for
+reliable offline evaluation. The resulting benchmark preserves realistic scenarios from interactive environments
+across diverse domains, and its model rankings track those from corresponding online evaluations. Across the
+22 evaluated models, the best achieves only 58.5% accuracy. Our cross-domain analysis shows that errors
+are driven primarily by failures to ground and maintain accurate representations of the current and evolving
+visual state, including localizing relevant UI elements, interpreting motion, tracking state changes over time,
+and inferring 3D spatial relationships, rather than by task misinterpretation or downstream logical reasoning.
+*Equal advising.
+1
+arXiv:2610.31494v1  [cs.CV]  22 Oct 2026
+
+
+1 Introduction
+Vision-Language Models (VLMs) are quickly becoming the decision-making core for agentic systems spanning
+robotics, web navigation, or gameplay. By prompting or fine-tuning, VLMs often outperform their domain-
+specific counterparts (Koh et al., 2024; Black et al., 2024; Zhou et al., 2025; Zhang et al., 2025; Sarch et al.,
+2025) and serve as the backbone for top-performing action models (Black et al., 2026, 2025; Ji et al., 2025).
+In domains like mathematics and coding, standardized benchmarks have accelerated progress by systematically
+tracking model capabilities and reliably exposing performance gaps (Jimenez et al., 2023; Balunović et al.,
+2025). For agents, online evaluations in real or simulated environments remain the gold standard for assessing
+agentic performance (Yao et al., 2024), but due to computational cost and reproducibility, they present
+practical challenges for rapid, large-scale model comparison (Henderson et al., 2018; Dasari et al., 2022).
+As a result, VLMs’ agentic capabilities lack comparable evaluation frameworks. State-of-the-art models are
+often assessed on general-purpose benchmarks like MMMU (Yue et al., 2025), MMBench (Liu et al., 2024) and
+GPQA (Rein et al., 2024). While these benchmarks assess broad vision-language and language understanding,
+their questions and visual inputs do not reflect agentic decision-making scenarios. They primarily assess
+general visual understanding or knowledge-intensive reasoning. Recent works (Yao et al., 2024; Yehudai
+et al., 2025; Wong et al., 2025) show that performance on general-purpose VQA benchmarks does not reliably
+correlate with success in agentic tasks.
+To address this, several domain-specific benchmarks have advanced evaluation of agentic capabilities within
+their respective settings (Koh et al., 2024; Rawles et al., 2024; Bonatti et al., 2025; Jang et al., 2024; Yang
+et al., 2025b). However, these often provide narrow domain coverage, inputs and action spaces that do not
+reflect real agentic scenarios, or evaluation sets that are either saturated or affected by noisy annotations.
+We introduce AgentVQA, a manually curated benchmark for systematically evaluating general-purpose
+VLMs on realistic agentic scenarios. AgentVQA contains 1,000 single-image, multi-frame, and video-based
+multiple-choice questions curated from 23 datasets across five domains: Web Agents, Egocentric Videos,
+Robotics, Games, and Spatial Planning. These domains represent distinct forms of agent–environment
+interaction, including GUI navigation, temporally extended first-person understanding, embodied perception
+and action, strategic decision-making, and 3D spatial planning, as illustrated in Figure 1. By evaluating these
+settings within a common benchmark, AgentVQA supports both aggregate model comparison and analysis of
+whether agentic capabilities generalize across domains.
+We construct AgentVQA through a human-centered, model-assisted pipeline designed to provide broad
+coverage, standardized evaluation, and meaningful difficulty. VLMs screen candidates and propose hard
+distractors, while annotators select, repair, and verify every retained example. Only about 22% of the initial
+candidates survive the full curation pipeline, as human review identifies subtle ambiguities and annotation
+errors missed by automated checks and removes examples that are insufficiently challenging. The final
+benchmark expresses heterogeneous targets, including coordinates, actions, spatial relations, and predicted
+states, through a common multiple choice interface while preserving the semantics of the original tasks.
+Model rankings on AgentVQA correlate with those from SpatialWorld (Gao et al., 2026), an online evaluation
+of agentic capabilities in simulation, supporting its use as a scalable complement to interactive evaluation. At
+the same time, its rankings differ substantially from those on broad visual and reasoning benchmarks such as
+MMMU-Pro, GPQA-Diamond, and ChartQAPro, suggesting that performance on conventional benchmarks
+does not reliably predict agentic competence. Across the 22 open- and closed-source models we evaluate, the
+strongest model achieves only 58.5% accuracy. Moreover, the strongest model differs across domains, showing
+that aggregate performance can obscure substantial variation in domain-specific capabilities.
+Our cross-domain error analysis reveals a shared limitation that manifests differently across agentic settings.
+Failures are dominated by grounded scene and state understanding: models struggle with UI localization in
+Web Agents, motion interpretation in Egocentric Videos, 3D spatial reasoning in Robotics and Spatial
+Planning, and visual state comprehension in Games. In contrast, failures arising from misunderstanding
+the task or selecting an answer inconsistent with the model’s reasoning are rare. These results suggest that
+current VLMs often understand the requested objective and can reliably reason over perceived inputs but fail
+to construct and maintain the grounded representation of the environment needed to act correctly.
+2
+
+
+Web
+Agents
+Egocentric
+Videos
+Games
+Spatial
+Planning
+Robotics
+AgentVQA
+Dataset
+1000 Questions
+Screenspot
+(50)
+Screenspot-Pro
+(50)
+MONDAY
+(50)
+AitW
+(50)
+Robo2VLM
+(40)
+ManipBench
+(40)
+Roborefit
+(40)
+Share-Robot
+(40)
+ERQA
+(40)
+GameQA
+(50)
+MarioQA
+(50)
+Atari
+(50)
+VideoGameBunny
+(50)
+VSI-Bench
+(40)
+Perception-Test
+(40)
+OpenEQA
+(40)
+VidEgoThink
+(40)
+EgoPlan-Bench
+(40)
+Spatial-MM
+(40)
+SpaCE-10
+(40)
+OmniSpatial
+(40)
+3DSRBench
+(40)
+EmbSpatial-Bench
+(40)
+Figure 2. Distribution of the 1000 questions in the AgentVQA benchmark. Distribution across the 23 source datasets
+(sample counts in parentheses), organized within the 5 core agentic domains.
+2 Related Work
+VLM as agents. Recent advances in multimodal AI have been driven by the development of Vision-Language
+Models (VLMs). These models, such as QwenVL (Bai et al., 2023), GPT-4o (Hurst et al., 2024), and
+Gemini (Deepmind, 2026), are typically pretrained on vast, web-scale datasets of paired images and text.
+This equips them with a broad general-purpose understanding of both visual concepts and natural language,
+making them an ideal compute unit for agents. Several works have successfully adapted VLMs into specific
+domains, either by fine-tuning or scaffolding pre-trained models (Black et al., 2024; Koh et al., 2024; Zhou
+et al., 2025; Zhang et al., 2025; Sarch et al., 2025). AgentVQA evaluates agentic capabilities across domains.
+General visual question answering. A wealth of benchmarks have been developed to assess the general
+capabilities of VLMs, including SEED-Bench (Li et al., 2023a), MMBench (Liu et al., 2024), or MMMU (Yue
+et al., 2025). While invaluable for measuring core competencies and reasoning, they are ill-suited as proxies
+for agentic intelligence.
+Agentic tasks often require episodic memory (Majumdar et al., 2024) because
+either the modalities are iterative, e.g., a stream of image observations, or the task requires interactive
+reasoning, e.g., tool-calling. Yao et al. (2024) found that GPT-4o, despite excelling on traditional benchmarks,
+achieves a success rate less than 50% on realistic customer service tasks requiring multi-turn interactions. In
+Fig. 6, we confirm this observation by the divergence between rankings in AgentVQA vs MMMU-Pro and
+GPQA-Diamond.
+Agentic benchmarks.
+The agentic evaluation landscape spans language-only benchmarks, e.g., SWE-
+bench (Jimenez et al., 2023) and AgentBench (Liu et al., 2023), which test capabilities such as code generation
+and tool use, and vision-language benchmarks requiring visual grounding and spatial reasoning. These
+benchmarks can also be categorized as online or offline. Online benchmarks, e.g., (Savva et al., 2019; Fan
+et al., 2022; Li et al., 2023b; Koh et al., 2024; Zhang et al., 2025), evaluate agents through environment
+interaction and therefore capture non-deterministic dynamics important for real-world deployment, but are
+often costly and infrastructure-intensive (Henderson et al., 2018; Du et al., 2024). Offline benchmarks, e.g.,
+(Rawles et al., 2023; Yang et al., 2025a; Team et al., 2025; Tong et al., 2025; Gong et al., 2025), instead
+use verifiable question-answer tasks paired with visual inputs. However, existing offline benchmarks are
+largely domain-specific and differ in answer formats, option difficulty, and sample distributions, making direct
+aggregation and cross-domain analysis difficult (Table 4). AgentVQA is curated by filtering and transforming
+samples into a standardized, unambiguous multiple choice format with hard negatives.
+3
+
+
+Candidate
+Collection
+MCQ
+Construction
+VLM-Assisted
+Screening
+Manual Curation
+& Repair
+Human Verification
+& Assembly
+Web Agents
+Egocentric Videos
+Robotics
+Games
+Spatial Planning
+Visual input + question
+A Hard negative
+B Correct answer
+C Hard negative
+D Hard negative
+Before
+A
+B
+C
+D
+After
+A
+B
+C
+D
+1,000
+Figure 3. Dataset curation pipeline for AgentVQA. (1) Collect candidates across 23 datasets, task types, and input
+modalities spanning five agentic domains. (2) Standardize tasks as MCQs; Gemini 2.5 Pro proposes three hard negatives
+when needed. (3) Gemini and Claude flag ambiguity, annotation errors, and weak distractors, removing approximately
+45% of candidates. (4) Human annotators review, edit, and repair the remaining samples, rejecting approximately 60%
+as ambiguous, incorrect, or too easy. (5) Verify exactly one correct answer and plausible, unambiguously incorrect
+hard negatives, then assemble 1,000 manually verified questions balanced across the five domains.
+3 The AgentVQA Benchmark
+We define agentic tasks as those that evaluate action selection or the perceptual and reasoning capabilities
+required for goal-directed interaction with an environment Bengio et al. (2025). To support scalable offline
+evaluation of these capabilities, AgentVQA comprises 1,000 manually curated multiple-choice questions drawn
+from 23 datasets spanning five agentic domains. Its construction is guided by three principles: comprehensive
+coverage across domains to assess skill generality; standardized evaluation using manually curated questions
+with unambiguous ground truth; and challenging examples, states, and negative options designed to expose
+fine-grained weaknesses in current models.
+To provide comprehensive coverage, AgentVQA spans five distinct forms of agent-environment interaction:
+digital interaction and GUI navigation in Web Agents; embodied perception and action in Robotics;
+temporally extended first-person planning in Egocentric Videos; strategic decision-making in Games; and
+spatial navigation and planning in Spatial Planning. The benchmark is balanced across domains, with 200
+questions per domain (Figure 2). Its inputs range from individual screenshots and embodied-scene images to
+multi-frame trajectories, egocentric videos, and gameplay videos. Heterogeneous targets, including coordinates,
+actions, spatial relations, and predicted states, are represented through a common multiple-choice format
+while preserving observations of the agentic scenario. See Appendix B for full details of the datasets.
+3.1 Data Curation and Construction
+We construct AgentVQA through a five-stage, human-centered pipeline. VLMs assist with large-scale screening
+and hard-negative generation, while human annotators determine which examples are retained and verify the
+correctness, clarity, and difficulty of every final question.
+Stage 1: Candidate collection. We assemble a diverse candidate pool from 23 source datasets spanning five
+agentic domains (see Appendix B for full dataset list). Candidates are sampled across datasets, task types,
+and input modalities to cover a broad range of realistic observations, states, and decisions, while initially
+retaining their original questions, annotations, and answer formats.
+Stage 2: MCQ construction. We convert the candidate tasks into a common multiple-choice format. For
+examples that are not originally multiple choice, Gemini 2.5 Pro proposes three hard negative options using
+the visual input, task prompt, correct answer, action history, and relevant task metadata. The generated
+distractors include both near-miss negatives, which differ from the correct answer in a fine-grained way, and
+semantically similar negatives, which correspond to plausible but incorrect objects, actions, or locations.
+Stage 3: VLM-assisted screening. We use a multi-turn verification pipeline with Gemini and Claude
+to identify converted questions with ambiguous instructions, inconsistent annotations, multiple plausible
+answers, malformed states, implausible distractors, or other quality issues. This high-recall screening removes
+approximately 45% of the initial candidate pool, reducing the amount of manual review required while
+preserving human judgment for cases involving subtle visual or domain-specific ambiguities.
+4
+
+
+Based on the screenshot, what is
+the correct next action to perform
+to delete the Lyft account?
+A. CLICK at [280, 958]
+B. CLICK at [176, 652]
+C. CLICK at [355, 955]
+D. Open app drawer
+(a) Bounding-box ambiguity
+(b) Next-action ambiguity
+A
+B
+C
+Figure 4. Ambiguities addressed by manual curation (Stage 4, Section 3.1). (a) A rectangular bounding box around
+scissors includes background, allowing clicks that miss the object to be scored as correct. (b) For the goal of deleting
+a Lyft account, B (green) directly opens Lyft and is the intended next action. However, D can also lead to a valid
+solution by opening the app drawer and then launching Lyft, adding a navigation step. The question does not require
+the shortest route, leaving multiple plausible next actions. Manual review removes or repairs such ambiguous samples
+to ensure a unique correct answer.
+Stage 4: Manual curation and repair.
+Human annotators then inspect the remaining candidates for
+correctness, difficulty, diversity, and relevance to agentic decision-making. Approximately 60% of the samples
+that pass automated screening are still rejected because they contain subtle ambiguities, annotation errors,
+invalid distractors, or are insufficiently challenging. When possible, annotators repair promising examples
+by refining the question, ground-truth answer, visual input, answer choices, or associated metadata before
+retaining them for the final evaluation format.
+Stage 5: Human verification and benchmark assembly. Every completed MCQ is manually reviewed a
+second time to ensure that exactly one answer is correct and that the distractors are plausible, challenging,
+and unambiguously incorrect. This step along with Manual Curation is especially important for grounding
+tasks, where bounding boxes and automatic spatial checks can admit false positives or reject valid interaction
+points, as illustrated in Figure 4. We revise questions, annotations, and options as needed, then assemble a
+balanced final benchmark of 1,000 manually verified questions, with 200 examples per domain and 40 or 50
+examples from each source dataset.
+4 Experiments
+In this section, we investigate the ability of different models to perform agentic visual tasks across the diverse
+inputs curated in AgentVQA. We first describe the evaluation setup and model suite in Section 4.1. We then
+report overall model performance across domains, domain-level trends, action-history effects, open- versus
+closed-source models, and reasoning variants in Section 4.2, compare AgentVQA rankings with existing offline
+benchmarks in Section 4.3, and assess its reliability as a lower-cost alternative to online agent evaluation
+through a comparison with SpatialWorld in Section 4.4. Finally, we examine the failure modes in Section 4.5.
+4.1 Experimental Setup
+Models. We evaluate a diverse suite of 22 prominent VLMs to ensure a comprehensive assessment of the
+current landscape. Our selection includes closed-source models: GPT-5.6-sol thinking-high/none (OpenAI,
+2026), GPT-5.6-luna thinking-high/none (OpenAI, 2026), GPT-4o (Hurst et al., 2024), Gemini 3.1 Pro (Google,
+2026) and 3.7 Flash (Deepmind, 2026), Claude Opus 4.8 (Anthropic, 2026a) and Sonnet 5 (Anthropic, 2026b),
+and Qwen3.7 Plus and Flash (Qwen Team, 2026b). We also include a wide range of open-source models:
+the GLM series (4.6V (Z.AI, 2025), 4.5V (GLM-V Team, 2026), 4.1V-9B-Thinking/Base (GLM-V Team,
+2026)), Kimi K3 (Team, 2026), Llama 4 Maverick (Meta, 2025), the Qwen3.5 series (397B-A17B, 122B-A10B,
+35B-A3B, 27B) (Qwen Team, 2026a), and Qwen3.8 27B (Qwen Team, 2026c).
+5
+
+
+Models are categorized as “Reasoning” or “Non-Reasoning” based on whether they allocate extended token
+budgets for internal chain-of-thought reasoning before producing a final answer.
+Evaluation setup. For models that do not natively support video input, we sample 32 frames at evenly spaced
+intervals. This number is validated by our own ablation studies and prior work (Yang et al., 2025a). Models
+are evaluated with a temperature of 0.8 and 0.2 for reasoning and non-reasoning models, respectively. For
+models without manual temperature like GPT series, we use the default.
+We use a standard prompt that provides the question and any relevant context, querying the model to output
+only the single letter corresponding to its choice. For questions involving spatial coordinates, options are
+formatted in each model’s native convention (e.g., normalized [0, 1000] in (y, x) order for Gemini, absolute
+pixel coordinates for Qwen). Final answers are extracted programmatically, and all visual inputs are provided
+at native resolution. Further details on prompts and answer extraction are in Appendices K and E.
+Table 1 Performance of VLMs on AgentVQA across the five agentic domains.
+represents Reasoning Models.
+represents closed-source models. Bolded and underlined numbers indicate best
+and second-best rank per column, respectively.
+Model
+Web
+Egocentric
+Games
+Spatial
+Robotics
+Avg
+Agents
+Videos
+Planning
+GPT 5.6-sol think-high
+47.0
+69.0
+62.5
+51.0
+45.5
+55.0
+GPT 5.6-sol think-none
+16.0
+59.0
+44.5
+41.0
+30.5
+38.2
+GPT 5.6-luna think-high
+34.5
+65.0
+61.0
+43.5
+35.5
+47.9
+GPT 5.6-luna think-none
+19.5
+46.0
+37.5
+32.0
+29.0
+32.8
+GPT-4o
+21.5
+40.0
+29.0
+35.0
+31.5
+31.4
+Gemini 3.1-pro
+34.5
+64.0
+68.0
+61.0
+51.0
+55.7
+Gemini 3.7-flash
+40.5
+67.0
+70.0
+62.5
+52.5
+58.5
+Claude Opus 4.8
+35.5
+60.0
+50.5
+41.0
+33.0
+44.0
+Claude Sonnet 5
+38.0
+47.0
+53.0
+42.5
+36.5
+43.4
+GLM 4.6v
+25.5
+54.0
+47.5
+39.5
+42.5
+41.8
+GLM 4.5v
+25.0
+65.0
+46.5
+41.0
+37.0
+42.9
+GLM 4.1V 9B-Thinking
+19.0
+53.0
+41.0
+38.5
+25.5
+35.4
+GLM 4.1V 9B-Base
+20.5
+46.0
+37.5
+44.5
+33.0
+36.3
+Kimi K3
+22.0
+64.0
+63.5
+53.0
+39.0
+48.3
+Llama-4-Maverick
+18.5
+49.0
+23.0
+30.0
+19.5
+28.0
+Qwen3.8 27B
+30.0
+69.0
+61.5
+51.5
+42.5
+50.9
+Qwen3.7 Plus
+32.5
+60.0
+61.5
+50.0
+39.0
+48.6
+Qwen3.7 Flash
+43.0
+72.5
+61.0
+55.0
+43.5
+55.0
+Qwen3.5 397B-A17B
+25.0
+65.0
+57.5
+51.5
+40.0
+47.8
+Qwen3.5 122B-a10b
+26.0
+60.0
+53.0
+50.0
+41.0
+46.0
+Qwen3.5 35B-a3b
+34.5
+62.0
+55.5
+45.5
+42.0
+47.9
+Qwen3.5 27B
+32.5
+57.0
+49.5
+51.5
+43.0
+46.7
+4.2 Results on AgentVQA
+We report the results on AgentVQA in Table 1. We draw the following conclusions:
+Top models struggle with AgentVQA. Even the top performing model, Gemini 3.7 Flash, achieves only 58.5%
+accuracy. A clear tiering is observable: the largest proprietary models (GPT-5.6, Gemini 3.7 Flash, Gemini
+3.1 Pro) are at the top, followed by other competitive models such as Qwen3.7 Flash and the open-weight
+Qwen3.8 27B, with smaller and older-generation models in the lower tiers. Among the five domains, models
+perform best on Egocentric Videos and Games, followed by Spatial Planning, Robotics, and worst on Web
+Agents. This indicates that current VLMs are stronger at temporally contextualized visual understanding
+and game-state reasoning than at precise GUI grounding and spatial reasoning.
+Large variance per domain. Current VLMs are strongest on temporally grounded understanding (Egocentric
+Videos: 59%, Games: 51.5%) and weaker on precise grounding and embodied reasoning (Spatial Planning:
+6
+
+
+46%, Robotics: 38%, Web Agents: 29%). Web Agents is the hardest domain, with only three models
+exceeding 40%. Games exhibits the largest spread (23% to 70%), suggesting strategic reasoning is strong
+only in the most capable models. No single model dominates across all domains: Gemini 3.7 Flash leads
+Games (70%) but falls behind GPT-5.6-sol thinking-high in Web Agents (40.5% vs. 47%), while Qwen3.7
+Flash leads Egocentric Videos (72.5%) and Gemini 3.7 Flash leads Spatial Planning (62.5%) and Robotics
+(52.5%). These cross-domain rank shifts indicate highly uneven capabilities across different settings.
+AitW
+MONDAY
+Dataset
+0
+20
+40
+60
+Average Performance (%)
+38
+45
+42
+50
+Without Action History
+With Action History
+Figure 5. Impact of action history on model
+performance in Web Agents.
+Open-source models are catching up.
+The gap between
+closed-source and open-source models remains narrow. The top
+closed-source model, Gemini 3.7 Flash (58.5%), leads the top
+open-source model, Qwen3.8 27B (50.9%), by 7.6%. Kimi K3
+(48.3%), Qwen3.5 35B (47.9%), and Qwen3.5 397B (47.8%) out-
+perform Claude Opus 4.8 (44.0%) and Sonnet 5 (43.4%). Mul-
+tiple open-source models also substantially outperform GPT-
+5.6-sol thinking-none (38.2%) and GPT-4o (31.4%). These
+results suggest that while the strongest proprietary models
+retain an advantage on agentic tasks, competitive open-source
+alternatives already match many closed-source systems.
+Reasoning offers varying results. Extended reasoning helps
+some models but not others. GPT-5.6-sol gains 16.8 points with
+thinking-high, while GLM 4.1V performs worse with thinking
+as compared to without it. We find that GLM-4.1V-Thinking
+gets stuck in “thinking loops” (App. J).
+Trajectory questions benefit from action history. Our ablation on Web Agents tasks reveals that providing
+action history is a consistent benefit (Figure 5). Across five models (Gemini 3.1-pro, GPT-4o, Qwen3.5 27B,
+Kimi K3, and Claude Sonnet 5), removing the history decreases average performance by 9.5% on AitW and
+10% on MONDAY. This confirms that access to historical context is critical for multi-step tasks.
+GPT-5.6 Luna (high) ↓
+Gemini 3.1 Pro −
+Qwen3.7 Plus ↓
+GPT-5.6 Sol (high) ↑
+Gemini 3.7 Flash ↑
+Qwen3.8 27B ↑
+GPT-5.6 Sol (none) ↓
+GLM-4.6V ↑
+GPT-4o ↓
+GPT-5.6 Luna (none) ↑
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+MMMU-Pro
+AgentVQA
+Qwen3.8 27B ↓
+GPT-5.6 Luna (high) ↓
+Qwen3.7 Plus ↓
+GPT-5.6 Sol (high) ↑
+Gemini 3.1 Pro ↑
+Gemini 3.7 Flash ↑
+GPT-5.6 Sol (none) ↓
+GLM-4.6V ↑
+GPT-4o ↓
+GPT-5.6 Luna (none) ↑
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+GPQA-Diamond
+AgentVQA
+Qwen3.7 Plus ↓
+Qwen3.8 27B ↓
+GPT-5.6 Sol (none) ↓
+Gemini 3.1 Pro ↑
+Gemini 3.7 Flash ↑
+GLM-4.6V ↓
+GPT-5.6 Luna (high) ↑
+GPT-5.6 Sol (high) ↑
+GPT-5.6 Luna (none) −
+GPT-4o −
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+ChartQAPro
+AgentVQA
+Figure 6. Divergence in model performance rankings between AgentVQA and three existing benchmarks. Lines are
+colored red if a model’s rank degrades and purple if it improves. The rank divergence shows that our benchmark has
+moderate-to-weak correlation with general VQA benchmarks. While a few models maintain their ranks, the relative
+positions of most others change. In the comparison with GPQA-Diamond, no model maintains its relative ranking.
+4.3 Rank Correlation
+Low correlation with existing benchmarks. To validate the benefit of a specialized agentic benchmark, we
+compare model rankings for a subset of models on AgentVQA to those on a subset of MMMU-Pro (Yue et al.,
+2025) (250 samples), ChartQA-Pro (Masry et al., 2025) (250 samples), and GPQA-Diamond (Rein et al.,
+2024) (150 samples), running our own evaluations with standardized prompts. As shown in Figure 6, rankings
+diverge substantially. Spearman’s rank correlation coefficients are moderate for MMMU-Pro (𝜌= 0.67) and
+GPQA-Diamond (𝜌= 0.59), and weak for ChartQA-Pro (𝜌= 0.44).
+7

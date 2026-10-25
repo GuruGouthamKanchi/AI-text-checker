@@ -1,0 +1,619 @@
+Cost-Aware Abstention for LLM-Based
+IT Ticket Classification
+Sachin Gupta
+Independent Researcher
+United States
+sachinkg12@gmail.com
+Abstract—Wrong automatic routing of an IT support ticket can
+cost more than human triage. We evaluate cost-aware abstention
+as an offline, cost-conditional readiness assessment: a routing
+policy is selected on calibration data under asymmetric costs
+and evaluated once on held-out test data. On a public 47,837-
+ticket, eight-class corpus, we compare four trained classifiers with
+four large language models under zero- and few-shot prompting.
+With illustrative per-ticket costs of zero for a correct route, one
+for human triage, and five for a wrong route, term-frequency–
+inverse-document-frequency logistic regression selects a threshold
+of 0.60 and reduces test cost from 0.763 to 0.472, a 38.1 %
+relative reduction (95 % bootstrap confidence interval, 35.7 %–
+40.4 %), while lowering wrong routes from 15.3 % to 3.5 %. In
+a post-hoc 16-setting analysis, calibration-selected policies beat
+both always-route and always-defer in 14 settings. The strongest
+prompted configuration reaches 0.477 accuracy on a stratified
+1,000-ticket subset, versus 0.879 for fine-tuned DistilBERT on the
+same tickets. Isotonic recalibration reduces expected calibration
+error but does not reliably improve ranking discrimination; one
+GPT-4o-mini setting emits a single confidence value and has
+correctness area under the receiver operating characteristic curve
+of 0.500. At the break-even probability of 0.80, seven prompted
+conditions defer every ticket, and Haiku few-shot routes 19 of
+1,000. A language-model-only agreement control and margin- and
+entropy-based rejection scores for the logistic-regression baseline
+provide nontrivial comparators. The findings are scoped to this
+dataset, prompt design, model endpoints, and illustrative costs;
+the work is an evaluation framework, not a new abstention
+algorithm or universal deployment certification.
+Index Terms—trustworthy machine learning, calibration, cost-
+aware abstention, selective prediction, large language models, text
+classification, IT service management
+I. INTRODUCTION
+Enterprise IT service desks process tens of thousands of
+internal tickets per month, where the “customer” is an em-
+ployee asking internal IT for help with hardware, access, or
+software (not an external consumer). HDI/MetricNet reports
+the North American average cost per voice IT service-desk
+ticket at US$17.19, with walk-up tickets averaging US$37.52
+[1]. Routing happens under an asymmetric cost structure.
+Sending a ticket to the correct queue is nearly free. Sending it
+to a human triager is moderately costly. Sending it to the wrong
+queue is much more expensive once you account for handoff
+latency, double work, and missed service levels. Accuracy or
+macro-F1 alone cannot represent this asymmetry or indicate
+when to trust an automated decision [2], [3].
+Two trends make this gap more pressing. First, large lan-
+guage models (LLMs) can be prompted as zero- or few-shot
+text classifiers [4], [5], potentially reducing the need for task-
+specific training. Second, modern neural classifiers, including
+LLMs, are known to be poorly calibrated. They often produce
+high confidence values regardless of actual accuracy [6]–[9].
+Together these trends raise a concrete operational question:
+should a prompted LLM be allowed to auto-route IT tickets,
+and if so, under what abstention policy?
+We study this question on the public IT Service Ticket
+Classification Dataset (47,837 tickets, eight categories). We
+treat cost-aware abstention not as a way to improve a classifier
+but as an empirical readiness test under stated assumptions.
+Predictors, confidence estimators, rejection scores, and policies
+remain separate. Our contributions are:
+1) A comparison of four trained non-LLM classifiers and
+eight prompted LLM conditions on the same public
+corpus, including a common 1,000-ticket test subset.
+2) A calibration analysis that reports expected calibration
+error (ECE), correctness area under the receiver oper-
+ating characteristic curve (AUROC), and tie-aware area
+under the risk–coverage curve (AURC), plus separate
+mixed (M=9) and LLM-only (M=8) agreement pools.
+3) A calibration-selected, paired-bootstrap cost analysis
+with top-probability, probability-margin, and entropy
+rejection scores; a post-hoc 16-setting cost-parameter
+analysis; and LLM policies that use a cost-derived
+threshold rather than test tuning.
+4) A reproducible evaluation framework and per-ticket ar-
+tifacts that expose prediction, confidence, rejection, and
+cost as separately auditable stages.
+The main observation is simple: abstention does not repair a
+weak classifier. It exposes when auto-routing is cost-preferred
+under a particular dataset, confidence signal, and cost model.
+Positioning. The components we combine are individu-
+ally established: Chow-style error-reject [3], Elkan-style cost-
+sensitive decision-making [10], ECE-based calibration diag-
+nostics [6], [11], isotonic recalibration, and self-consistency-
+inspired agreement signals [12]. We introduce no new absten-
+tion algorithm. This paper’s contribution is an empirical evalu-
+ation of deployment-relevant assumptions and its reproducible
+implementation, not a universal readiness certificate.
+© 2026 IEEE. Personal use of this material is permitted. Permission from IEEE must be obtained for all other uses, in any current or future media, including
+reprinting/republishing this material for advertising or promotional purposes, creating new collective works, for resale or redistribution to servers or lists, or reuse of any
+copyrighted component of this work in other works. Accepted for publication at the 38th IEEE International Conference on Tools with Artificial Intelligence (ICTAI 2026).
+arXiv:2610.31657v1  [cs.LG]  22 Oct 2026
+
+
+II. RELATED WORK
+Selective prediction and abstention. The classical frame-
+work for rejecting uncertain inputs traces back to Chow’s
+error-reject trade-off [3]. It has been formalized for modern
+classifiers under the names selective prediction [2], [13] and
+learning with abstention [14]; a recent survey organizes LLM
+abstention methods, benchmarks, and evaluation metrics [15].
+The closest line is learning to defer, where a classifier is
+trained jointly with the option to pass an instance to a human
+expert [16], [17]. Our training-free confidence-threshold policy
+addresses the same route-or-defer action space without joint
+training. We evaluate its decisions under an explicit cost model
+following Elkan’s cost-sensitive formulation [10].
+Calibration and overconfidence. Guo et al. [6] docu-
+mented systematic overconfidence in deep neural classifiers
+and popularized Expected Calibration Error (ECE) [11] as
+a diagnostic. A growing literature studies whether LLMs
+are well-calibrated [7]–[9], [18]. The broad finding is that
+verbalized confidence runs too high. We contribute a public-
+dataset measurement of LLM ECE in an asymmetric-cost
+classification setting, and report agreement-across-predictors
+as a confidence signal inspired by self-consistency [12].
+LLMs for text classification. Off-the-shelf prompting of
+LLMs as classifiers [4], [5], [19] is operationally attractive,
+but on short, lexical-signal-heavy tasks strong classical text
+classifiers such as linear SVMs [20] remain highly competi-
+tive, as our IT-ticket results confirm (§V-A). Cost-driven LLM
+cascades and routing lower inference cost by escalating only
+hard inputs to a stronger model [21]; we instead hold the model
+fixed and use abstention to decide when not to auto-route at
+all. Our evaluation lands in the same mixed picture for the
+IT-ticket domain.
+IT ticket classification. Automated routing of support
+tickets has a long applications-track history [22], [23] but is
+rarely evaluated under explicit cost models or with abstention.
+Our framework is structured as a deferral layer that could be
+integrated into an IT service management pipeline rather than
+as a new classifier.
+III. METHOD
+A. Problem setup
+Let X be the space of ticket texts and Y a set of K disjoint
+downstream queues. A base classifier h : X →Y emits a
+label. The policy-wrapped decision d : X →Y ∪{⊥} either
+routes h(x) or abstains (⊥); abstained tickets go to a human
+triager. Each decision incurs one of three costs: cok (correct
+auto-route), ctriage (human triage), and cwrong (incorrect auto-
+route). The expected per-ticket cost is
+E[c] = P(⊥)ctriage + P(correct, ¬⊥)cok
++ P(wrong, ¬⊥)cwrong.
+(1)
+Our primary analysis uses (cok, ctriage, cwrong) = (0, 1, 5).
+These values are illustrative rather than calibrated to any
+single organization, but they encode the qualitative ordering
+that motivates abstention: a misroute is costlier than a human
+triage because it still incurs the triage after a delayed hand-off
+plus rework, whereas a correct auto-route is effectively free.
+Because the ratio is an assumption rather than a measured
+quantity, every deployment conclusion is conditional on it.
+Equation (2) shows how local costs determine the routing
+threshold; an organization must estimate its own triage and
+misroute costs before use. As a post-hoc sensitivity analy-
+sis, we also cross ctriage ∈{0.5, 1, 1.5, 2} with cwrong ∈
+{2, 5, 10, 20} while fixing cok = 0. The (2, 2) pair is an equal-
+cost boundary; the other 15 pairs retain cwrong > ctriage.
+B. Predictors
+We evaluate four non-LLM baselines and four prompted
+LLMs.
+Non-LLM baselines. TF-IDF (term frequency–inverse doc-
+ument frequency) uni- and bi-gram features feed three clas-
+sifiers. Logistic regression and linear support vector machine
+(SVM) cap the vocabulary at 100,000 features; random for-
+est caps it at 50,000. The headline baseline is multiclass
+logistic regression (LR; L2 regularization, C=1.0). The lin-
+ear SVM head is a one-vs-rest linear support vector clas-
+sifier (SVC) wrapped in sigmoid-calibrated probability out-
+puts. The random forest head uses 300 trees with default
+depth. Separately, the fourth baseline fine-tunes DistilBERT
+(distilbert-base-uncased) on tokenized ticket text
+from the full training split for two epochs with batch size
+32 and maximum sequence length 256. All four are fit on the
+same train split.
+LLM
+predictors.
+Each
+LLM
+is
+queried
+per
+ticket
+with
+a
+structured
+prompt
+(template
+v1;
+the
+strict
+v2
+is
+used
+only
+in
+§V-D)
+that
+lists
+the
+allowed
+labels,
+the
+ticket
+text,
+and
+an
+instruction
+to
+return
+JSON
+{"label": ..., "confidence": ...}.
+Few-
+shot variants prepend k=3 exemplars per class (24 in total,
+class-balanced across the eight categories), drawn only from
+the training split. The main prompts contain label names
+and examples but no natural-language category definitions;
+the
+comparison
+therefore
+characterizes
+these
+prompting
+conditions, not each LLM’s intrinsic capability. We use
+temperature 0 and max_tokens=64 for all main runs.
+Out-of-set labels are tagged as invalid; malformed JSON is
+tagged as a parse error. Both invalid labels and parse errors
+are scored as incorrect predictions and assigned confidence 0;
+the threshold policies defer such rows rather than auto-route
+them, while always_route, by definition, routes them and
+incurs cwrong. The four models are GPT-4o-mini [24], Claude
+Haiku 4.5 [25], Qwen2.5-7B-Instruct [26], and Llama-3-8B-
+Instruct-Lite [27]. GPT-4o-mini and Claude Haiku are queried
+through their vendor APIs.1 The open-weights models use
+Together AI endpoints Qwen2.5-7B-Instruct-Turbo
+1For reproducibility, the proprietary endpoints and query date were: OpenAI
+gpt-4o-mini and Anthropic claude-haiku-4-5-20251001, both
+queried on 2026-05-22. The Anthropic model is a dated snapshot; the OpenAI
+alias resolves to the provider’s then-current gpt-4o-mini snapshot, so those
+results reflect the endpoint state on that date.
+
+
+and
+Meta-Llama-3-8B-Instruct-Lite,
+provider-
+documented at query time as 8-bit floating point (FP8) and
+4-bit integer (INT4), respectively; precision is absent from our
+saved responses and is not independently verified. We re-run
+the model families through DeepInfra (provider-documented
+bfloat16, or BF16) as a cross-provider check that does not
+isolate quantization; our conclusions are unchanged (§V-E).
+C. Confidence and rejection scores
+We evaluate probability estimates and ranking signals sep-
+arately.
+Model-reported. For a non-LLM baseline this is the maxi-
+mum class-probability estimate returned by that model: multi-
+nomial probabilities for logistic regression, sigmoid-calibrated
+outputs for the SVM, tree-vote fractions for the random forest,
+and softmax for DistilBERT. For LLMs it is the confidence
+field parsed from the JSON output.
+Cross-predictor agreement. Given M predictors evaluated
+on the same ticket, the agreement-confidence for the primary
+predictor is the fraction of the M predictors that emit the
+same label. No held-out labels are used to compute this score
+at application time. In our mixed configuration M=9: the
+four LLMs in zero-shot and few-shot settings (eight prompted
+variants) plus the classical TF-IDF + LR baseline. Because
+this pool mixes the eight LLM variants with the stronger
+classical baseline, an LLM’s agreement partly reflects con-
+cordance with a more accurate supervised predictor, not peer
+consensus alone. We therefore also report an LLM-only M=8
+control. Operational trade-off: agreement requires running all
+M predictors at inference. Because the pool is heterogeneous,
+its dollar cost and latency depend on the endpoints and are
+not necessarily M× those of the primary alone. Isotonic
+incurs one calibration-time pass per prompted predictor and
+a constant-time lookup at inference.
+Isotonic regression on a held-out calibration split. LLM-
+emitted confidence fields are bounded in [0, 1] but are not
+logits, so parametric Platt or temperature scaling do not apply
+cleanly. We instead fit one isotonic regression per prompted
+LLM condition on the calibration split: pairs {(ci, 1[ˆyi =
+yi])} of raw confidence and ground-truth correctness, mapped
+via sklearn.isotonic.IsotonicRegression [28]
+(monotone non-decreasing, output clipped to [0, 1]) into a
+recalibration c 7→ˆPr(correct). For each LLM predictor we
+fit on a stratified 500-ticket subsample of the calibration split
+(4,000 calibration queries across the 8 prompted variants).
+Calibration and test splits are disjoint: the isotonic mapping
+is learned only from calibration pairs and applied unchanged
+to test confidences. ECE is computed with 10 equal-width bins
+on test predictions.
+Discrimination metrics. ECE measures probability-level cal-
+ibration but not whether confidence ranks correct predictions
+above errors. We therefore report correctness AUROC (ties
+receive half credit) and area under the risk–coverage curve
+(AURC; lower is better). Since LLM scores contain many
+ties, our AURC adds each equal-score group as a block and
+integrates the right-continuous risk step, avoiding arbitrary
+ordering within ties.
+Nontrivial rejection comparators. For TF-IDF + LR we also
+use the top-two probability margin p(1) −p(2) and normalized
+inverse entropy 1 −H(p)/ log K. Each score’s threshold is
+selected on calibration over a 0.01-spaced grid in [0, 1] and
+then evaluated once on test.
+D. Abstention policies
+For
+the
+primary
+non-LLM
+analysis
+we
+compare
+always_route (route every ticket) with threshold@τ
+for τ
+∈
+{0.5, 0.6, 0.7, 0.8, 0.9} (route if conf
+≥
+τ,
+defer otherwise). Where stated, we also use the trivial
+always_defer reference policy, which defers every ticket
+at cost ctriage by construction. It appears in the LLM break-
+even comparison and the post-hoc cost grid; the primary
+non-LLM analysis uses always_route as its baseline.
+Cross-predictor agreement enters our experiments only as a
+confidence estimator (above), not as a deferral policy.
+Threshold selection. Non-LLM operating points are selected
+on the calibration split under the configured cost model. The
+best threshold over the stated grid, τ ∗= arg minτ Ecalib[c |
+τ], is then evaluated once on the held-out test split. For
+the classical TF-IDF + LR baseline this procedure selects
+τ ∗= 0.60 (calibration costs at τ ∈{0.5, 0.6, 0.7, 0.8, 0.9}
+are {0.493, 0.461, 0.477, 0.537, 0.654}). Calibration and test
+splits are disjoint by construction.
+For each post-hoc cost-sensitivity setting, we select on
+calibration among always_route, always_defer, and
+thresholds from 0.01 to 0.99 in steps of 0.01, then eval-
+uate the frozen choice once on test. For exact calibration-
+cost ties, the deterministic order is always_route, then
+always_defer, then the smallest threshold among tied
+threshold policies.
+For LLMs we do not select a threshold on test. If an isotonic
+score is interpreted as p = Pr(correct), auto-routing is cost-
+preferred when
+pcok + (1 −p)cwrong ≤ctriage,
+(2)
+which gives the fixed break-even threshold p ≥0.80 under
+(0, 1, 5). Raw verbalized scores are not treated as probabilities
+for policy optimization.
+E. Modular evaluation pipeline
+Predictors, confidence estimators, abstention policies, and
+the cost model are separated by interfaces. Registry-based
+predictor addition does not require changing the evaluator;
+other extension types require explicit builder or policy-set
+wiring in the current code. Fig. 1 shows the flow.
+IV. EXPERIMENTAL SETUP
+A. Dataset and splits
+We use the public IT Service Ticket Classification Dataset
+[29]:
+47,837
+tickets,
+8
+categories
+(Access,
+Administra-
+tive rights, HR Support, Hardware, Internal Project, Mis-
+cellaneous, Purchase, Storage), median ticket length 175
+
+
+Ticket text
+Classifier
+Confidence
+estimator
+Abstention
+policy
+Auto-route
+Human triage
+high conf.
+low conf.
+Fig. 1. Evaluation pipeline from ticket text to auto-routing or human triage, with prediction, confidence estimation, and abstention separated.
+TABLE I
+DATASET SUMMARY (PUBLIC IT SERVICE TICKET CLASSIFICATION
+DATASET).
+Property
+Value
+# tickets
+47,837
+# classes
+8
+Train / Calib. / Test
+33,486 / 4,784 / 9,567
+Median ticket length (chars)
+175
+Class imbalance (max/min)
+7.74×
+TABLE II
+NON-LLM BASELINES ON THE LLM TEST SUBSET (n = 1,000).
+Baseline (on 1,000-ticket subsample)
+Acc.
+Macro-F1
+ECE-raw
+TF-IDF + LR
+0.847
+0.842
+0.111
+TF-IDF + Linear SVM
+0.867
+0.869
+0.056
+TF-IDF + Random Forest
+0.804
+0.791
+0.172
+DistilBERT (fine-tuned)
+0.879
+0.883
+0.043
+characters, maximum/minimum class size 13,617 / 1,760
+(7.74× imbalance; Fig. 2). We use a stratified 70/10/20
+train/calibration/test split (Table I). Few-shot exemplars are
+drawn only from the training split. The dataset is publicly
+available on Kaggle under its posted terms. We use that
+preprocessed public release. The complete dataset and per-
+ticket text arrays are not redistributed in the camera-ready
+artifacts; only three brief illustrative excerpts from the public
+dataset are quoted in Section V-F. Each dataset row pairs a
+short internal IT request with a category label.
+B. Test subsample for LLM predictors
+Per-call API budget makes evaluating all four LLMs on the
+full 9,567-ticket test set impractical. The 8 LLM configurations
+alone issue 8,000 test queries on the subsample described
+below, and scaling to the full test set would multiply that
+by an order of magnitude. LLMs are therefore evaluated
+on a stratified 1,000-ticket subsample (seed 42). To assess
+whether that subset preserves the non-LLM baseline ordering,
+we re-evaluate every non-LLM baseline on the same 1,000-
+ticket subsample (Table II). Subsample and full-test numbers
+differ by at most 1.6 percentage points for every baseline.
+The strongest non-LLM baseline (DistilBERT) reaches 0.879
+accuracy on the subsample, versus 0.477 for the best LLM on
+the same tickets, confirming the same ordering on identical
+examples.
+C. Reproducibility
+Runs save configuration, seeds, dataset and split hashes,
+package
+versions,
+and
+per-ticket
+outputs.
+Intervals
+use
+1,000
+paired
+resamples
+with
+seed
+1337;
+reported
+per-
+centage reductions recompute the ratio inside each re-
+sample.
+The
+public
+project
+repository
+is
+https://github.
+com/sachinkg12/RouteGuard; the frozen camera-ready claim
+manifest, automated recomputation receipt from a sepa-
+rate verification script, tables, text-free per-ticket vectors,
+and code snapshot are archived as a versioned series at
+doi:10.5281/zenodo.22609128. The supplement pins the veri-
+fied x86-64/Python 3.14 environment because estimator refits
+can vary slightly across architectures; the frozen prediction
+vectors remain the audit record.
+V. RESULTS
+A. Base-classifier predictive performance
+We
+compare
+four
+non-LLM
+baselines
+against
+eight
+prompted hosted LLM configurations (Table III). Among non-
+LLM baselines the fine-tuned encoder is strongest. DistilBERT
+reaches accuracy 0.877 and macro-F1 0.874 on the full 9,567-
+ticket test set after two epochs of training on a single GPU with
+batch size 32 and maximum sequence length 256. The next
+non-LLM baseline is a sigmoid-calibrated linear SVM over
+TF-IDF features (accuracy 0.863, macro-F1 0.864), followed
+by the TF-IDF + logistic regression baseline (0.847 / 0.842)
+and a TF-IDF random forest (0.818 / 0.806).
+The best prompted LLM is Claude Haiku 4.5 with k=3
+few-shot prompting at 0.477/0.459. GPT-4o-mini few-shot
+follows (0.459 / 0.450), then Qwen2.5-7B-Instruct few-shot
+(0.447 / 0.454) and Llama-3-8B-Instruct-Lite zero-shot (0.378
+/ 0.284). On the common 1,000-ticket subset, DistilBERT
+reaches 0.879 and Haiku few-shot 0.477, so the measured gap
+is not caused by different test examples. It is not, however,
+a pure capability comparison: the trained models learn the
+taxonomy from 33,486 labeled tickets, whereas the prompted
+LLMs receive label names and, at most, 24 examples without
+category definitions. Ambiguous labels such as Miscellaneous,
+Internal Project, and Administrative rights make that distinc-
+tion material. We therefore scope the result to these training
+and prompt-information regimes.
+Few-shot prompting helps three of the four LLMs but hurts
+Llama-3-8B-Instruct-Lite by 12.3 percentage points. Inspec-
+tion of the raw outputs shows that the model often emits a
+conversational preamble (“I’ll classify the ticket and return
+the JSON.”) that uses up the output budget before any JSON
+
+
+Fig. 2.
+Class distribution of the 47,837-ticket corpus across the eight
+categories.
+is emitted, which produces a 15.1 % parse-error rate.2 We dig
+into this in §V-D.
+B. Is the confidence signal useful?
+Every prompted LLM is overconfident: raw ECE spans
+[0.332, 0.594], and GPT-4o-mini few-shot assigns confidence
+1.000 to every ticket despite 0.459 accuracy. Isotonic regres-
+sion fitted on the disjoint calibration subset reduces LLM ECE
+to [0.014, 0.049], an 86–98 % relative reduction.
+That ECE result must not be read as improved error ranking.
+Isotonic is monotone and changes correctness AUROC by
+at most 0.007 in these runs; AURC also does not improve
+consistently (Table III). The limiting example is GPT-4o-mini
+few-shot: raw confidence is the constant 1.000, isotonic maps it
+to the constant 0.480, and both correctness AUROC and AURC
+remain 0.500 and 0.541. Isotonic corrects the probability level
+by mapping a non-discriminative score to the base accuracy;
+it does not create information that was absent from the score.
+Agreement can carry ranking signal, but the voter pool mat-
+ters. Table IV separates the mixed M=9 pool from the LLM-
+only M=8 control. The M=8 correctness AUROC spans
+0.590–0.773, descriptive evidence that peer-only agreement
+contains ranking signal on these data. Its ECE also improves
+over raw confidence in all eight conditions, but ECE alone
+would not establish discrimination. The mixed pool is better
+in every listed ECE and AUROC cell, but it includes the
+supervised TF-IDF + LR vote. Thus M=9 uses no held-out
+calibration labels when a score is computed, yet it is not free
+of supervised information. It also requires all predictors at
+inference.
+C. Which routing policy is cost-preferred?
+a) Headline result on the classical baseline: We il-
+lustrate the cost framework on the TF-IDF + LR baseline
+because it is the simplest and most reproducible substrate.
+The same machinery applies to any predictor in Table III:
+stronger non-LLM baselines (DistilBERT, linear SVM) defer
+less aggressively but follow the same qualitative shape, since
+2This low few-shot result is sensitive to the joint prompt/output-budget
+configuration: on the ablation subsample, switching from v1/64 to the stricter
+v2/128 configuration eliminates the parse failures and raises Llama few-shot
+accuracy from 0.245 to 0.320 (Table IX).
+they enter the cost calculation through a better-calibrated, more
+accurate confidence signal.
+At the illustrative cost setting (0, 1, 5), the calibration-
+selected threshold τ ∗= 0.60 reduces expected cost per ticket
+from 0.763 to 0.472 on the held-out test split, a relative reduc-
+tion of 38.1 % (95 % paired-bootstrap CI [35.7 %, 40.4 %]).
+The ratio is recomputed inside each paired bootstrap resample;
+the corresponding absolute cost difference is −0.291 (95 % CI
+[−0.318, −0.263]) per ticket. The wrong-route rate drops from
+15.3 % to 3.5 % while the system still auto-routes 70.5 % of
+tickets at 95.0 % on-routed accuracy (Fig. 4). The evaluated
+cost points form a U-shape with a minimum at τ ∗(Table V,
+Fig. 3), and the bootstrap interval excludes zero by a wide
+margin (Table VI).
+b) Cost analysis is consistent across non-LLM baselines:
+We re-run the same procedure (per-model calibration-selected
+τ ∗, evaluated on the held-out test split) for the SVM, random-
+forest, and DistilBERT baselines. Table VI reports the results.
+The relative cost reduction at each model’s τ ∗clusters in a
+narrow band of 35.5 to 38.1 %, with overlapping bootstrap
+intervals, even though the always-route baseline cost varies
+substantially (from 0.615 for DistilBERT to 0.910 for the
+random forest) and the selected τ ∗varies from 0.60 to 0.90:
+LR and random forest select 0.60, SVM selects 0.70, and
+DistilBERT selects 0.90. Because these thresholds also depend
+on each model’s score scale and calibration, they do not es-
+tablish a general relationship between accuracy and threshold.
+DistilBERT’s choice is the edge value on the predeclared
+grid. A post-hoc 0.01-spaced sensitivity sweep moves the
+calibration choice to 0.94 and gives test cost 0.401 (34.7 %
+reduction), close to the primary 0.396 (35.5 %) result. Thus
+grid density changes the operating point but not the qualitative
+conclusion; the dense sweep does not replace the predeclared
+analysis.
+c) Cost-parameter sensitivity: Table VII varies both un-
+certain costs while selecting one policy per setting on cali-
+bration. A threshold policy is selected in 15 of 16 settings.
+On held-out test data, the frozen choice costs less than
+both trivial policies in 14 settings, and all 14 paired ratio-
+bootstrap 95 % intervals exclude zero. At the equal-cost (2, 2)
+boundary, calibration selects always_route. At (1.5, 2),
+the calibration-selected threshold is 0.2 % costlier than the
+lower-cost trivial test comparator, illustrating finite-split selec-
+tion variation rather than a universal gain. As the wrong-route
+cost grows relative to triage, the selected threshold generally
+rises. The (1, 5) cell uses the post-hoc dense grid and therefore
+matches the 36.9 % top-probability result in Table VIII; it does
+not replace the primary five-threshold 38.1 % result.
+d) Rejection-score comparators: Table VIII compares
+rejection scores. Its post-hoc 0.01-grid top-probability thresh-
+old (0.65) yields 36.9 % on test, versus 38.1 % at 0.60 on
+the primary predeclared grid; this calibration-to-test variation
+does not replace the primary result. Margin is slightly better
+and entropy worse, but each CI overlaps the top-probability
+CI. Because the intervals are not paired between rules, their
+ordering is descriptive. All three reduce cost.

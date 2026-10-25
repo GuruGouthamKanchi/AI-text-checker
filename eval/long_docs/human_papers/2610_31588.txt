@@ -1,0 +1,617 @@
+VERA: A Responsible AI Dashboard for Assessing
+LLM Deployments in Light of the EU AI Act
+Robin Qu´eriaux∗, Solveig Bachellery∗, L´ea D´el´eris∗, Saurabhsingh Rajput†,
+Mariam Barry∗, Tushar Sharma†, J´erˆome Lebecq∗
+∗BNP Paribas, France
+†Dalhousie University, Halifax, Canada
+Abstract—Institutions that deploy large language models in
+regulated settings often need technical evidence of responsible AI
+practices before approving a deployment. COMPL-AI provides
+a technical interpretation of the EU AI Act that organises
+this evidence under six principle groups and eighteen technical
+requirements, twelve of which current benchmarks can measure.
+The benchmark suites that produce this evidence are typically
+operated from a command line, while the staff who approve
+deployments are non-engineers. We present VERA, an open-
+source self-hosted dashboard deployed to facilitate responsible
+AI processes within a large European bank. A reviewer selects
+a model and runs public benchmarks against it. VERA scores
+the twelve requirements that current benchmarks can measure
+and instruments the energy consumed by each evaluation, adding
+run-level evidence for environmental impact. We run four served
+open-weight models through the requirement pipeline, and the
+dashboard displays a score for each measurable requirement. A
+within-subject study then compares how participants read these
+benchmark results: from the raw output files in one condition,
+and through the VERA dashboard in the other. The dashboard
+reduced the time needed to perform the responsible AI assessment,
+reducing the time required from 56 seconds using raw files to 30
+seconds using our dashboard, on average. Our dashboard scored
+highly (4.36 out of 5) on usefulness in the survey conducted
+within the organization. The dashboard and the study material
+are released publicly to promote replicability and reproducibility
+in different organisational contexts.
+Index Terms—Responsible AI, EU AI Act, Compliance tooling,
+User study, Software engineering in practice, Open source
+I. INTRODUCTION
+Large language models are being built into products across
+almost every customer-facing function, from answering queries
+to triaging support requests and drafting documents. Their
+outputs are not specified by deterministic rules, and generation
+can vary across runs when stochastic decoding is used. They
+can also generate confident but false statements, known as
+hallucinations [1], [2], reproduce text from their training
+data [3], and answer the same question differently depending
+on the social group it names, such as a gender, an ethnicity
+or a religion [4]. Exact-output testing is insufficient for
+Accepted at the 33rd Asia-Pacific Software Engineering Conference (APSEC
+2026), Software Engineering in Practice track, Bali, Indonesia, 7–10 December
+2026. This is the authors’ accepted version. © 2026 IEEE. Personal use of
+this material is permitted. Permission from IEEE must be obtained for all
+other uses, in any current or future media, including reprinting/republishing
+this material for advertising or promotional purposes, creating new collective
+works, for resale or redistribution to servers or lists, or reuse of any copyrighted
+component of this work in other works.
+behaviour of this kind, since many prompts admit no single
+expected response against which every output can be checked.
+Practitioners therefore evaluate such behaviour statistically,
+over benchmark suites that probe each failure mode [5], [6].
+These risks have led regulators to impose documentation,
+testing and risk-management obligations rather than leave
+evaluation to good practice. For high-risk AI systems, the EU
+AI Act requires technical documentation to be drawn up before
+the system is placed on the market or put into service and to
+demonstrate compliance with the applicable requirements [7].
+Recital 27 separately recalls seven non-binding trustworthy-
+AI principles from the AI HLEG, namely human agency and
+oversight, technical robustness and safety, privacy and data
+governance, transparency, diversity, non-discrimination and
+fairness, societal and environmental well-being, and account-
+ability [7], [8]. For institutions subject to these obligations,
+producing and organising technical evidence becomes a routine
+engineering task before deployment proceeds.
+In a regulated institution, however, the people who produce
+this evidence and the people accountable for the deployment
+are not the same. In our institutional setting, approval rests
+with the model owner and business-oriented managers, while
+the evaluation suites are operated by engineers. Supervision
+of the process is the responsibility of the second line of
+defence, in compliance or in risk management. Over a year of
+preparing release decisions within responsible-AI processes at
+BNP Paribas, we observed three problems that recur because
+of this separation. The first is access, since the suites used in
+these reviews are driven from a command line. An engineer
+therefore runs the evaluation and brings a summary slide to
+the review meeting, where the reviewers cannot interrogate
+the numbers on it. The second is opacity, since results arrive
+as a table of scores with no link to the tests behind them.
+A reviewer who asks why a requirement scored poorly must
+match the run record against per-item outputs by hand. In one
+review, a reviewer asked which benchmarks had produced an
+artificial-intelligence disclosure score of 0.50 for one model,
+and answering meant scanning a 209-line harness log to isolate
+the ten self-disclosure responses behind that requirement, even
+though every fact needed was already in the files. The third is
+traceability. Release documentation is written after the run, so
+the filed document can become detached from the evaluation
+it describes as runs are repeated or updated. All three are
+properties of the software that delivers the measurements rather
+arXiv:2610.31588v1  [cs.SE]  22 Oct 2026
+
+
+Fig. 1. The role-agnostic path: select a model and requirement set, run public benchmarks, read a role-filtered outcome where each score opens, and export
+evidence tied to the run.
+than of the measurements themselves.
+The measurement itself is already well supported. COMPL-
+AI maps six principle groups in its technical interpretation
+to eighteen technical requirements and connects twelve of
+them to public benchmarks [9], while the suites beneath it fix
+which scenarios a report covers and how each benchmark is
+executed [10]–[13]. Run against a served model, these tools
+write a run record, a harness log and the per-item outputs, which
+together hold the facts a reviewer needs. The underlying suites,
+however, are designed primarily to produce and store measure-
+ments rather than to support the review workflow around them.
+Working from their raw artifacts still requires technical tooling,
+requirement-level results are not consistently linked to the per-
+item evidence behind them, and downstream documentation
+need not record the exact run from which a value came. Access,
+opacity and traceability therefore remain after measurement,
+and closing them is the first gap this work addresses. A
+second gap lies inside the published taxonomy itself, since the
+remaining six requirements are handled without benchmark
+scores, and environmental impact is one of them. It differs
+from the other five, because corrigibility and explainability have
+no agreed technical definition, whereas energy is a physical
+quantity for which the AI Act calls for lifecycle reporting
+standards and, for providers of general-purpose AI models,
+known or estimated model-energy documentation (Art. 40
+Para 2, Annex XI Para 2e) [7]. COMPL-AI collects that figure
+through a form about the resources used in training, although
+the energy an evaluation itself consumes can be instrumented
+directly on the host that runs it [14].
+To close both gaps we built VERA (Verifiable Evaluation
+for Responsible AI), a self-hosted dashboard designed to
+let staff involved in deployment review produce, examine
+and file benchmark evidence in a browser without writing
+code. It is deployed to facilitate responsible AI processes
+within the institution described above, and the path a reviewer
+follows is short. A reviewer selects a served model, runs
+the public benchmark suites against it, and reads a score
+for each technical requirement. Any score opens onto the
+benchmarks that produced it and the answers the model gave.
+The export that leaves the review names the run behind it, so
+a later reader can check a figure rather than trust it. VERA
+scores the twelve requirements the reference taxonomy can
+measure and adds instrumented run-level energy evidence to the
+environmental-impact requirement, while five of the eighteen
+remain on a documented human path. Figure 1 shows the route
+a reviewer takes, which needs no account, no configuration
+file and no code. VERA has to produce those scores before
+their presentation can matter, so we evaluate both. We first run
+four served open-weight models through five requirements at
+a benchmark sampling budget of 150, which shows that the
+tool recomputes its own aggregate end to end and separates
+the models it scores. We then run a within-subject study
+administered by the dashboard itself, in which each of ten
+participants answers six factual questions about one completed
+evaluation from its raw files and six matched questions on
+VERA, while the application times each question and validates
+each answer. The condition order is fixed and the participants
+are predominantly research staff rather than the compliance
+reviewers the tool targets, so we report a difference in reading
+performance rather than an isolated interface effect or a change
+in deployment decisions.
+This paper makes the following contributions.
+1) We present VERA, an open-source self-hosted dashboard
+that turns a completed evaluation into requirement-level
+results a reviewer can read, expand to the tests and model
+responses behind them, and export with the identity of
+the run that produced them.
+2) We extend the evidence path to environmental impact
+by instrumenting the energy the served models consume
+during each evaluation run, replacing a written attestation
+for that run-level quantity with recorded evidence.
+3) We provide paired evidence that participants extract more
+correct facts from a requirement-oriented presentation
+than from the raw result files, using a within-subject
+study that the dashboard administers.
+4) We identify where that presentation fails, since aggre-
+gating benchmarks per requirement hides the coverage a
+reviewer must count, and a guided launch path does not
+by itself make a run reachable.
+5) We release the dashboard, the study instrument that
+produced these measurements, and the analysis script,
+available at https://github.com/FinAI-Lab/VERA.
+
+
+II. BACKGROUND AND RELATED WORK
+Measuring a model and reading that measurement are
+separate problems, and the literature has focused primarily
+on the first. This section reviews the work on each.
+A. Benchmark Suites and Requirement Taxonomies
+COMPL-AI is an independent effort by ETH Zurich, INSAIT
+and LatticeFlow AI that maps six principle groups in its
+technical interpretation to eighteen technical requirements and
+connects twelve of them to public benchmarks [9]. It is neither
+funded by the European Union nor part of the AI Act’s
+harmonised standards, and its authors explicitly state that it is
+not official auditing software for legal compliance. It publishes
+the technical interpretation, an open-source benchmarking
+suite and a public leaderboard, so both the taxonomy and
+the executable measurement layer are available to practitioners;
+its workflow remains evaluation-centred rather than organised
+around institutional review and filing.
+The suites beneath that taxonomy execute the tests. HELM
+fixes which scenarios a report covers [10], the language model
+evaluation harness fixes how a benchmark runs so that two
+runs are comparable [11], Garak probes for jailbreaks [12],
+and DecodingTrust bundles a trustworthiness suite [13]. Each
+answers a measurement question in isolation, and none reports
+its result against an Act-oriented technical requirement. A
+separate line of research applies natural-language processing
+to the regulation itself, extracting obligations from legal text
+and checking artifacts against them [15]–[17]. Deriving a
+requirement set is a different problem from operating one
+that already exists, and this paper addresses the second.
+B. Tool Support for Reviewing Results
+Running these suites against a served model yields a
+run record, a harness log and the per-item outputs, and
+Table I compares what a reviewer can then do with that
+output. The table shows a mature measurement layer above a
+comparatively limited review layer. Only COMPL-AI reports
+at the requirement level, and both COMPL-AI and PromptOps
+expose user-facing result views, but opening a score to see
+the tests behind it remains partial and neither provides the
+role-filtered, run-traceable workflow VERA targets. No suite
+provides role-filtered views or run-tied artifacts, and both
+omissions have practical consequences. A legal reviewer and a
+data scientist are accountable for different subsets of the same
+evidence, and an export that does not name its run cannot by
+itself establish which evaluation supports a filed Annex IV
+technical artifact.
+The layers around the suites leave the same need unmet.
+Model Cards and Datasheets standardise what a description
+of a model or a dataset should say, and both are typically
+authored artifacts rather than automatically bound to a specific
+evaluation run [18], [19], so they do not by themselves prevent
+the provenance drift identified in Section I. PromptOps is
+the closest work on the reading side and identifies the same
+interface problem, although it scores prompt by prompt and
+reports a flat set of numbers rather than a verdict a reviewer
+can expand [20].
+One requirement is missing from the measurement layer as
+well as from the reading layer. Among the tools in Table I,
+none instruments the energy consumed by its own evaluation
+run, so environmental-impact evidence is collected outside
+the benchmark run rather than attached to it. Techniques for
+measuring that quantity already exist in software engineering
+research. In our prior work we measured the energy of deep-
+learning code at method and interface granularity, and we
+showed that coarse attribution misstates where energy is
+spent [14]. These techniques provide measurement mechanisms
+but not the requirement-oriented, run-tied review path addressed
+here.
+III. THE VERA DASHBOARD
+VERA as shown in Figure 1 presents a completed evaluation
+as a set of requirement-level results that a reviewer can
+read, expand and export in a browser, deriving benchmarked
+results from public suites and run-level energy from local
+instrumentation. It preserves the COMPL-AI requirement
+identifiers and score ranges for the benchmarked requirements,
+and it is implemented as a Python 3.11 backend with a
+TypeScript single-page front end. This section states the six
+requirements the design answers, follows a request through
+the backend, describes the six features, and closes with the
+instrumentation behind the run-level energy indicator.
+A. Requirements from Practice
+Table I identifies what the available tools omit in gen-
+eral, while release reviews conducted under internal-control
+obligations showed which of those omissions matter in our
+deployment context. The six resulting requirements, grounded
+in the related work and the institution’s experience of preparing
+release decisions, are as follows.
+R1, from observed practice. A non-specialist must be able
+to run an evaluation and read its result without writing code,
+which restates the access failure of Section I as a requirement.
+PromptOps reaches the same conclusion for developers [20].
+R2, from practice and the literature. Every requirement
+result must expand to the public tests that produced it, since a
+single aggregate hides why a model fails and leaves a reviewer
+with nothing to question.
+R3, from regulatory text and the design decision it
+motivates. The Act fixes what the technical file of a high-risk
+system must contain (Art. 11, Annex IV) without prescribing
+how that file is produced. We therefore add a provenance
+constraint of our own and require every piece of evidence to
+carry the identity of the run it came from, since documentation
+written afterwards can become detached from the evaluation it
+describes.
+R4, from observed practice. Views must differ by role,
+since legal, responsible-AI and data-science reviewers are
+accountable for different subsets of the evidence and describe
+them in different vocabulary.
+
+
+TABLE I
+WHAT A REVIEWER CAN DO WITH EACH TOOL’S OUTPUT. Y = PROVIDED, – = ABSENT, PARTIAL = PRESENT BUT INCOMPLETE.
+Tool
+Requirement view
+Non-specialist UI
+Decomposable
+verdicts
+Role-based views
+Run-tied artifacts
+Swappable
+specification
+Energy measured
+per run
+COMPL-AI [9]
+Y
+Y
+Partial
+–
+–
+Partial
+–
+HELM [10]
+–
+–
+Partial
+–
+–
+Partial
+–
+lm-evaluation [11]
+–
+–
+–
+–
+–
+Y
+–
+Garak [12]
+–
+–
+–
+–
+–
+Y
+–
+DecodingTrust [13]
+Partial
+–
+Partial
+–
+–
+–
+–
+PromptOps [20]
+–
+Y
+Partial
+–
+–
+–
+–
+VERA (this paper)
+Y
+Y
+Y
+Y
+Y
+Y
+Y
+Requirement view: results reported per technical requirement rather than per prompt or scenario. Non-specialist UI: a browser-based result view that does not
+require reading raw artifacts. Decomposable verdicts: a verdict opens, inside the tool, down to the benchmarks behind it. Run-tied artifacts: documentation
+emitted by the run rather than authored afterwards. Energy measured per run: the tool reports the energy its own evaluation consumed, which none of the
+existing tools does. Each existing tool was assessed against its public documentation and source as of August 2026
+R5, from observed practice. The requirement set and
+the benchmarks must be replaceable without a code change,
+because our first version hard-coded the taxonomy and every
+disputed weight then cost a release.
+R6, from institutional constraint. The tool must be self-
+hostable with no proprietary cloud dependency, since prompts
+and outputs cannot transit through a third party.
+B. Architecture
+Figure 2 follows a launch request until it becomes a scored
+and documented run. Three surfaces can issue that request,
+namely a command line, a REST endpoint and a guided
+wizard that needs no login, and all three normalise it into
+one declarative job on a Celery and Redis queue. A single
+job description behind three entry points makes a wizard run
+and a command-line run produce the same artifacts, so a non-
+specialist and an engineer read identical evidence. A worker
+then resolves each requirement to its benchmarks through a
+registry, drives the runners against self-hosted models through
+a local router, and folds the cached item scores into per-
+requirement scores with bootstrap intervals [21]. The worker
+emits a bundle holding the run file, the model card, the per-item
+outputs and a content digest.
+Requirements rather than convenience fix where inference
+runs and where the specification lives. Inference never leaves
+the self-hosted router, which allows the deployment to satisfy
+R6 in an institution where prompts cannot reach a third party.
+The requirement-to-benchmark mapping and the aggregation
+weights sit in two versioned data files, a registry and a catalog,
+selected by configuration, which satisfies R5. The second choice
+is demonstrated rather than asserted, since the unchanged
+worker has run end to end under an alternative security-focused
+specification that ships in the repository. The stack ships as a
+single-command lite profile and as an enterprise profile with
+access control and object storage, and missing optional services
+degrade to local equivalents rather than stopping a run.
+C. Features
+Each feature below answers one or more of the requirements
+of Section III-A, named in parentheses where it does.
+F1, guided launch. A four-step wizard with defensible
+defaults can submit a run in four clicks, with no account and
+no configuration file, which is the design response to R1.
+F2, role-based views. Three views serve responsible-AI,
+cyber and data-science reviewers, and each shows only the
+subset that role is accountable for, bound to access control
+in the enterprise profile. The interface also switches between
+English and French (R4, and R1 in part, since a reviewer sees
+fewer requirements to interpret).
+F3, explainable verdicts. The run summary of Figure 3
+shows an overview first and detail on demand. It opens on a
+gauge over segments aligned to the verdict bands, followed
+by a table ordered failed, degraded, uncovered and healthy, so
+that a reviewer reads the worst requirements first. Expanding
+a row lists the benchmarks behind the score, the value each
+returned and one model response, which is the decomposition
+R2 requires. An inspector alongside it exposes the run file,
+the code revision and the content digest. Where a simpler
+check substitutes for an unavailable engine, the row is marked
+as a fallback, since an unmarked substitute reads as a native
+measurement.
+The gauge reports the Trust Factor, a weighted mean over
+the four security-critical requirements, namely cyber resilience
+at 0.35, toxicity at 0.25, privacy at 0.20 and robustness at
+0.20, renormalised over the requirements a run actually covers
+and scaled to a hundred. The weights are overridable by
+configuration and recorded with each run, and each requirement
+score beneath them is itself a weighted mean of its per-
+benchmark means read from the versioned catalog. Capability is
+deliberately absent from the gauge, since a more capable model
+is not thereby a safer one. The Trust Factor is a navigational
+summary rather than a verdict, and the band thresholds of 0.40
+and 0.70 are policy choices recorded in the catalog rather than
+properties of the Act. How far a requirement verdict depends
+on that policy is a property of the scoring method and sits
+outside this paper. Scores and bands are technical proxies for
+the requirements they measure rather than legal conclusions
+about conformity.
+F4, the non-measurable path. Six of the eighteen require-
+ments carry no benchmark score in the reference taxonomy,
+and VERA routes each of them rather than leaving it blank.
+Explainability and corrigibility open a rubric-based review
+queue with named reviewers, environmental impact routes to
+the run-level energy instrumentation of Section III-D, and the
+remaining three are attested on declarative forms pinned to the
+
+
+Fig. 2. From request to evidence. Three entry points produce the same declarative job; a worker resolves requirements to benchmarks, runs them against
+self-hosted models, and folds item scores into per-requirement scores exposed read-only to the dashboard.
+run. Routing rather than blanking preserves the meaning of the
+coverage figure on the run summary, since a reader can then
+distinguish the requirements that carry a measurement from
+those that carry an attestation (extends R2, feeds R3).
+F5, run-tied artifacts. Every run writes its own model
+card, datasheet and export, so no artifact is authored after the
+run it describes. This is how R3 addresses the traceability
+gap identified in Section I. These artifacts provide technical
+evidence that can inform a provider’s risk assessment, rather
+than a substitute for that work.
+F6, swappable specification on a self-hosted stack. The
+alternative specification described above, together with the two
+deployment profiles, covers R5 and R6.
+A browser suite drives the product as a user would, covering
+role-based access, the guided surfaces, the review queue,
+the governance panel, the language toggle and the study
+module, and guards these features against regression. At commit
+8a71cf3 of 20 August 2026 the suite holds 178 backend unit
+tests and 52 browser scenarios.
+D. Measuring Evaluation Energy During a Run
+The Act addresses energy in several places: Article 40
+Para 2 calls for standardisation deliverables on reporting
+and documentation of resource performance across the AI-
+system lifecycle, Article 95 Para 2 includes environmental
+sustainability in voluntary codes of conduct, and Annex XI
+Para 2e requires providers of general-purpose AI models to
+report known or estimated model energy consumption [7].
+No benchmark in the reference framework instruments the
+energy consumed by the evaluation itself. An evaluation run
+nonetheless consumes energy on hardware the institution
+controls, so VERA records that run-level quantity instead of
+leaving all environmental evidence to a form [9]. The attribution
+principle is the one we applied to deep-learning code in earlier
+work, moved here to the granularity of an evaluation run.
+Energy hooks around the worker record each run through
+CodeCarbon [22], whose hardware method depends on the
+counters and permissions available on the host and which com-
+putes associated emissions from grid intensity. The recorded
+quantity covers the evaluation itself rather than the model’s
+training, so it is a property of the run under review and not
+a complete lifecycle measure. That is also its limit, because
+Annex XI’s documentation duty for general-purpose AI models
+extends to training compute and known or estimated model
+energy consumption, which a downstream deployer of an open-
+weight model may not be able to observe directly. What
+VERA contributes is instrumented run-level evidence over
+the part of the lifecycle the deploying institution controls.
+The environmental-impact row on the run summary therefore
+carries a run-level energy value with a stated method, and
+the signed export carries that value alongside the other
+requirement results. The five-requirement run against Llama 3.1
+8B reports 0.0169 kWh and 0.00095 kgCO2e, recorded with
+CodeCarbon 3.2.8 in online mode using French grid intensity,
+and Table IV gives the figure for each model.
+This extends the evidence available for the environmental-
+impact requirement without treating run energy as a complete
+environmental-impact measure. Twelve of the eighteen require-
+ments carry a benchmark score in the reference framework;
+VERA adds a run-level quantitative indicator to environmental
+impact, while the remaining five stay with human review and
+declarative forms. VERA marks those five as attestations so
+that no reader mistakes them for measurements.
+IV. EVALUATION
+A reading interface is useful only if it produces requirement
+results at all and a reader extracts more from them than from
+the raw files. These properties can fail independently, so we
+evaluate them separately and begin with the verdicts, since a
+reading result means little if the numbers being read do not
+hold together.
+A. Evaluation Runs
+Four self-hosted open-weight models exercise the tool,
+namely Llama 3.1 8B, Qwen2.5 7B, Gemma 2 9B and Mistral
+7B, all served through a local Ollama. Each run evaluates
+five of the twelve benchmark-scored requirements over fifteen
+benchmarks at seed 42; the benchmark runners use a sampling
+budget of 150, while the model-independent privacy scan covers
+all 230 corpus documents. Running all twelve at that sampling
+budget was beyond the compute available for this paper, so
+the runs demonstrate the path end to end on a subset rather
+than the coverage the tool implements. The five are chosen so
+that the runs can recompute the reported aggregate end to end.
+
+
+Fig. 3. What a reader sees first in guided mode: the Trust Factor gauge on verdict-band segments, the verdict counts, the worst-scoring requirements, and run
+coverage. Triage and per-requirement detail open below the fold.
+Robustness, cyber resilience, privacy and toxicity are exactly
+the requirements the Trust Factor aggregates, and capability
+anchors raw model performance alongside them. Table III
+names the public dataset behind each.
+Privacy runs over a generated corpus rather than over the
+model, so its score is identical across the four by construction.
+That generated corpus holds 230 synthetic short banking
+documents with planted failure modes for the data stage to
+catch, namely identifiers and contact details for privacy, near-
+duplicate pairs for copyright, and imbalanced client segments
+for data adequacy.
+B. Study Design
+The design follows HISTREE, which pairs a requirements
+argument with an acceptance questionnaire [23], [24], and adds
+a paired comparison of the same task under both conditions.
+The study is within-subject with two conditions. In the
+baseline condition the participant answers factual questions
+about a completed evaluation using only its raw result files,
+namely the run record, the harness log and the per-item outputs.
+In the dashboard condition the participant answers matched
+questions using VERA. Every participant takes the baseline
+first and the dashboard second. We fixed that order because it
+mirrors how the artifacts reach a reviewer today; the choice
+can favour the dashboard through residual learning.
+Fixing the order leaves content learning as the principal
+remaining confound, since a participant who has already
+answered a question about a named requirement answers it
+faster the second time. The design addresses this with two
+matched six-item sets that ask the same six question types
+about different named targets. The server assigns each set
+to a phase, alternating by participant number so that, absent
+attrition, each set appears in each condition equally often. The
+six question types cover the reading path end to end. They
+ask the participant to rank a requirement by weakness, to read
+the score and confidence interval of a named requirement, to
+TABLE II
+THE COMPLETED EVALUATION BOTH CONDITIONS READ.
+Property
+Value
+Model under evaluation
+Mistral 7B (mistral:7b-instruct)
+Requirement set
+mvp2-v2, digest sha256:9e2b11d4
+Requirements scored
+9 of the 12 measurable
+Benchmarks executed
+11
+Per-item outputs
+33
+Raw files in the baseline 3 tabs, 119 lines, 12 KB
+Baseline affordances
+scrollable monospace panes, tab switching, browser
+text search, no line numbers, no download
+trace benchmark provenance and count the coverage, to count
+verdicts by band, and to reach one raw model output of a named
+benchmark. Every question has an objectively correct answer
+computable from the run snapshot in both conditions, and the
+item text states the band thresholds where they are needed,
+so the baseline condition withholds the presentation of the
+information rather than the information itself. Table II describes
+the evaluation the participants read, which is a separate and
+earlier run from the four of Section IV-A, pinned before the
+first session so that the answer key could not move underneath
+a participant. Its scope differs accordingly, at nine requirements
+over eleven benchmarks and thirty-three items, and the same
+question becomes more demanding as the artifact grows. The
+baseline artifact is small, at three files and 119 searchable lines,
+which makes it a conservative test of the interface with respect
+to artifact size, and a full run at a sampling budget of 150
+writes thousands of per-item lines instead.
+C. Research Questions
+Three research questions structure the reading study, stated
+explicitly as in prior empirical software-engineering work [34].
+RQ1: Do participants extract correct facts from a
+completed evaluation more often with the dashboard than
+from the raw result files? The raw files already contain
+every fact needed to answer the study questions, so whether

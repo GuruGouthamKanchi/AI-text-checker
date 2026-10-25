@@ -1,0 +1,583 @@
+Preprint
+SABLE:
+SCALABLE
+AFFINE
+BAYESIAN
+LATENT-
+SPACE EXPLORATION
+Erik Bodin1,*
+Lisa Maria Kreusser1,*
+Donney Fan2
+Henry Moss3
+Geoff Pleiss2,4
+Nicolas Durrande1
+1Monumo
+2University of British Columbia
+3Lancaster University
+4Vector Institute
+*Equal contribution.
+ABSTRACT
+Complex objects such as engineering designs and proteins are often difficult to
+optimise because their design spaces exhibit high-dimensional structure and ob-
+jective evaluations are expensive. Generative models provide continuous latent
+representations, but their latent spaces can have thousands to tens of thousands
+of dimensions, creating a regime where the latent dimension D greatly exceeds
+the evaluation budget. We introduce SABLE, a Bayesian optimisation method for
+high-dimensional latent spaces with an isotropic distribution and limited budget.
+SABLE uses a Bayesian affine surrogate for prediction and acquisition, treating
+higher-order structure as surrogate discrepancy. After N observations, the slope
+update has dimension at most N −1, yielding a decomposition of each query
+into an in-span component optimised by expected improvement (EI) in at most
+N dimensions and an off-span component governed by a scalar norm. We show
+that the off-span norm implicitly selected by affine EI can lead to underexplo-
+ration, and SABLE instead prescribes it using a finite-horizon schedule, without
+restricting search to a learned subspace. A recompression scheme reduces infor-
+mation to O(M) pseudo-observations, bounding refitting cost by O(M 2D+M 3)
+while keeping parameter inference, prediction, and acquisition decisions to tens
+of milliseconds. Across synthetic benchmarks and latent-space optimisation tasks,
+SABLE achieves high sample efficiency and reduces decision time by several or-
+ders of magnitude at large budgets.
+1
+INTRODUCTION
+Scientific and engineering optimisation problems often involve design domains that are difficult to
+search directly because they are high-dimensional, discrete, or governed by complex physical or
+chemical constraints. Pretrained generative models can provide simpler continuous latent repre-
+sentations of these domains, making such optimisation problems more tractable. This has enabled
+applications in protein and peptide design (Watson et al., 2023; Chen et al., 2023; Das et al., 2021),
+molecular discovery (Chenthamarakshan et al., 2023), turbulent flows (Li et al., 2024), and particle-
+detector simulation (Amram & Pedro, 2023). In these applications, evaluating candidate quality is
+typically expensive, for example because it requires simulation, numerical analysis, or experimental
+validation, so only a limited number of proposals can be tested. Bayesian optimisation (BO) is well
+suited to this setting because it uses previous evaluations to guide subsequent candidates (Garnett,
+2023). Applying BO in the latent space of a pretrained generative model is referred to as Latent
+Space Bayesian Optimisation (LSBO) (G´omez-Bombarelli et al., 2018; Kusner et al., 2017; Grif-
+fiths & Hern´andez-Lobato, 2020; Tripp et al., 2020; Maus et al., 2022; Moss et al., 2025). Some
+approaches train task-specific generative models (Krishnamoorthy et al., 2023), fine-tune pretrained
+generators for the objective (Fan et al., 2023; Denker et al., 2025; Yun et al., 2025), or steer genera-
+tion using gradients or learned objective models (Gruver et al., 2023; Yuan et al., 2025; Yun et al.,
+2025); we instead keep the pretrained generator fixed and use only objective evaluations.
+1
+arXiv:2610.31495v1  [cs.LG]  22 Oct 2026
+
+
+Preprint
+The latent spaces of modern scientific generative models are typically high-dimensional. For exam-
+ple, a diffusion model for Lagrangian turbulence (Li et al., 2024) has D = 6,000 latent variables,
+while a CaloDiffusion model (Amram & Pedro, 2023) has D = 40,500. These dimensions can
+greatly exceed the number N of affordable objective evaluations. In the regime N ≪D, without ad-
+ditional structural assumptions, the data cannot identify even a global linear model, let alone a flexi-
+ble global surrogate. High-dimensional BO (Binois & Wycoff, 2022) often addresses this mismatch
+through random embeddings or adaptive subspaces (Wang et al., 2013; Papenmeier et al., 2022), ad-
+ditive or sparse models (Kandasamy et al., 2015; Eriksson & Jankowiak, 2021), or local modelling
+(Eriksson et al., 2019). We instead propose SABLE (Scalable Affine Bayesian Latent-space Explo-
+ration), which does not restrict admissible queries to a learned low-dimensional subspace and uses a
+Bayesian affine working model inferred from limited data. Higher-order variation is treated as surro-
+gate discrepancy, with uncertainty in the corresponding variance scales marginalised. Recent work
+develops high-dimensional linear BO and fast spherical EI (Doumont et al., 2026; Fan et al., 2026);
+SABLE extends this geometry to hyperparameter-marginalised EI, decouples off-span exploration
+from fitted uncertainty, which significantly improves sample efficiency, and reduces fitting costs by
+over four orders of magnitude at large budgets while remaining in the N < D regime.
+SABLE exploits the fact that high ambient dimension does not imply high-dimensional data-
+informed geometry. Conditional on the variance hyperparameters, N observations update the poste-
+rior of the affine slope vector in at most N−1 dimensions, while the orthogonal directions retain their
+prior mean and variance. Likewise, the evaluated designs span at most N dimensions. This geometry
+yields an in-span/off-span decomposition of each query. Under the affine working model, off-span
+exploration is governed by a scalar, the off-span norm, while EI optimisation over the in-span com-
+ponent requires at most N dimensions, independently of D. Standard affine EI implicitly determines
+this off-span norm, which we show is often driven close to zero. SABLE instead prescribes the norm
+using a finite-horizon schedule based on the remaining evaluation budget and a reference resolution
+scale, separating exploration control from the fitted variance scales and any higher-order surrogate
+discrepancy they may absorb. The fitting cost would still grow quickly with N, so we introduce a
+fast recompression scheme that reduces information to O(M) pseudo-observations. For fixed M,
+this bounds the posterior-fitting representation and per-round model-refitting cost independently of
+N, while keeping parameter inference, prediction, and acquisition decisions to tens of milliseconds
+across the dimensionalities studied, without restricting queries to a learned subspace. Figure 1 sum-
+marises the decoupled off-span exploration and bounded-cost model refitting.
+(a) Decoupled off-span exploration
+EI chooses
+in-span direction
+VN = span{s1, . . . , sN}
+s
+schedule sets
+off-span norm
+D dimensions
+(b) Bounded-cost model refitting
+grows with N
+recompress
+O(M)
+pseudo-observations
+strong retained
+weaker summarised
+Figure 1: Overview of SABLE. (a) Each query is decomposed into an in-span component and an
+orthogonal off-span component. EI chooses the in-span direction, while the exploration schedule
+prescribes the off-span norm. Because the design span VN has dimension at most N, EI optimi-
+sation requires at most N coordinates, independently of D. (b) As observations accumulate, their
+representation is recompressed to O(M) pseudo-observations. Strong information is retained and
+weaker information is summarised, making model-refitting cost independent of N for fixed M.
+Our contributions are:
+• Decoupled off-span exploration. We decompose each query into in-span and off-span com-
+ponents, showing EI optimisation can be expressed in N dimensions, independently of D. We
+show that the off-span norm implicitly selected by EI can lead to underexploration, so SABLE
+prescribes it using a finite-horizon schedule, significantly improving sample efficiency.
+• Bounded-cost model refitting. Using fast recompression, we reduce accumulated observations to
+O(M) pseudo-observations, making posterior-fitting storage and per-round model-refitting cost
+depend on M rather than N, while preserving the full domain of admissible future queries.
+2
+
+
+Preprint
+2
+PROBLEM SETUP AND AFFINE WORKING MODEL
+We now formalise the latent optimisation problem and the Bayesian working model used throughout.
+Optimisation problem.
+Let g : RD →X be a pretrained generative model and f : X →R an ex-
+pensive black-box objective, so that the latent objective is f(g(z)). We assume the generative model
+was trained with an isotropic Gaussian latent prior z ∼N(0, ID). Under this prior, ∥z∥/
+√
+D →1
+in probability as D →∞(Cover & Thomas, 2006; Vershynin, 2026; Nalisnick et al., 2019), so
+Gaussian latents concentrate at the characteristic radius
+√
+D. This thin-shell geometry is also prac-
+tically relevant: atypical latent norms can degrade decoded samples (Samuel et al., 2023), while
+recent LSBO work finds that restricting search to the characteristic-radius sphere keeps queries in
+decoder-supported regions without materially reducing generative range (Bodin et al., 2025; Willis
+et al., 2025; Moss et al., 2025; Fan et al., 2026). We therefore re-cast the optimisation problem as
+one over the unit sphere SD−1 := {s ∈RD : ∥s∥= 1} and define the objective as
+F(s) := f(g(
+√
+Ds)),
+s⋆∈arg max
+s∈SD−1 F(s).
+After N evaluations, write DN = {(si, yi)}N
+i=1, where yi = F(si), XN = (s1, . . . , sN)⊤∈
+RN×D, and yN = (y1, . . . , yN)⊤. Throughout, the evaluation budget Nmax is specified in advance.
+Affine working model.
+The degree-zero and degree-one spherical-harmonic components of F
+give F(s) = β0+v⊤
+⋆s+∆(s), where ∆collects higher-order structure (Appendix A.1). Restricting
+optimisation to the sphere also removes radial variation in the input norm, avoiding the boundary-
+seeking behaviour of linear BO on conventional high-dimensional domains (Doumont et al., 2026).
+We use the affine component as a working model, providing posterior predictions and acquisitions
+for BO without assuming that F is globally affine, and treat ∆as surrogate discrepancy:
+G(s) = β + v⊤s,
+v | σ2
+1 ∼N(0, σ2
+1ID),
+p(β) ∝1,
+with likelihood yN | β, v, σ2
+ε ∼N(β1N +XNv, σ2
+εIN). For deterministic objectives, σ2
+ε represents
+this discrepancy, and independent Gaussian observation noise adds variance to it, with more general
+noise models in Appendix B.2. Because the signal and discrepancy scales can be weakly identified in
+the N ≪D regime and materially affect predictive uncertainty, we marginalise over θ = (σ2
+1, σ2
+ε),
+approximating posterior expectations using K stratified samples from p(θ | DN) (Appendix A.4).
+3
+SABLE: FINITE-DATA GEOMETRY AND CONTROLLED EXPLORATION
+SABLE exploits a property of the affine working model: N observations change the slope posterior
+in at most N −1 directions, independently of D (Section 3.1). For acquisition, we use expected
+improvement (EI) (Jones et al., 1998). Evaluated designs span at most N dimensions, yielding an in-
+span/off-span decomposition with predictively equivalent off-span directions. SABLE lets EI choose
+the in-span direction, while a finite-horizon schedule tN, set by a reference-resolution parameter λref
+chosen for the local-resolvability regime (Appendix D.5), prescribes the off-span norm. This curbs
+affine EI’s tendency to underexplore new directions on non-affine objectives (Section 3.2).
+The fitting representation still grows with N, so we use a fast recompression scheme that reduces
+information to O(M) pseudo-observations. At fixed M, posterior-fitting storage and per-round
+model-refitting cost are independent of N; see Section 3.3. Algorithm 1 summarises the procedure.
+3.1
+FINITE-DATA POSTERIOR GEOMETRY
+After marginalising the intercept, N observations modify the posterior in at most N −1 directions.
+Proposition 3.1 (Posterior geometry, proof in Appendix B.1). Let µN := N −1 PN
+i=1 si and
+SN := span{si −µN : i = 1, . . . , N} .
+Let PN be the orthogonal projector onto SN. Then, conditionally on θ = (σ2
+1, σ2
+ε), the posterior
+mean mN(θ) is in SN and its covariance ΣN(θ) satisfies
+ΣN(θ) = σ2
+1(ID −PN) + PNΣNPN .
+3
+
+
+Preprint
+Algorithm 1 Overview of SABLE
+Require: Evaluation budget Nmax, compression budget M, reference-resolution regime
+1: Select λref for the chosen regime and precompute {tN}Nmax−1
+N=0
+.
+2: Set N = 1, choose s1 from the orthogonal sequence, evaluate, and add the observation.
+3: while N < Nmax do
+4:
+Fit the Bayesian affine model using the current observation representation.
+5:
+Choose a query with EI in the data-sized acquisition representation at off-span norm tN.
+6:
+Use the next unused orthogonal off-span direction e and reconstruct the query in SD−1.
+7:
+Evaluate the objective and increment N.
+8:
+if the recompression criterion is met then
+9:
+Recompress to O(M) pseudo-observations and update the sufficient statistics.
+10:
+end if
+11: end while
+12: Return the best evaluated candidate.
+Hence the observations modify the slope posterior only within SN which has dimension at most
+N −1; on S⊥
+N the posterior retains zero mean and prior variance σ2
+1 in every unit direction.
+Thus, on S⊥
+N, all orientations remain exchangeable. We exploit this rotational symmetry to construct
+an acquisition representation without restricting queries to the informed subspace. Appendix B.3
+formalises the rotational invariance, and Appendix B.4 quantifies the strength of informed updates.
+3.2
+DECOUPLED OFF-SPAN EXPLORATION
+3.2.1
+REDUCED ACQUISITION GEOMETRY
+The data-informed subspace SN describes which slope directions the observations can up-
+date.
+Acquisition optimisation is more naturally expressed relative to the design span VN :=
+span{s1, . . . , sN}, whose dimension satisfies dN ≤N.
+Let V
+∈RD×dN have orthonormal
+columns spanning VN. Every query s ∈SD−1 can then be decomposed as
+s = V w + te,
+e ∈V⊥
+N,
+∥e∥= 1,
+∥w∥2 + t2 = 1,
+(1)
+where w = V ⊤s gives the in-span coordinates, t =
+p
+1 −∥w∥2 the off-span norm, and e the
+off-span orientation. The slope posterior is rotationally invariant on V⊥
+N (Appendix B.3), so rotating
+e within this complement does not change the predictive distribution. Hence, prediction depends on
+the off-span component only through t, and e need not be optimised. Acquisition optimisation can
+therefore run over w ∈RdN instead of the full D-dimensional sphere (reduced representation in
+Appendix C.1). This reduces acquisition dimension without restricting the search domain.
+3.2.2
+EI WITH PRESCRIBED EXPLORATION
+Marginal EI and reduced coordinates.
+Recent work (Fan et al., 2026) exploits the symmetry of
+linear surrogates on spherical domains to obtain fast EI optimisation using point estimates of the hy-
+perparameters. We extend this to hyperparameter-marginalised EI and express it in reduced design-
+span coordinates. Appendix C.1 shows that, for each hyperparameter atom θk, mk(s) and s2
+k(s) can
+be seen as functions of the design-span coordinates w only: mk(s) = ˜mk(w) and s2
+k(s) = ˜s2
+k(w).
+For K equal-weight stratified atoms, define ¯mN(w) := K−1 PK
+k=1 ˜mk(w), wi := V ⊤si, τN :=
+max1≤i≤N ¯mN(wi), and γk(w) := ˜mk(w) −τN. With Φ and ϕ the standard normal CDF and
+density, respectively, the hyperparameter-marginalised EI can be written as
+EIN(s) = 1
+K
+K
+X
+k=1
+
+γk(w)Φ
+γk(w)
+˜sk(w)
+
++ ˜sk(w)ϕ
+γk(w)
+˜sk(w)
+
+=: f
+EIN(w).
+(2)
+In-span/off-span decomposition.
+As f
+EIN omits t and e, EI is maximised in dN ≤N coordinates:
+max
+s∈SD−1 EIN(s) = max
+∥w∥≤1
+f
+EIN(w) .
+4
+
+
+Preprint
+Given a maximiser wf
+EI
+N of the right-hand-side and any unit direction e ∈V⊥
+N orthogonal to the
+in-span, a maximiser of EIN can be reconstructed as
+sN+1 = V w
+f
+EI
+N + te
+where
+t =
+q
+1 −∥wf
+EI
+N ∥2 .
+Prescribed off-span exploration.
+SABLE instead separates these decisions by prescribing tN and
+letting EI choose only the in-span direction, equivalently restricting acquisition optimisation to
+w⋆
+N ∈
+arg max
+∥w∥=√
+1−t2
+N
+f
+EIN(w).
+The acquisition function is unchanged, and the query is reconstructed as above using w⋆
+N and tN.
+For e, we take successive directions from a randomised orthogonal frame using the type-II discrete
+cosine transform (DCT-II), which lie off-span by construction. This avoids favouring particular
+latent orientations while remaining efficient at large D; see Appendix F.
+We separate these decisions because conditioning reduces uncertainty along data-informed direc-
+tions, whereas directions in V⊥
+N retain their prior variance. Within hyperparameter atom k, the
+resulting uncertainty contrast depends on the fitted ratio λk := σ2
+1,k/σ2
+ε,k. Hence the norm selected
+by EI over the reduced unit ball, and therefore its implied off-span allocation, can depend strongly
+on the fitted variance scales. Because higher-order objective variation contributes to σ2
+ε,k as surro-
+gate discrepancy, the fitted ratios λk need not provide a reliable basis for controlling exploration;
+see Appendix B.4 for the corresponding variance analysis and Appendix C for optimisation details.
+Finite-horizon reference schedule.
+We prescribe tN using a finite-horizon value-of-information-
+based proxy: allocating norm off-span sacrifices some immediate exploitation of learned directions,
+but can reveal a new slope component that later evaluations can exploit. The trade-off is controlled
+by a reference resolution parameter λref, chosen independently of the fitted variance scales; larger
+λref assumes that smaller off-span perturbations provide useful directional information.
+Let hN := Nmax −N −1 be the number of evaluations remaining after the current query, and RN
+the cumulative resolved variance from previous off-span queries, with R0 = 0. Treating successive
+off-span queries as resolving orthogonal slope components, their contributions add, and RN is the
+expected squared norm of the corresponding posterior mean, so √RN is a root-mean-square proxy
+for the exploitable slope magnitude. We parameterise the informativeness of a candidate off-span
+norm t ∈[0, 1] by λreft2; a scalar Gaussian update with unit prior variance then resolves variance
+δλref(t) := λreft2/(1 + λreft2). The remaining in-span norm is
+√
+1 −t2, so increasing t trades cur-
+rent exploitation against directional information that can be used over the remaining hN evaluations.
+We therefore prescribe
+tN := arg max
+t∈[0,1]
+np
+1 −t2p
+RN + hN
+p
+RN + δλref(t)
+o
+,
+RN+1 = RN + δλref(tN).
+(3)
+The first term represents exploitation by the current query, while the second represents the value of
+the enlarged learned slope over the remaining evaluation horizon.
+The recursion depends only on (Nmax, λref) and can be precomputed. It starts with t0 = 1, de-
+creases monotonically over the evaluation horizon, and reaches tNmax−1 = 0; it then remains zero.
+Thus the finite horizon anneals off-span exploration. Appendix D gives the derivation, stopping
+criterion, and further properties. In practice, we use a fixed large λref for all smooth objectives,
+where small perturbations remain informative, and a smaller λref for noisy or quantised objectives,
+where fine perturbations may be obscured or produce no change. The local-resolvability analysis in
+Appendix D.5 motivates this distinction and our experimental values. Once fine perturbations are
+well resolved, the large value of λref is of secondary importance: the off-span norm depends only
+weakly on it.
+3.3
+BOUNDED-COST MODEL REFITTING
+Although posterior updating and acquisition optimisation are data-sized, the fitting representa-
+tion grows with N, making posterior and hyperparameter refitting computationally costly.
+We
+control this growth by recompressing accumulated observations to O(M) pseudo-observations.
+5
+
+
+Preprint
+Compression is performed in observation space: since the affine likelihood has conditional mean
+β1N + XNv, the design matrix, response vector, and intercept column are compressed together,
+(XN, yN, 1N)
+−→
+( ˇX, ˇy, ˇo).
+Recompression exactly preserves the centred slope–response and intercept cross-statistics, while
+discarded spectral information is summarised by pseudo-observations. The resulting representation
+has size O(M) independently of N and can be reused across variance-hyperparameter values. A
+log-determinant correction accounts for discarded spectral information in approximate marginal-
+likelihood evaluation; Appendix E gives details.
+The spectral analysis of Appendix E.1 motivates retaining directions with stronger data support:
+these produce the largest posterior updates and have the greatest effect on EI, while discarding
+weak updates perturbs the acquisition only slightly. Appendix E.4 gives stability bounds for the
+conditional posterior and EI approximation under repeated recompression. The analysis extends to
+marginal EI when exact and compressed calculations share hyperparameter weights; changes caused
+by approximate evidence evaluation are not covered. With compression budget M, the posterior-
+fitting representation is bounded in M, rather than growing with N.
+3.4
+COMPUTATIONAL SCALING
+The exploration schedule presented in Section 3.2.2 increases sample efficiency, i.e. it reduces the
+number of objective evaluations needed to reach a given value, which we demonstrate in Section 4.
+With respect to computational efficiency (algorithmic overhead), with the fast posterior compression
+presented in Section 3.3, SABLE addresses a key bottleneck beyond fast acquisitions in Fan et al.
+(2026); the cubic growth of model-refitting cost with the number of evaluations N.
+Without compression, the posterior-fitting state requires O(ND) storage and, for a fixed hyperpa-
+rameter grid, per-round refitting costs O(N 2D + N 3). With compression budget M, these become
+O(MD) and O(M 2D+M 3), respectively. Thus, for fixed compression budget M, posterior-fitting
+storage and refitting cost are independent of N once recompression is active. For D ≫M, com-
+pressed refitting is dominated by O(M 2D), compared with O(N 2D) without compression. Exact
+historical posterior-mean readouts defining the EI incumbent require O(NM) auxiliary storage; see
+Appendix E.5.
+4
+EXPERIMENTS
+We evaluate SABLE from its individual components to the complete method: state compression,
+prescribed off-span exploration, and scientific latent-space optimisation. Unless otherwise stated,
+SABLE marginalises the variance scales, uses M = 300, λref = 105, and optimises on the
+√
+D-
+rescaled unit sphere. The primary optimisation metric is the best observed value; curves show means
+with 5th–95th percentiles. Experimental settings and additional results are given in Appendices H, I.
+State compression.
+On ZonalFunctionBench (Appendix G.1) at D = 10,000, we vary only the
+compression budget M across an affine control and three objectives with mild, moderate, and severe
+non-affine structure, using ten repeats. ZonalFunctionBench provides random spherical objectives
+with controlled higher-order structure and no preferred coordinate system. All variants use marginal-
+isation and the prescribed off-span schedule. Figure 2 shows that at N = 5,000, the largest shared
+budget, the M ∈{100, 300, 500} variants differ from one another by at most 0.003 in best-so-far
+value. Relative to the uncapped representation, their mean gaps are 0.003, 0.047, 0.035, and 0.022
+from the affine through severe cases, with no systematic growth over N ∈[1000, 5000]. By contrast,
+M = 10 is too aggressive, trailing the uncapped representation by 0.30–0.32 on the non-affine ob-
+jectives. The compressed variants continue to N = D = 10,000, providing a long-horizon stress test
+beyond the target regime N ≪D. These results support the compression approach of Section 3.3:
+retaining strongly data-informed directions preserves optimisation performance.
+Separating exploration from model fit.
+On the same four controlled objectives at N = D =
+1000, we cross three variance-scale treatments (MLE, MAP, and marginalisation) with three explo-
+ration rules: standard EI (no-schedule), a naive schedule using the fitted signal-to-discrepancy ratio,
+6
+
+
+Preprint
+Figure 2:
+Effect of state compression. Left: best observed value for compression budgets M ∈
+{10, 100, 300, 500} at D = 10,000, compared with the uncapped representation (dashed) and the
+mean global maximum of the ten objective draws. Lines show means over ten runs (and objective
+draws) and bands show 5th–95th percentiles. Right: measured wall-clock time per decision.
+Table 1:
+Model fitting and off-span exploration at N = D = 1000 with the uncapped repre-
+sentation. Left: recovery of the known degree-one component, cos(ˆs, v⋆). Right: attained value:
+maximum of the best observed point and the posterior-mean recommendation. Entries are means
+over ten seeds. Bold: the column best and every entry within two standard deviations.
+cos(ˆs, v⋆)
+attained value
+affine
+mild
+mod.
+severe
+affine
+mild
+mod.
+severe
+Standard EI (no schedule)
+MLE
+1.00
+-0.00
+-0.01
+-0.01
+1.00
+0.48
+0.32
+0.16
+MAP
+0.78
+0.44
+0.30
+0.16
+0.78
+0.60
+0.54
+0.50
+Marg.
+0.77
+0.44
+0.29
+0.19
+0.77
+0.59
+0.54
+0.49
+naive model-derived
+schedule: λk = σ2
+1,k/σ2
+ε,k
+MLE
+0.13
+0.00
+0.00
+0.01
+0.49
+0.49
+0.36
+0.23
+MAP
+0.98
+0.59
+0.41
+0.23
+0.98
+0.67
+0.55
+0.45
+Marg.
+0.98
+0.59
+0.42
+0.25
+0.98
+0.66
+0.56
+0.45
+SABLE schedule:
+λref = 105
+MLE
+0.90
+-0.00
+0.01
+0.00
+1.00
+0.55
+0.37
+0.24
+MAP
+0.99
+0.56
+0.38
+0.21
+0.99
+0.75
+0.68
+0.63
+Marg.
+0.99
+0.57
+0.38
+0.23
+0.99
+0.74
+0.67
+0.63
+and the SABLE schedule with λref = 105, as prescribed for these smooth, noise-free objectives
+by Appendix D.5. To isolate exploration effects, all runs use the uncapped representation without
+compression. The no-schedule MAP configuration recovers the method of Fan et al. (2026). Ta-
+ble 1 reports optimisation performance and recovery of the degree-one component, measured by
+cos(ˆs, v⋆), which diagnoses whether the search recovers the global affine direction.
+With MLE, the affine model overfits the non-affine structure, as evidenced by a discrepancy scale
+near zero, and EI assigns most query norm to fresh directions; the inferred slope then recovers
+essentially none of the degree-one component, with cos(ˆs, v⋆) near zero. MAP and marginalisation
+recover this component better, but produce the opposite allocation. EI assigns almost no norm off-
+span and the search becomes confined to the span established early. Driving the schedule by the
+fitted variance ratio does not resolve this coupling: although it improves degree-one recovery, its
+attained values remain below the SABLE schedule on the non-affine objectives. This is consistent
+with the affine model overfitting the observations, making the fitted ratio an unreliable control for
+off-span exploration. Appendix I.3 shows diagnostics, including off-span norm t for each method.
+SABLE prescribes the off-span schedule independently of model fit, without changing the posterior
+or within-span EI criterion. With MAP or marginalisation, this improves degree-one recovery and
+7

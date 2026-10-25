@@ -1,0 +1,706 @@
+Preprint
+HIP3R: HIERARCHICAL POSE GRAPHS FOR LONG-
+HORIZON 3D RECONSTRUCTION
+Zunnan Xu1
+Shangchen Zhou2
+Yihang Luo1
+Chen Change Loy1,3,∗
+1S-Lab, Nanyang Technological University
+2Imperial College London
+3ACE Robotics
+https://kkakkkka.github.io/HiP3R
+ABSTRACT
+Feed-forward models accurately estimate camera motion and 3D geometry from
+short video windows. However, computational and memory costs prevent direct
+inference on sequences containing thousands of frames. Long videos must there-
+fore be processed as overlapping chunks. This division produces independent
+local reconstructions with inconsistent coordinate frames and duplicate estimates
+of shared cameras. Achieving global consistency requires propagating constraints
+from adjacent overlaps and distant revisits across the sequence. This requirement
+naturally motivates pose graph optimization. However, the choice of graph level
+creates a trade-off. Chunk-level graphs efficiently resolve scale drift and close
+large loops. Yet, their rigid transformations cannot correct internal errors or con-
+flicting frame predictions. Conversely, frame-level optimization offers local flex-
+ibility, but scaling it globally is computationally expensive and can break metric
+scale. HIP3R resolves this trade-off using a hierarchical pose graph. HIP3R
+first optimizes a robust chunk-level Sim(3) graph to establish the global layout
+and scale. It then holds this layout fixed and estimates one shared SE(3) camera
+per frame, turning overlapping window predictions into a single trajectory. Ex-
+periments across multiple benchmarks demonstrate the effectiveness of HIP3R in
+improving camera trajectories and 3D reconstruction. Our method applies to both
+chunk-based and streaming backends without additional training or fine-tuning.
+1
+INTRODUCTION
+Recovering globally consistent 3D geometry and camera trajectories from video is fundamental to
+computer vision. This capability supports autonomous navigation, robotic mapping, and spatial
+artificial intelligence. Recent 3D foundation models (Wang et al., 2024; 2025a; 2026b) have sig-
+nificantly advanced visual geometry. By jointly predicting camera poses and dense pointmaps in
+a single forward pass, they bypass classical handcrafted matching. These models achieve high ac-
+curacy on short video clips without per-scene calibration or optimization. However, the quadratic
+complexity of visual attention limits them to short temporal windows. Directly scaling transformers
+to extended multi-kilometer sequences remains too expensive.
+To process long videos, modern systems adopt a divide-and-conquer strategy (Deng et al., 2025).
+Long sequences are divided into overlapping video chunks, which are processed independently and
+stitched together. While chunking bounds GPU memory, sequential alignment introduces severe
+computational and numerical bottlenecks. Dense overlapping points share high spatial redundancy,
+making all-pixel alignment computationally expensive.
+Furthermore, pairwise alignment errors
+compound along the sequential chain, causing severe scale and orientation drift. Loop closures
+are essential to eliminate cumulative drift and enforce global topological consistency. However,
+when the chains are not yet aligned, applying multiple long-range loop constraints at once can make
+the non-convex optimization unstable. The solver may diverge or converge to poor local minima.
+As shown in Figure 1, even after global chunk placement is resolved, a conflict remains at the frame
+level. Existing alignment methods (Deng et al., 2025; Zhang et al., 2026b; Xiong et al., 2026)
+optimize similarity transformations per chunk. However, a single similarity transform preserves
+∗Corresponding author.
+1
+arXiv:2610.31635v1  [cs.CV]  22 Oct 2026
+
+
+Preprint
+Input Videos
+VGGT-Ω
+Error: 0.01333
+Error: 0.00373
+Error: 0.01703
+Error: 0.01659
+Error: 0.00818
+Error: 0.05627
+Full Sequence
+Chunk i
+Chunk i+1
+Overlapping Region
+Scene 1
+Scene 2
+Coarse Stage (Chunk-Level)
+Fine Stage (Frame-level)
+Figure 1: Overlapping predictions recover local geometry in inconsistent frames. Coarse layout
+optimization corrects global placement and scale, but keeps each chunk’s internal cameras. Shared-
+camera trajectory refinement estimates one trajectory from predictions and within-chunk motion.
+internal camera configurations up to scale. Consequently, it cannot resolve cross-window camera-
+pose inconsistency. Overlapping chunks produce multiple, conflicting pose estimates of the same
+frame under differing visual contexts. A chunk is an inference unit, whereas the true trajectory
+contains only one camera pose per frame. Arbitrarily selecting one prediction discards multi-view
+evidence and causes velocity jumps across chunk boundaries. Conversely, full bundle adjustment is
+too expensive, while relative motion alone drifts from the recovered global layout.
+To overcome these challenges, we introduce HIP3R, a Hierarchical Pose-graph optimization method
+for long-horizon 3D Reconstruction. HIP3R decomposes reconstruction into coarse chunk layout
+recovery and fine frame trajectory refinement. The coarse stage optimizes a chunk-level Sim(3)
+pose graph over adjacent overlaps and distant loop closures. This stage establishes a globally con-
+sistent layout and eliminates accumulated scale drift. Holding this coarse layout fixed, the fine stage
+optimizes a frame-level shared-camera SE(3) pose graph, representing each physical frame with a
+single camera variable to resolve cross-window pose inconsistency. Placement priors keep that cam-
+era on the recovered layout, while within-chunk motion factors resolve conflicting predictions from
+overlapping windows. We evaluate HIP3R across seven public benchmarks spanning diverse indoor
+and outdoor environments. Under matched backends and windows, HIP3R improves long-horizon
+trajectory accuracy over loop-enabled VGGT-Long. Controlled ablations show that bounded point
+sampling reduces graph construction and optimization time with little change in accuracy. Addi-
+tional evaluations show that the method also works with streaming backends such as LingBot-MAP.
+We summarize our main contributions as follows:
+• We show that chunk-level similarity alignment alone cannot ensure cross-window camera-pose
+consistency, as overlapping windows may yield conflicting estimates for the same frame.
+• We develop a hierarchical pose graph that first recovers a globally consistent chunk layout and
+scale, then estimates one shared SE(3) camera pose for each frame.
+• We introduce progressive loop closure and bounded point sampling to achieve stable and scalable
+optimization on long sequences without retraining.
+2
+RELATED WORK
+Feed-forward 3D vision models. Feed-forward 3D models have emerged as an alternative to clas-
+sical Structure-from-Motion (SfM). Pioneering architectures like DUSt3R (Wang et al., 2024) and
+MASt3R (Leroy et al., 2024) directly regress dense pointmaps from uncalibrated image pairs. Re-
+cent multi-view transformers such as VGGT (Wang et al., 2025a) and VGGT-Omega (Wang et al.,
+2026b) extend feed-forward predictions across broader view collections. Subsequent models ex-
+plore permutation invariance (Wang et al., 2025c), sparse attention (Wang et al., 2026a), and learned
+scene actions (Wang & Agapito, 2026). These models achieve high local geometric accuracy with-
+2
+
+
+Preprint
+Input video
+Long sequence with overlap
+Chunk 1 Chunk 2 Chunk 3
+Time
+Local reconstruction
+Frozen feed-forward backend
+Chunk 1
+Chunk 2
+Chunk K
+VGGT-Ω
+(or other
+3D model)
+Frozen
+Per-chunk outputs: 
+poses + pointmaps + confidence
+Stage I: Chunk layout optimization
+Chunk-level Sim(3) pose graph
+C₁
+C₂
+C₃
+C₄
+C₅
+Each node:
+Ac ∈ Sim(3)
+(sc, Rc, tc)
+Overlap constraints
+(adjacent chunks)
+Loop constraints
+(long-range revisits)
+Recover global layout and scale
+After Stage I
+(overlap frames)
+Multiple predictions
+for the same frame
+→ One shared pose
+(after Stage II)
+Stage II: Shared-camera refinement
+Frame-level SE(3) pose graph
+Chunk 1
+Chunk 2
+Chunk 3
+Each node:
+Ft ∈ SE(3)
+(Rt, tt)
+F1
+F2
+F3
+F4
+F5
+F6
+Chunk pose priors
+(from Stage I)
+Within-chunk motion edges
+(relative camera motion)
+Resolve cross-window pose conflicts
+One pose per frame
+Output
+3D reconstruction
+Refined 3D geometry
+Consistent camera trajectory
+Loop closure generation
+Find and register temporally distant revisits
+Distant
+views
+Visual place
+recognition
+Joint-window
+inference
+Two-endpoint
+registration
+Loop constraint
+Chunk node (Ac)
+Frame node (Ft)
+Overlap edge (adjacent chunks)
+Loop edge (long-range revisits)
+Chunk pose prior
+Motion edge (relative pose)
+Local camera prediction
+(from frozen model)
+Optimized shared camera
+Figure 2: Overview of HIP3R. Frozen backends predict overlapping chunks. Stage I builds a chunk-
+level Sim(3) graph from overlap and loop constraints to recover layout and scale. Stage II estimates
+one shared SE(3) camera per frame under that layout.
+out per-scene numerical optimization. However, quadratic attention restricts them to short windows,
+so long sequences yield overlapping local reconstructions.
+Streaming and recurrent video geometry. To extend temporal context beyond static windows,
+another line of research develops streaming and recurrent architectures. Early methods such as
+Spann3R (Wang & Agapito, 2025) and CUT3R (Wang et al., 2025b) maintain persistent spatial
+memory states. Recent methods like StreamVGGT (Zhuo et al., 2026), STream3R (Lan et al., 2026),
+and WinT3R (Li et al., 2026b) process video frames causally with temporal key-value caching.
+LingBot-MAP (Chen et al., 2026a) structures geometric context across anchor frames, local win-
+dows, and trajectory memory. Other approaches explore test-time training, memory compression,
+and feature retrieval (Chen et al., 2026b; Zhang et al., 2026a; Xie et al., 2026; Jin et al., 2026; Liu
+et al., 2026; Zou et al., 2026). Causal streaming still accumulates drift on long trajectories. As
+post-processing, HIP3R adds global loops and per-frame pose consistency without retraining.
+Multi-window fusion and Structure-from-Motion. Scaling feed-forward predictions to extended
+trajectories connects to classical global Structure-from-Motion and pose graph optimization. Chunk-
+based methods like VGGT-Long (Deng et al., 2025), VGGT-Align (Zhang et al., 2026b), and VGGT-
+Motion (Xiong et al., 2026) align adjacent chunks via pairwise Sim(3) alignment. A rigid Sim(3)
+per chunk preserves internal cameras up to scale and cannot resolve overlapping-frame disagree-
+ments. GlueMap (Pan et al., 2026) couples feed-forward star reconstructions with global motion
+averaging and bundle adjustment over virtual tracks. HIP3R resolves overlapping camera predic-
+tions through a shared frame-level pose graph after chunk alignment, without optimizing 3D tracks.
+3
+METHOD
+3.1
+PROBLEM FORMULATION
+Let I = {It}T
+t=1 denote an input video sequence of T frames. We partition I into K overlapping
+chunks {Ck}K
+k=1 of at most C frames with overlap O. Chunk starts advance by C −O frames;
+the final chunk may be shorter than C. Each chunk is processed independently by a feed-forward
+3D vision model (Wang et al., 2026b). For chunk Ck, the backend predicts dense pointmaps Xk,i,
+confidence maps γk,i, and camera-to-chunk poses Pk,i. Here i ∈{1, . . . , |Ck|} indexes local frames
+within the chunk. Let g(k, i) ∈{1, . . . , T} map local frame i in chunk Ck to its global video index.
+The goal is to recover a single camera trajectory F = {Ft ∈SE(3)}T
+t=1 together with consistent 3D
+pointmaps. Figure 2 gives an overview.
+Decoupled optimization. Directly optimizing all camera and point variables across thousands of
+frames is expensive. Unconstrained bundle adjustment loses the efficiency of feed-forward models.
+HIP3R uses a two-level hierarchical pose graph. Stage I solves a chunk-level Sim(3) pose graph
+3
+
+
+Preprint
+for a globally aligned layout (Section 3.2). Stage II then optimizes a frame-level SE(3) pose graph
+with one shared camera variable per frame while holding the layout fixed (Section 3.3).
+3.2
+COARSE LAYOUT OPTIMIZATION WITH PROGRESSIVE LOOP SCHEDULING
+We formulate global layout recovery as optimization over a similarity pose graph Gc = (Vc, Ec).
+Each node k ∈Vc represents a chunk Ck and is associated with a similarity transformation Ak =
+(sk, Rk, tk) ∈Sim(3). This transformation maps local chunk coordinates to a common world
+coordinate system as Ak(x) = skRkx + tk. An edge (i, j) ∈Ec represents a measured relative
+transformation bZij from the coordinate system of chunk i to that of chunk j. The corresponding
+predicted relative transformation is A−1
+j Ai. Overlap edges connect consecutive chunks, while loop
+edges connect retrieved chunk pairs that observe the same physical scene. Relative constraints
+determine scale only up to a global factor, so we fix A1 as the world frame and scale reference.
+Scale errors in independent chunk predictions accumulate on long trajectories, so we optimize the
+remaining sk jointly with rotation and translation.
+Dense overlapping 3D points are spatially redundant, so all-pixel alignment is unnecessary. For
+adjacent chunks, identical pixels in overlapping frames yield paired 3D predictions. We estimate
+relative similarities with confidence-weighted iteratively reweighted least squares (IRLS) rather than
+unweighted Umeyama alignment on all dense pixels (Deng et al., 2025). Each iteration runs a
+weighted Umeyama alignment (Umeyama, 1991) and updates Huber weights from spatial residuals.
+We bound alignment cost by limiting the number of point correspondences used in each fit.
+Visual place recognition proposes candidate loop closures across temporal separations (Izquierdo
+& Civera, 2024). For each selected pair of revisiting frames, we combine temporal neighborhoods
+from both endpoints into one backend input. The resulting joint reconstruction connects the two
+visits in a common local coordinate system. We align the predicted geometry at each endpoint to the
+corresponding original chunk, obtaining transformations Bi and Bj from the joint reconstruction to
+chunks i and j, respectively. The relative loop measurement is bZij = BjB−1
+i
+. We assign each loop
+constraint a bounded weight wij based on the registration residuals at its two endpoints, reducing the
+influence of poorly aligned loops. Appendix D specifies loop retrieval and window settings, point
+sampling, pairwise alignment, and loop weighting.
+Combining sequential overlap and loop constraints, we define the objective over active edges Ec.
+Let Ec
+ij = bZ−1
+ij A−1
+j Ai denote the relative similarity error. We define the residual vector as
+rc
+ij =
+ LogSO(3)R(Ec
+ij), τ(Ec
+ij), log s(Ec
+ij)
+
+∈R7,
+(1)
+where τ extracts Euclidean translation error, and log s evaluates log-scale error. Because feed-
+forward backends predict geometry without analytical pose covariances, wij provides a data-driven
+confidence weight per edge. The coarse layout objective minimizes the robust loss
+A⋆= arg min
+A
+X
+(i,j)∈Ec
+7
+X
+ℓ=1
+ρδ
+ √wij rc
+ij,ℓ
+
+,
+(2)
+where ρδ denotes the Huber penalty, applied coordinate-wise to suppress large outliers.
+Activating all distant loops on an unaligned chain can make the non-convex optimization unstable.
+We initialize chunk placements from sequential alignments, then introduce loop constraints in order
+of increasing temporal span. Adjacent edges remain active throughout, and each stage starts from
+the solution of the preceding stage. When most loop edges have short temporal spans, additional
+stages introduce the longer-span constraints more gradually.
+We solve Eq. (2) with bounded trust-region reflective least squares, limiting log-scale changes rela-
+tive to initialization. Each edge residual depends only on the transformations of the two connected
+chunks, yielding a sparse Jacobian. We compute the corresponding Jacobian blocks using automatic
+differentiation. Appendix D provides the parameterization, scheduling rules, and restart settings.
+3.3
+SHARED-CAMERA TRAJECTORY REFINEMENT
+Given the recovered layout A⋆, overlapping frames still have multiple conflicting pose estimates.
+Selecting one prediction discards alternative observations and causes velocity jumps across chunk
+4
+
+
+Preprint
+boundaries. We therefore introduce a shared camera-to-world variable Ft ∈SE(3) for each frame
+t. We represent each camera pose Pk,i by its rotation Rk,i ∈SO(3) and camera center ck,i ∈R3,
+writing Pk,i = [Rk,i | ck,i]. Its placement Qk,i in the world frame is
+R(Qk,i) = RkRk,i,
+c(Qk,i) = skRkck,i + tk,
+(3)
+with Ak = A⋆
+k. The chunk scale applies to camera centers. The shared pose is rigid with no scale
+variable. For each shared camera, we use one coarse-placed prediction as its initial pose. The
+placement priors retain the predictions from every chunk that observes that frame.
+As shown in Figure 2, the camera graph uses two types of geometric factors. For consecutive frames
+i, j retained as graph nodes within chunk k, define the relative motion measurement Mk,i→j =
+Q−1
+k,jQk,i. With Ef = M −1
+k,i→jF −1
+g(k,j)Fg(k,i), the relative motion edge residual is
+rf
+k,i,j =
+ LogSO(3)R(Ef), τ(Ef)
+
+∈R6.
+(4)
+Here τ extracts Euclidean translation, and the rotation residual uses the standard rotation loga-
+rithm (Sol`a et al., 2018). Each placed prediction also provides a unary chunk pose prior on its
+shared camera, with Ep = Q−1
+k,iFg(k,i) and
+rp
+k,i =
+ LogSO(3)R(Ep), τ(Ep)
+
+∈R6.
+(5)
+When a physical frame appears in multiple overlapping chunks, their respective chunk pose priors
+jointly constrain the same shared variable Ft. Relative motion edges connected to this node join
+local chunk trajectories across chunk boundaries. The fine objective therefore combines both relative
+motion constraints and placement priors,
+F ⋆= arg min
+F
+X
+(k,i,j)∈Ef
+6
+X
+ℓ=1
+ρδ
+p
+λf rf
+k,i,j,ℓ(A⋆, F)
+
++
+X
+(k,i)∈Ep
+6
+X
+ℓ=1
+ρδ
+p
+λp rp
+k,i,ℓ(A⋆, F)
+
+.
+(6)
+Motion constraints preserve relative poses within each chunk, while placement priors keep the re-
+fined trajectory close to the recovered global layout. Initialization and solver settings are given in
+Appendix D, and closed-form Jacobian blocks in Appendix B.
+For long sequences, we optimize a keyframe subgraph for efficiency. Let Qt denote the coarse-
+placed pose used to initialize frame t, and define its correction as ∆t = FtQ−1
+t . We interpolate
+corrections between keyframes and set Ft = ∆tQt. This recovers a trajectory for all frames while
+retaining their local pose predictions as the baseline. To update the geometry, we first place each
+pointmap in world coordinates using A⋆
+k, then apply the rigid correction Fg(k,i)Q−1
+k,i. The corrected
+pointmaps follow the shared camera poses while preserving the predicted depth and recovered chunk
+scale. Appendix C describes keyframe selection and correction interpolation.
+4
+EXPERIMENTS
+We evaluate trajectory accuracy across seven public benchmarks comprising 61 diverse sequences.
+The benchmark spans indoor room-scale environments, including 7-Scenes (Shotton et al., 2013)
+and Neural RGB-D (Azinovi´c et al., 2022). It also includes high-precision multi-scale scenes from
+ETH3D (Sch¨ops et al., 2017) and Tanks and Temples (Knapitsch et al., 2017). Finally, it includes ex-
+tended outdoor driving and campus traversals from Oxford Spires (Tao et al., 2025), KITTI (Geiger
+et al., 2012), and VBR (Brizi et al., 2024). Dense surface geometry is evaluated on ETH3D, Neural
+RGB-D, and 7-Scenes, which provide dense 3D ground truth. Appendix E details dataset composi-
+tions and sequence splits. Baselines in Table 1 use released checkpoints and recommended window
+policies on identical sequences. VGGT-Long and VGGT-Align are evaluated from public imple-
+mentations, while VGGT-Motion (Xiong et al., 2026) is not publicly available.
+We evaluate trajectory accuracy using ATE, RPErot, and RPEtrans (lower is better). ATE is translation
+RMSE after a per-sequence Sim(3) alignment that corrects rotation, translation, and scale. Relative
+errors use all consecutive frame pairs (∆=1 frame). Rotation RPE is in degrees, and translation RPE
+applies the same Sim(3) correction. Pairwise pose AUC (higher is better) evaluates all i < j camera
+pairs using the maximum of relative rotation and translation-direction angular errors at thresholds of
+5
+
+
+Preprint
+5◦, 15◦, and 30◦. Reconstructed 3D pointmaps are evaluated using the mean of accuracy and com-
+pleteness (Chamfer, meters) after Umeyama and ICP. F1 uses a hit distance of 0.25 m on ETH3D and
+0.05 m on Neural RGB-D and 7-Scenes. Appendix H provides per-dataset geometric breakdowns.
+We apply HIP3R to the camera poses and dense geometry produced by VGGT-Omega (Wang et al.,
+2026b) and LingBot-MAP (Chen et al., 2026a). Both backends use the same graph formulation
+without fine-tuning. Unless otherwise stated, we use VGGT-Omega 1B with a chunk size of 60
+frames and an overlap size of 30 frames. LingBot-MAP uses windowed inference with a chunk size
+of 120 frames and an overlap size of 32 frames.
+We use the same refinement weights across backends. For short sequences, the fine stage optimizes
+all camera poses; for long sequences, it optimizes a keyframe subgraph and interpolates pose cor-
+rections for the remaining frames. Appendix details the keyframe selection rules and solver settings.
+4.1
+BENCHMARK EVALUATION ACROSS PUBLIC DATASETS
+Table 1 reports tracking metrics macro-averaged across the seven datasets. With VGGT-Omega,
+HIP3R reduces ATE by 74%, from 18.555 to 4.906 m, RPErot from 1.820◦to 0.590◦, and RPEtrans
+by 94%, from 0.9878 to 0.0622 m. On long traversals, sequential stitching accumulates scale and
+orientation drift. Progressive loop scheduling in the coarse layout stage (Section 3.2) corrects global
+drift and drives much of the ATE reduction in Table 1. Shared-camera refinement (Section 3.3)
+further improves relative pose accuracy while preserving the layout. On compact indoor benchmarks
+such as 7-Scenes and Neural RGB-D, native VGGT-Omega already achieves ATE of 0.037 m and
+0.019 m, leaving limited room for further global correction. With LingBot-MAP, HIP3R reduces
+macro ATE by 52%, from 8.288 to 4.017 m, without retraining.
+Table 1: Trajectory evaluation across indoor and outdoor benchmarks. Values are dataset-macro
+averages of ATE (m), RPErot (◦), and RPEtrans (m). Bold marks the best result.
+Method
+Mean ATE ↓
+Mean RPErot ↓
+Mean RPEtrans ↓
+CUT3R (Wang et al., 2025b)
+44.894
+4.469
+1.4600
+TTT3R (Chen et al., 2026b)
+23.775
+5.077
+0.8077
+LoGeR (Zhang et al., 2026a)
+40.691
+2.086
+1.1035
+VGGT (Wang et al., 2025a)
+20.914
+3.159
+1.6396
+ZipMap (Jin et al., 2026)
+28.230
+2.792
+0.9454
+LingBot-MAP (Chen et al., 2026a)
+8.288
+1.818
+1.4152
+VGGT-Long (Deng et al., 2025)
+22.713
+1.449
+0.2537
+VGGT-Align (Zhang et al., 2026b)
+25.584
+1.714
+2.3608
+VGGT-Omega (Wang et al., 2026b)
+18.555
+1.820
+0.9878
+π3 (Wang et al., 2025c)
+24.029
+1.592
+0.3614
+GlueMap (Pan et al., 2026)
+45.281
+1.561
+1.9132
+Scal3R (Xie et al., 2026)
+27.612
+1.376
+0.1703
+HIP3R (LingBot-MAP)
+4.017
+1.055
+0.1824
+HIP3R (VGGT-Omega)
+4.906
+0.590
+0.0622
+4.2
+CONTROLLED LONG-HORIZON RECONSTRUCTION
+We compare HIP3R with two VGGT-Long (Deng et al., 2025) variants, with and without loop
+closures. All three use the same VGGT-Omega backend and the default chunk and overlap sizes
+specified above. Table 2 reports ATE on KITTI, VBR, and Oxford and the mean over these three
+datasets. For reference, it also includes the released VGGT-Long and VGGT-Align (Zhang et al.,
+2026b) results using VGGT predictions.
+HIP3R achieves lower ATE than both VGGT-Long variants using VGGT-Omega on all three
+datasets. Loop closures reduce VGGT-Long ATE from 110.3 to 10.19 m on KITTI and from 85.50
+to 41.27 m on VBR. HIP3R further reduces these errors to 9.730 and 22.44 m, nearly halving
+the remaining VBR error. VGGT-Long applies loops as rigid Sim(3) transforms to entire chunks.
+HIP3R instead jointly optimizes a sparse global layout graph with progressive loop scheduling.
+Appendix K shows that the complete solver further improves accuracy and convergence efficiency,
+while Appendix F reports stage-wise runtimes.
+6
+
+
+Preprint
+Table 2: Trajectory comparison on KITTI, VBR, and Oxford, alongside the long-horizon mean.
+ATE ↓
+Backend
+Method
+Oxford KITTI
+VBR
+Mean
+VGGT-Omega
+Baseline
+9.861
+77.42
+41.91 43.06
+VGGT-Long (w/o loops)
+1.777
+110.3
+85.50 65.86
+VGGT-Long (w/ loops)
+1.665
+10.19
+41.27 17.71
++ HIP3R (Ours)
+1.579
+9.730
+22.44
+11.25
+VGGT
+VGGT-Long (released)
+9.451
+48.84
+99.83 52.71
+VGGT-Align
+8.567
+69.80
+99.87 59.41
+VGGT-Ω
+Ours
+VGGT-Ω
+Ours
+Input videos
+Global 3D Reconstruction
+Local Reconstruction Details
+Figure 3: Qualitative comparison between VGGT-Omega chunk placement and HIP3R.
+4.3
+END-TO-END POSE ACCURACY AND 3D GEOMETRY
+Inconsistent poses place walls and corridors at conflicting locations, causing duplicated surfaces and
+ghosting. Table 3 reports pose AUC and surface metrics on both backends. With VGGT-Omega,
+HIP3R reduces Chamfer by 64%, from 0.0759 to 0.0272 m, and raises F1 from 65.92 to 91.26. The
+stage-wise comparison in Appendix M, Table 21, shows that coarse alignment accounts for most of
+the Chamfer reduction, with improvements from shared-camera refinement on both backends.
+4.4
+QUALITATIVE DENSE 3D RECONSTRUCTION
+Figure 3 compares VGGT-Omega and HIP3R (VGGT-Omega) on Oxford Bodleian Library and Ke-
+ble College. Sequential placement drifts across long temporal gaps, reconstructing unclosed loops as
+offset surfaces several meters apart. Coarse layout optimization aligns distant revisits and collapses
+these surfaces onto single facades. As shown in the local views, shared-camera refinement fur-
+ther reconciles overlapping camera predictions. Figure 4 shows four long sequences with identical
+VGGT-Omega points. Native placement stretches streets into duplicated structures, while HIP3R
+recovers closed street networks with lower trajectory error.
+7
+
+
+Preprint
+4.5
+ABLATION STUDIES
+Ablations isolate point sampling, progressive loop scheduling, and placement-motion interaction.
+Point sampling bound. Table 4 reports point sampling on cached predictions. Bounding sampled
+points cuts graph build and solve time from 12232.18 to 2004.20 s (83.62%), while ATE changes
+from 21.7751 to 21.7569 m. Total time includes measurement construction and layout solves.
+Table 3: Pose AUC and dense geometry on both backends.
+Method
+AUC@5 ↑AUC@15 ↑AUC@30 ↑Chamfer ↓
+F1 ↑
+VGGT-Omega
+29.77
+50.24
+63.22
+0.0759
+65.92
+HIP3R (VGGT-Omega)
+50.75
+67.98
+75.21
+0.0272
+91.26
+LingBot-MAP
+17.83
+38.61
+53.19
+0.1423
+61.13
+HIP3R (LingBot-MAP)
+22.01
+51.35
+66.90
+0.1042
+74.60
+Progressive loop scheduling and solver stabilization. Table 4 compares residual-fit weighting,
+progressive loop scheduling, and the complete solver. Progressive loop scheduling reduces graph
+build and solve time from 2077.49 to 1477.59 s. The complete configuration reaches 17.4708 m
+ATE in 753.43 s, with a 41.28 s final solve. Progressive scheduling mainly reduces runtime in this
+comparison, while the complete configuration improves both runtime and trajectory accuracy. Ap-
+pendix K details the additional solver components evaluated together in the complete configuration.
+Table 4: Ablation of point sampling and progressive layout solver on extended sequences. Rows
+add components cumulatively. Appendix K details all test conditions.
+Configuration
+ATE ↓
+Graph Build & Solve (s) ↓
+Final solve (s)
+Baseline
+21.7751
+12232.18
+1404.54
++ Bounded sampling
+21.7569
+2004.20
+1345.43
++ Fit weighting
+21.7770
+2077.49
+1387.14
++ Progressive loops
+21.5241
+1477.59
+688.02
+Complete
+17.4708
+753.43
+41.28
+Table 5: Trajectory comparison on identical predictions and one optimized coarse layout.
+VGGT-Omega
+LingBot-MAP
+ATE
+RPErot
+RPEtrans
+ATE
+RPErot
+RPEtrans
+Layout Only
+4.9143
+0.6412
+0.0817
+4.0517
+1.1837
+0.2126
+Single
+4.9079
+0.6238
+0.0695
+4.0256
+1.1131
+0.1930
+Unary
+4.9067
+0.6010
+0.0674
+4.0192
+1.0871
+0.1828
+Motion
+11.6776
+0.5877
+0.0619
+6.5007
+1.0464
+0.1816
+Shared
+4.9061
+0.5899
+0.0622
+4.0168
+1.0549
+0.1824
+Interaction of placement priors and motion constraints. Table 5 compares four ways of forming
+a camera trajectory, Single, Unary, Motion, and Shared, from identical predictions and optimized
+coarse layouts, with Layout Only as a reference. Layout Only takes the first available prediction for
+each frame in chunk order. Single selects the prediction farthest from its chunk boundaries. Neither
+performs frame-level optimization. Unary uses overlapping pose observations in a robust unary-only
+objective without relative-motion factors. Motion uses within-chunk motion factors without place-
+ment priors. Shared combines both factors as in Eq. (6). On both backends, Shared reduces relative
+errors over Single and Unary, with a small ATE gain. Motion yields slightly lower relative errors,
+but without placement priors, ATE increases to 11.678 and 6.501 m. Placement priors preserve the
+recovered layout, while motion factors improve local smoothness.
+Stage-wise results across layout recovery and trajectory refinement. Table 6 reports the Layout
+Only and Full outputs on identical VGGT-Omega predictions. Layout Only recovers global layout
+and scale, reducing ATE by 87% on KITTI, 84% on Oxford, and 46% on VBR. Full then adds
+8

@@ -1,0 +1,520 @@
+An Empirical Study of Recent Large Language Models for Knowledge
+Graph to Text Generation on Standard Benchmarks
+Priyanka1
+Renaud Delbru2
+Souhail Bakkali3
+Mickaël Coustaty1
+Antoine Doucet1
+1 La Rochelle Université, La Rochelle, France
+2 Siren, Bordeaux, France
+3 Université de Rennes, Rennes, France
+priyanka.priyanka@univ-lr.fr
+Abstract
+Knowledge graph-to-text (KG-to-text) gener-
+ation verbalizes a set of knowledge graph
+triples into fluent natural language. While fine-
+tuned encoder-decoder models have long been
+the standard approach, recent LLMs are be-
+coming increasingly competitive. We bench-
+mark recent LLMs against fine-tuned encoder-
+decoder models, using reference-based met-
+rics and graph-grounded reference-free LLM-
+based evaluation validated against human an-
+notations. We observed that recent LLMs sub-
+stantially narrow, and in several settings close,
+the gap with fine-tuned models on reference-
+based metrics, while performing better on
+graph-grounded metrics.
+LLM-based eval-
+uation scores show limited correlation with
+reference-based metrics, suggesting that the
+two approaches capture different aspects of
+generation quality. Graph-grounded evaluation
+reveals that prompted models produce fewer
+contradictions and triple omissions than fine-
+tuned models, and these errors increase more
+rapidly with graph size for fine-tuned models,
+highlighting differences between the two ap-
+proaches that reference-based metrics may not
+fully capture.
+1
+Introduction
+Knowledge Graphs store information in the form
+of structured triples as (subject, relation, object).
+The task of verbalising the knowledge graphs into
+natural language sentences is a significant and well-
+studied problem within the natural language gener-
+ation domain. With the growing capabilities of
+large language models (LLMs), it is important
+to understand how effectively recent models per-
+form this task. In this paper advances the eval-
+uation of recent pre-trained models on graph-to-
+text benchmark datasets, We investigate the per-
+formance of five recent model families spanning
+diverse architectures: dense decoder-only (Gemma-
+4-E4B-it, Gemma-4-31B-it, (Team et al., 2026),
+Granite-4.2 (IBM Research, 2026)), mixture-of-
+experts (Gemma-4-26B-A4B-it (Team et al., 2026),
+Nemotron-3 (Blakeman et al., 2025)), encoder-
+decoder (T5-Gemma2 (Zhang et al., 2025)), closed
+sourced GPT-5 (Singh et al., 2025) on the following
+knowledge graph datasets: WebNLG17 (Gardent
+et al., 2017), WebNLG20 (Ferreira et al., 2020)
+(English subset), and DART (Nan et al., 2021).
+For evaluating the performance of KG-to-Text gen-
+eration systems, the most commonly used met-
+rics are reference-based like BLEU, METEOR,
+ChrF++, and BLEURT. However, BLEU (Papineni
+et al., 2002), METEOR (Banerjee and Lavie, 2005),
+and ChrF++ (Popovi´c, 2017) judge the generated
+text based on surface similarity to the reference text
+and do not evaluate its semantic meaningfulness.
+BLEURT (Sellam et al., 2020), on the other hand,
+is a learned metric designed to mimic human eval-
+uation. Additionally, we have found that different
+researchers use different sets and implementations
+of metrics, which makes it difficult to compare the
+results with the published State-of-The-Art (SoTA)
+approaches. Therefore, we have used an elabo-
+rate set of metrics consisting of BLEU, METEOR,
+ChrF++, Rouge-L, BLEURT, BERTScore (Zhang
+et al., 2019), BARTScore (Yuan et al., 2021), and
+PARENT (Dhingra et al., 2019) and have catego-
+rized them into three different categories based on
+the function of the metrics. Additionally, we have
+also studied LLMs as judge category of metrics as
+source- grounded or reference-free judges and ex-
+plored how useful and reliable these metrics can be
+for evaluating LLM-generated text in terms of crite-
+ria that cannot be explicitly judged by the standard
+NLG metrics. We frame the following research
+questions on the benchmark datasets and try to find
+the answers:
+RQ1. Under one scoring pipeline with a multi-
+reference protocol, where do recent prompted
+LLMs (GPT-5 mini, Gemma-4-31B, Granite-4.2-
+30B, Nemotron-3-Ultra) and a LoRA-adapted (Hu
+arXiv:2610.31529v1  [cs.CL]  22 Oct 2026
+
+
+et al., 2021) encoder-decoder (T5-Gemma2) model
+stand against fully fine-tuned T5-large, per metric
+and per dataset?
+RQ2. Do the reference-based metric families agree
+with one another and with a source-grounded judge
+on these LLM generated outputs?
+RQ3. What does an LLM judge measure on KG-
+to-text outputs, when two different LLM judges are
+compared and validated against human annotation?
+RQ4. Do fine-tuned and prompted systems make
+the same kind of errors?
+Our contributions are: 1) a unified evaluation of
+five recent model families against fine-tuned T5-
+large on three benchmarks with eight reference-
+based metrics, showing that compared with earlier
+published zero-shot results the gap has narrowed
+from tens of BLEU points to a few, with parity
+on neural metrics and a remaining lead for fine-
+tuning on BLEU, BARTScore and PARENT scores
+(RQ1); 2) an analysis of metric agreement show-
+ing that the reference-based families agree among
+themselves and not very strongly with a source-
+grounded judge (RQ2); 3) a two-judge BinEval
+(Cho et al., 2026) evaluation of all outputs, val-
+idated against 220 human-labelled outputs (two
+model outputs on the same 110 graphs) with adjudi-
+cated error types, establishing that the LLM judges
+reproduce human omission labels triple by triple
+and detect contradictions and entity corruptions,
+and that they do not detect unsupported elaboration
+(RQ3); 4) the finding that, by the human standard,
+the fine-tuned and the prompted systems have a
+faithfulness problem in a similar share of outputs
+but of different kinds: corruption and omission
+against elaboration(RQ4).
+2
+Related work
+The early efforts for verbalizing structured data
+relied on recurrent neural network (RNN) architec-
+tures, including Long Short-Term Memory (LSTM)
+and Gated Recurrent Unit (GRU) models, to en-
+code graph-derived sequences and generate natural
+language descriptions (Song et al., 2018); (Zhao
+et al., 2020); (Guo et al., 2020). Subsequently,
+Graph Neural Networks (GNN) based models have
+been employed to use a graph encoder to better
+capture the structural dependencies and relational
+information inherent in graph data; (Li et al., 2021)
+and (Koncel-Kedziorski et al., 2019). More recent
+approaches, however, have increasingly shifted to-
+wards the use of large pre-trained language models,
+often relying on linearized graph representations
+as textual input sequences. Recent work has ex-
+plored both pre-trained sequence-to-sequence ar-
+chitectures (Ribeiro et al., 2021); (Li et al., 2024)
+and open-source generative language models (He
+et al., 2025), (Iarosh et al., 2025). The implemen-
+tations of Ribeiro et al. (2021) based on T5 and
+BART are widely adopted as benchmark baselines
+for KG-to-Text evaluation.
+We have used WebNLG17, WebNLG20 and DART
+as the benchmark datasets. The main reason for
+choosing these datasets is that they have negligible
+graph-text alignment noise in their training data
+i.e. each triple from the graph is described in the
+corresponding text and there is no information in
+the text which is not grounded in the corresponding
+graphs. This property is missing in most of the
+other KG-to-Text datasets available. For example,
+GraphNarrative (Shi et al., 2023) dataset has on an
+average 0.62 hallucinated entities and 0.74 halluci-
+nated relations per graph-text pairs, EventNarrative
+(Colas et al., 2021) has on an average 0.69 hal-
+lucinated entities and 0.70 hallucinated relations,
+TEKGEN (Agarwal et al., 2021) has these numbers
+as 0.84 hallucinated entities and 0.92 hallucinated
+relations by construction (He et al., 2025). An-
+other dataset GenWiki (Jin et al., 2020) has 58.1%
+unused triplets and 65.1% unguessable text in the
+graphs and corresponding text, respectively (Kim
+et al., 2026).
+While the models finetuned on the respective
+datasets have consistently achieved higher perfor-
+mance on structured data; Li et al. (2024) and
+Yuan and Färber (2023) explored closed-source
+generative models for generating text from GPT-
+3 in a zero-shot scenario. Their results showed
+that the generative models without any fine-tuning
+fall significantly behind the fine-tuned sequence-
+to-sequence architectures. Recently, Iarosh et al.
+(2025) evaluated GPT-4o in zero-shot and chain-
+of-thought (CoT) few-shot settings on WebNLG20
+and reported significant performance gains when
+using detailed prompts. Building on these find-
+ings, our work extends the evaluation to a broader
+set of recent LLM architectures. Evaluation of
+graph-to-text systems has traditionally relied on
+reference-based metrics and on human annotation
+of dimensions such as triple coverage and hallucina-
+tion. Because human annotation is costly to scale,
+recent work has turned to LLM-based judges as an
+automatic alternative (Liu et al., 2023). Rather than
+asking an LLM for a single holistic rating, Check-
+
+
+Eval (Lee et al., 2025) and BinEval (Cho et al.,
+2026) decompose the judgment into a set of binary
+questions and aggregate the verdicts. A related
+line of work localises data-text mismatches (omit-
+ted, extra and incorrect content), but does so with
+a fine-tuned verifier rather than LLM prompting
+(Efimov-Zhang et al., 2026). Huidrom et al. (2025),
+on the other hand, meta-evaluate 29 reference-free
+metrics against human semantic-consistency rat-
+ings on WebNLG. For this study, we have included
+BinEval and GPTScore (Fu et al., 2024) in our
+evaluation protocol.
+3
+Datasets
+Below, we describe these datasets in detail:
+WebNLG17. This dataset consists of RDF triples
+and their corresponding text descriptions released
+as part of the WebNLG challenge, with the goal of
+producing a common benchmark to compare “mi-
+croplanners” for RDF description (Gardent et al.,
+2017). It has become an important benchmark for
+KG-to-text generation. The dataset contains graphs
+having 1 to 7 triples, which are verbalized into a
+few sentences. All the experiments mentioned in
+this paper have been performed on the full test sub-
+set of the WebNLG17 dataset.
+WebNLG20.WebNLG dataset has been revised a
+few times since the first challenge (Gardent et al.,
+2017).
+The WebNLG20 (Ferreira et al., 2020)
+dataset has a new category called "company" along
+with all the categories present in the WebNLG17
+version. Consistent with the previous dataset, all
+the experiments on this dataset have been per-
+formed on the full test dataset.
+DART. DART (Nan et al., 2021) is a large open
+domain graph to text dataset constructed using var-
+ious sources: human annotation on Wikipedia ta-
+bles from WikiSQL (Zhong et al., 2017) and Wik-
+iTableQuestions (Pasupat and Liang, 2015); auto-
+matic conversion of questions in WikiSQL into
+declarative sentences; and inclusion of RDF to text
+datasets WebNLG 2017 and E2E (Dušek et al.,
+2018). DART thus has triples sourced from diverse
+domains and serves as a benchmark dataset for
+graph-to-text generation.
+4
+Model Architectures
+The set of model architectures we selected pro-
+vides checkpoints ranging from 270M-parameter
+encoder-decoder models to a 550B-parameter
+sparse model. The architectural difference among
+these models can be stated as: Encoder-decoder vs
+decoder-only. We have two models with encoder-
+decoder architecture, T5 and T5-Gemma2. How-
+ever, the later is an encoder-decoder model which
+adapts a pretrained decoder-only Gemma 3 model
+into an encoder-decoder, and adds tied word embed-
+dings across encoder and decoder and a merged at-
+tention module that unifies decoder self- and cross-
+attention. We use the 270M-270M, 1B-1B and
+4B-4B checkpoints. All other models have decoder-
+only architectures. Dense vs Sparse. Granite-
+4.2 (with size variants 3B, 8B and 30B) is fully
+dense decoder-only model. Gemma-4 has size vari-
+ants 4B-it, 26B-A4B and 31B-it; of which 4B-it
+and 31B-it are dense decoder-only models whereas
+26B-A4B is a mixture-of-experts (Shazeer et al.,
+2017) model with around 26 billion total param-
+eters and 4 billion active parameters with 128 ex-
+perts and uses interleaved local sliding-window and
+global attention. The three Nemotron-3 models
+are sparse with Nemotron-3-Nano-30B-A3B hav-
+ing approximately 3 billion active parameters out
+of total 30 billion parameters; Nemotron-3-Super-
+120B-A12B having 12 billion parameters out of
+120 billion total parameters and Nemotron-3-Ultra-
+550B-A55B having 55 billion active parameters
+out of the total 550 billion parameters and uses in-
+terleaved Mamba-2 state-space (Dao and Gu, 2024)
+and MoE layers, with a few self-attention layers.
+Open vs closed source models. Out of all the mod-
+els that we are using, GPT-5’s architecture is undis-
+closed, so it serves as the closed-source reference.
+We employed three variants of GPT-5: GPT-5-nano,
+GPT-5-mini, and the full GPT-5 model.
+5
+Experiments
+5.1
+Fine-tuned models
+We adopted Shi et al. (2023)’s pipeline for fine-
+tuning T5 for all our T5 experiments. We fine-tuned
+the different variants of T5 (Small, Base and Large)
+on the three datasets WebNLG17, WebNLG20 and
+DART independently, using a learning rate of 3e-5,
+a batch size of 8 (for training and validation sets),
+for up to 30 epochs with early stopping (patience of
+3) based on validation performance. Source and tar-
+get sequences are truncated/padded to a maximum
+length of 384 tokens for both training and genera-
+tion, with beam search decoding with a beam size
+of 3 used at inference. The implementation uses
+linearized knowledge graphs by representing their
+triples as a sequence of subject–predicate–object
+
+
+elements, concatenated in a fixed order and sepa-
+rated by special delimiter tokens "<H>", "<R>" and
+"<T>". Training was run on a single A40/A6000
+GPU per model.
+We fine-tuned T5Gemma2 (4B-4B variant) for
+the knowledge-graph-to-text generation task using
+Low-Rank Adaptation (LoRA). The input format
+has been kept consistent with the T5 model input
+setting. We use rank learning rate = 5e-4, r = 32
+with scaling factor α = 64, dropout = 0.05, ap-
+plied to the q_proj and v_proj modules. This
+setting was selected via a hyperparameter sweep
+over r ∈{8, 16, 32} (with α = 2r) and learning
+rates of {1×10−4, 2×10−4, 3×10−4, 5×10−4},
+averaged over 3 random seeds per configuration to
+control for initialization variance. Maximum input
+and target sequence lengths were set according to
+the each dataset’s length distribution.
+5.2
+Prompted models
+For all the decoder-only models and GPT-5, we
+have used few-shot prompting. In our experiments
+on these models, following the methodology of
+Yuan and Färber (2023), each test instance was
+treated as a separate request, and the model’s out-
+put was recorded as the generated text. Instead
+of using the simple prompt, "generate text from
+graph," we utilized a more elaborate prompt as
+shown in Table 10. The prompt was inspired by the
+mistakes noticed when we used the simple prompt,
+as mentioned in Appendix A, and it is kept the
+same for all the models.
+We provide the input graphs to the models as a
+text sequence, we have used the same linearization
+as used in the case of the T5 and T5-Gemma-2
+experiment. Given that most of the open-sourced
+LLMs we used are reasoning or thinking models,
+we set the thinking or reasoning level to "off" or
+"none" and similarly for GPT-5 we kept reason-
+ing level to “minimal”. We also set temperature
+= 0.0, max tokens = 384 and default top-p value
+wherever applicable. We conducted preliminary ex-
+periments with GPT-5-mini and Gemma-4-E4B-it
+on WebNLG test dataset under different few-shot
+settings to determine the most suitable k-shot value
+for the remaining experiments. For selecting few-
+shot samples, we first use E5-base-V2 (Wang et al.,
+2022) to obtain dense embeddings of the graph lin-
+earizations. This model provides an effective bal-
+ance between retrieval quality and computational
+efficiency. Each graph was linearized into a flat tex-
+tual sequence by concatenating the head, relation,
+and tail tokens of all triples. To mitigate the risk of
+data leakage, all samples identical to test instances
+were removed from the training set. For deciding
+the best sample retrieval strategy, we selected sam-
+ples for few-shots based on the cosine similarity
+between the linearized graph embeddings of the test
+input and the graphs in training set. As (He et al.,
+2025) mentioned the effectiveness of Difficulty and
+Diversity of the chosen few shots; we tried Maxi-
+mal Marginal Relevance (Carbonell and Goldstein,
+1998) as a strategy to balance relevance and non-
+redundancy in our initial experiments. And as an
+alternative, we also tried organising both the train-
+ing and test sets into subsets based on graph triple
+size. For one-shot retrieval, examples were selected
+from the subset containing graphs with the same
+number of triples n as the test instance. For two-
+shot retrieval, examples were selected from the n
+and n + 1 triple subsets, while for three-shot re-
+trieval, examples were drawn from the n −1 , n
+, and n + 1 triple subsets to introduce structural
+diversity among the retrieved examples. For test in-
+stances belonging to the largest triple-size category,
+where an n + 1 subset was unavailable, retrieval
+was restricted to n triple subset. We discuss the
+effectiveness of these retrieval strategies in Section
+6.1.
+5.3
+Evaluation Protocol
+We evaluate the model outputs from multiple per-
+spectives using a diverse set of evaluation metrics.
+Based on their underlying methodology, these met-
+rics are categorized into four groups. 1) Surface-
+Level Metrics. These metrics evaluate the gen-
+erated text based on its lexical overlap with the
+reference text. The metrics included in this cat-
+egory are BLEU (Papineni et al., 2002), ChrF++
+(Popovi´c, 2017), METEOR (Banerjee and Lavie,
+2005), and ROUGE-L (Lin, 2004).We compute
+corpus-level BLEU and chrF++ scores using the
+SacreBLEU(Post, 2018) library. METEOR is com-
+puted using the implementation provided in NLTK,
+while ROUGE-L is computed using the rouge-
+score package. 2) Semantic or Neural Metrics.
+These metrics assess the semantic similarity and
+coherence between the generated text and the ref-
+erence text, going beyond exact lexical matching.
+The metrics used in this category include BLEURT
+(Sellam et al., 2020), BERTScore (Zhang et al.,
+2019), and BARTScore (Yuan et al., 2021). We
+compute BERTScore using the bert-base-uncased
+checkpoint, BLEURT using the BLEURT-20 check-
+
+
+point, and BARTScore using the facebook/bart-
+large-cnn checkpoint. 3) Alignment-Based Met-
+rics. When evaluating Large Language Models
+for graph-to-text generation, it is essential to deter-
+mine whether the generated text remains grounded
+in the source graph. The PARENT (Dhingra et al.,
+2019) metric addresses this aspect by computing
+an F1-based score that measures the alignment of
+the generated text not only with the reference text
+but also with the source graph.
+We adopt a multi-reference evaluation protocol
+for all metrics. For corpus-level metrics such as
+BLEU and ChrF++, we use SacreBLEU’s native
+multi-reference evaluation, where each prediction
+is evaluated against all available references jointly.
+For sentence-level metrics, including METEOR,
+ROUGE-L, BLEURT, BARTScore, and PARENT,
+scores are computed against each reference inde-
+pendently, and the maximum score across refer-
+ences is retained for each instance.
+4) LLM as Judge In the task of Graph-to-Text gen-
+eration, it is very important to judge the outputs
+explicitly for the faithfulness to the source graph,
+the coverage of information present in the graph
+and the fluency of the text as a whole. We lever-
+age LLMs as judges in this task through BinEval
+(Cho et al., 2026) and GPTScore (Fu et al., 2024).
+BinEval is a training-free, reference-free frame-
+work that decomposes each evaluation criterion
+into atomic yes/no questions rather than asking
+an LLM for one holistic score. A meta-prompt
+first generates the atomic questions from the task
+prompt, organised by evaluation dimension. An
+evaluator LLM then checks the output against the
+source for each question, returning a binary ver-
+dict and a short natural-language explanation. The
+verdicts are aggregated into a score per dimension,
+so a low score can be traced to the specific failed
+checks. We evaluated Faithfulness to graph, graph
+triple Coverage and Fluency of the model outputs
+using BinEval framework. We use DeepSeekV-
+4.1-Flash (Xu et al., 2026) and GLM-5.3-Flash
+(GLM-5-Team et al., 2026) with thinking disabled
+as the judge LLMs. Instead of allowing the BinEval
+framework to generate binary questions, we pro-
+vided our own questions for each criterion to the
+judge LLMs. For each question, the evaluator gives
+binary output and the final recorded scores are the
+mean of the total satisfied questions per dimension
+in the case of Faithfulness and Fluency. The ques-
+tions provided to the judges are presented in Tables
+12 and 13. For Coverage, the final score is the ratio
+of the sum of the binary score for each triple to
+the total triples. GPTScore is also a reference-free
+metric that scores a generated text by the likeli-
+hood a pretrained language model assigns to it,
+conditioned on an instruction. We use GPTScore
+to get the likelihood of the generated output given
+the source graph and task instruction. The official
+implementation of GPTScore is tested with Flan-
+T5, GPT-2, GPT-3 and OPT family models, how-
+ever, we have used DeepSeek-V4.1-Flash in non-
+thinking setting as it is a more recent model and
+belongs to a different model family compared to the
+LLMs we are using for text generation. The imple-
+mentation details for both BinEval and GPTScore
+are in Appendix B.
+6
+Results
+6.1
+Standing of recent models on reference
+based evaluation (RQ1)
+The results obtained on all the models are presented
+in Tables 1, 2 and 3. 95% Confidence Intervals
+(CIs) are computed via paired bootstrap resampling
+((Koehn, 2004), N=1,000) for BLEU and ChrF++,
+and via Student’s t over per-sample scores for all
+other metrics.
+For all the models, we observed an increase in per-
+formance when moving from smaller variants to
+larger variants within the same family so the final
+scores presented in this study are on the largest
+variants of each model family (T5-large, Gemma-
+4-31B, Granite-4.2-30B, Nemotron-3-Ultra-550B-
+55B and T5-Gemma2-4B-4B). However, the per-
+formance gain achieved by GPT-5 full was not
+found to be very significant compared to GPT-5-
+mini. Considering that GPT-5 full costs more than
+GPT-5-mini and nano, we have conducted the re-
+ported GPT-5 experiments on GPT-5-mini. In sec-
+tion 5.2, we described the different ways of sample
+retrieval for few-shot selection. The approach of
+using Maximal Marginal Relevance for few-shot
+retrieval showed some performance gain against
+cosine similarity-based retrieval with λ = 0.7 but
+the gain was very small. We also experimented
+with sample retrieval based on graph triple size,
+but the performance of GPT-5-mini using this re-
+trieval strategy did not surpass the simpler cosine
+similarity-based retrieval approach. Consequently,
+we adopted cosine similarity-based retrieval for all
+few-shot experiments reported in this work.
+To select the number of shots for few-shot exper-
+iments, we evaluated GPT-5-mini and Gemma-4-

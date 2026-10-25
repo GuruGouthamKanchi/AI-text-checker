@@ -1,0 +1,516 @@
+DIAL: Steerable Language Models with
+Distilled Instruction-Adherence Levels
+Thanh Q. Tran1∗John Russell Himawan1∗Arun Verma2∗
+Kiwan Wong3
+Wei Xiao4,2,3
+Daniela Rus3,2
+Bryan Kian Hsiang Low1,2
+1School of Computing, National University of Singapore, Singapore
+2Singapore-MIT Alliance for Research and Technology Centre, Singapore
+3CSAIL, Massachusetts Institute of Technology, USA
+4School of Electrical and Electronic Engineering, Nanyang Technological University, Singapore
+Abstract
+When a user says “Keep it short”, how short should the LLM’s response be?
+More generally, users and applications require different levels of instruction ad-
+herence, but prompting does not reliably provide fine-grained control over them.
+We therefore study “steerable language models” that provide fine-grained numer-
+ical control over the degree to which models follow general instructions specified
+in text. However, existing approaches do not jointly offer fine-grained control,
+efficiency, and scalability across diverse instructions. To address this gap, we in-
+troduce DIAL (Distilled Instruction-Adherence Levels) to achieve all three prop-
+erties. For fine-grained control, we perform classifier-free guidance (CFG) with a
+frozen LLM to provide training signals for on-policy distillation of instruction ad-
+herence at different levels. For efficiency, we design a lightweight steering adapter
+that uses a classifier over the LLM’s hidden states to compute a closed-form steer-
+ing edit. The classifier adaptively sets the steering magnitude at each token based
+on the target adherence level, while accounting for the geometry of the LLM’s
+hidden states to preserve response coherence. For scalability, the classifier is
+text-conditioned, allowing a shared adapter to support new instructions without
+per-instruction fitting. Training requires only instruction and request text, with-
+out labeled responses, external generators, or judges. Evaluation across multiple
+LLM families shows that DIAL achieves a competitive balance between concept
+expression and response fluency, with concept scores increasing monotonically
+across adherence levels. We introduce SteerIF, an instruction-only dataset of
+98, 625 concept, persona, verifiable, and descriptive instructions. When trained
+on SteerIF, DIAL provides fine-grained control over personas and, when com-
+bined with prompting, improves verifiable instruction following. In vLLM, the
+LLM steered by DIAL retains 96–99% of the base LLM throughput, with per-
+token inference latency approximately matching that of the base LLM.
+1
+Introduction
+Large language models (LLMs) are deployed across users and applications with different require-
+ments for instruction-following [1]. Meeting these requirements involves choosing which instruc-
+tions an LLM should follow and the appropriate level of adherence for each instruction. Without
+fine-grained control over adherence levels, users may need to revise an instruction and regenerate re-
+sponses repeatedly to achieve the desired level of adherence. As an illustrative example, Figure 1(a)
+shows a user asking for a shorter answer, but the LLM’s response is too short for the user. Further
+prompting is then needed to obtain the desired response length, creating a frustrating user experi-
+ence. Ideally, users could view responses generated at different adherence levels and select one with
+∗Equal contribution. Correspondence to thanhtran@u.nus.edu.
+arXiv:2610.31438v1  [cs.AI]  22 Oct 2026
+
+
+(a) Steerable Language Model with DIAL
+Request: How do vaccines work?
+Prompting: Rephrase and Retry
+DIAL: Choose an Adherence Level
+Low 
+A harmless germ piece primes your 
+immune system to beat the real germ.
+High 
+They train your immune system.
+Medium 
+A harmless germ piece teaches your body 
+to fight the real one.
+Extra high 
+Immune training.
+How do vaccines work?
+Vaccines give your immune system a 
+harmless preview of a germ.
+Keep it short.
+Immune training.
+Not this short!!!
+Instruction: Keep it short.
+(b) Applications of DIAL
+No instruction
+Prompting
+Low
+High
+Medium
+Extra high
+Request: Remind me to drink water.   Instruction: Write like Shakespeare.
+Personalization
+Parental Control
+Product Policy
+Request: Tell me a scary story.   Instruction: Keep it child-safe.
+Request: Should I buy this stock?   Instruction: Do not give investment advice.
+Remember to 
+drink water and 
+stay hydrated.
+O thirsting soul, 
+let water restore thy 
+weary wits!
+Don't forget to 
+drink some water.
+Pray, forget not thy 
+water.
+Hark! Drink thy 
+water, lest thy 
+parched mind falter.
+O thirsting soul, 
+let water restore thy 
+weary wits!
+A cold hand 
+touched Mia. She 
+screamed.
+A shadow stirred 
+in the attic. Mia 
+heard a knock…
+A cold hand 
+touched her 
+shoulder in the 
+dark…
+A shadow stirred 
+in the attic. Mia 
+heard a knock…
+The noise in the 
+attic was just a cat 
+chasing a ball!
+A friendly ghost 
+waved hello and 
+asked Mia to play.
+Yes, buy this 
+stock. Its earnings 
+could rise.
+No, I cannot 
+answer.
+Possibly. 
+Earnings are 
+strong, but the 
+stock is volatile.
+Consider your 
+goals and risk 
+tolerance. Diversify.
+I can't pick stocks. 
+Compare risks and 
+fees.
+No, I cannot 
+answer.
+</>
+Figure 1: Steerable Language Models with DIAL and Applications. (a) DIAL provides fine-
+grained control over instruction adherence, allowing users to choose among responses generated at
+different adherence levels. (b) Illustrative examples of controlling adherence levels for general in-
+structions with DIAL in personalization, parental control, and adherence to company specifications.
+the desired length. More generally, fine-grained adherence control for different instructions would
+support a range of applications (Figure 1(b)). For personalization, a user could select the adherence
+level for writing-style or persona instructions according to their preferences [2, 3]. For parental con-
+trol, parents could set the adherence level for child-safety instructions to help safeguard children [4].
+A company could configure the adherence level for product-policy instructions to reflect its speci-
+fications [5, 6]. Motivated by these applications, we study “steerable language models” [7, 8] that
+provide fine-grained numerical control over adherence levels for general text instructions.
+Existing approaches for controlling adherence levels in LLMs are not jointly fine-grained, efficient,
+and scalable across general instructions. The most straightforward approach is prompting, but it
+does not reliably provide fine-grained control over the adherence level [9, 10]. In contrast, classifier-
+free guidance (CFG) [11] enables fine-grained control by computing two next-token distributions:
+one conditioned on the instruction and one unconditioned. It then combines their log probabili-
+ties to achieve the desired adherence level [12, 13]. However, this requires two forward passes per
+generated token, increasing inference cost. Activation steering provides a more efficient approach
+by editing the hidden states of a frozen LLM within a single inference pass [14–17]. Adjustable
+steering strength offers a promising way to adapt an LLM at inference time [18]. However, conven-
+tional steering methods are not fine-grained because they are fitted to labeled examples that indicate
+whether an instruction is followed, without supervision at intermediate adherence levels. Increasing
+steering strength therefore does not reliably increase adherence and can reduce fluency and coher-
+ence [19]. Moreover, these methods require fitting for each instruction, limiting scalability. Text-
+conditioned steering methods learn to steer an LLM from instruction text and support instructions
+unseen during training [20–22]. However, they are trained on labeled responses without supervision
+at intermediate adherence levels, and flow-based variants add per-token inference overhead.
+Contributions. We introduce DIAL (Distilled Instruction-Adherence Levels) to jointly achieve
+three key properties: fine-grained control, efficiency, and scalability. For fine-grained control, we
+perform CFG on a frozen LLM to provide training signals for on-policy distillation of instruction ad-
+herence at different levels (Section 3.2). For efficiency, we design a lightweight steering adapter [23]
+that uses a classifier over the LLM’s hidden states to compute a closed-form steering edit. The clas-
+2
+
+
+sifier adaptively sets the steering magnitude at each token according to the target adherence level,
+while accounting for the geometry of the LLM’s hidden states to preserve the base LLM’s response
+coherence (Section 3.3). For scalability, the classifier is text-conditioned, allowing a shared steer-
+ing adapter to support previously unseen instructions without per-instruction fitting. Furthermore,
+CFG provides training signals without requiring labeled responses, external generators, or judges,
+allowing training to extend to new instruction types using only instruction and request text.
+Empirical evaluation across multiple LLM families demonstrates the advantages of DIAL. When
+steering LLM generation toward concepts such as “Shakespeare,” DIAL achieves a better balance
+between concept expression and response fluency than existing methods. Importantly, DIAL pro-
+vides fine-grained control over concept expression, with the concept score increasing monotoni-
+cally across the range of adherence levels. To evaluate general instruction following, we construct
+SteerIF, an instruction-only dataset comprising 98, 625 instructions, including concept, persona,
+and verifiable instructions. We train a shared steering adapter for each base LLM and evaluate
+it on persona instructions, such as “Be humorous,” and verifiable instructions, such as “Respond in
+JSON.” Persona scores increase with the adherence level across LLM families, and combining steer-
+ing with prompting improves verifiable instruction following. In terms of efficiency, DIAL’s 20.6M-
+parameter steering adapter retains 96–99% of base-LLM throughput in vLLM [24] on Gemma-2-
+9B [25], while per-token inference latency approximately matches that of the base LLM.
+2
+Related Work
+We review three lines of work on steering LLMs. Guided inference is fine-grained but incurs sub-
+stantial inference overhead; activation steering is efficient, but neither fine-grained nor scalable;
+and text-conditioned control generalizes to unseen instructions, but lacks fine-grained control and
+requires labeled responses, limiting scalability. See Appendix A for details.
+Guided Inference. In diffusion models [26–28], guided inference controls how strongly a condition,
+such as a text prompt, influences the generated image. Given the prompt “a cat in the style of Van
+Gogh,” a low guidance level gives an image that only hints at the style, and a high level gives one
+that is unmistakably Van Gogh. Classifier guidance pushes each sampling step along the gradient of
+a separately trained classifier [29], while classifier-free guidance (CFG) removes this classifier by
+using the diffusion model itself as an implicit classifier [11]. In LLMs, CFG combines the next-token
+predictions with and without the instruction [12, 13]. A low guidance (i.e., adherence) level weakens
+the instruction relative to prompting, and a high level strengthens it. Related contrastive inference
+methods for LLMs improve faithfulness, instruction following, and open-ended generation [30–33].
+Because every guidance level defines a next-token distribution for any instruction, guided inference
+is fine-grained. However, CFG is not efficient, because every generated token needs two forward
+passes. This motivates guidance distillation in diffusion models, which trains a single-pass student
+conditioned on the guidance level, thereby recovering CFG at multiple levels [34]. In autoregressive
+models, CFG has been distilled into the weights only at a single level [35]. Unlike a diffusion
+model, an LLM takes only tokens and has no natural input for the guidance level. DIAL serves as a
+lightweight steering adapter that conditions the LLM on the adherence level, approximating CFG at
+multiple levels in a single pass without changing the LLM’s weights or prompt.
+Activation Steering. Activation steering offers a promising way to adapt an LLM cheaply at multi-
+ple levels [18]. It edits the hidden states of a frozen LLM in a single forward pass while leaving the
+weights unchanged, allowing the steering level to be set for each input at inference time. A com-
+mon intervention is to use a steering vector obtained from contrastive hidden states [14, 15], which
+has been used to control truthfulness [16], refusal [17], and instruction following [36]. Classifier-
+guided steering methods project the hidden state onto the half-space of a trained classifier in closed
+form [37–39], or onto the constraint set given by a first-order condition on a learned nonlinear safety
+score [40]. Geometry-aware methods rotate the state rather than translate it, preserving the hidden
+state’s norm [41–43]. These interventions are efficient, and their steering level can be varied contin-
+uously. However, they are fitted to labeled examples that either follow the instruction or do not, with
+no training at intermediate levels of adherence, and are therefore not fine-grained. Increasing the
+steering level therefore does not reliably yield a corresponding increase in adherence, and high levels
+often reduce the output fluency and coherence [19]. Moreover, each intervention is fitted to a single
+instruction, such as one concept or behavior, so each new instruction requires a new intervention.
+3
+
+
+Text-Conditioned Control. To avoid refitting for every instruction, text-conditioned methods train a
+single network that maps a text description to an intervention. HyperSteer maps a concept descrip-
+tion to a steering vector [20], FLAS integrates a description-conditioned flow [21], and UniSteer
+trains a text-conditioned flow-matching network that also covers personas and multi-instruction fol-
+lowing [22]. Their training, however, suffers from the same two problems as activation steering.
+They are fitted to labeled examples, here concept-aligned completions written by an external LLM
+or labeled datasets for each behavior, so scaling to a new kind of instruction requires collecting new
+data. These examples also either follow the instruction or do not, so the methods are never trained
+for intermediate levels of adherence and are not fine-grained. Persona Dosing partly addresses
+this for personas by fine-tuning FLAS on persona-labeled data and calibrating its flow time against
+measured persona expression [44], which requires measuring each persona, whereas DIAL learns its
+levels during training and needs no such measurement for a new instruction. Moreover, flow-based
+methods integrate a flow over several steps per token, which adds latency and limits practicality.
+To address these limitations, DIAL distills the frozen LLM’s own CFG distributions at multiple
+adherence levels into a single steering adapter. Since the teacher requires only instruction and request
+text, training can scale to new types of instructions without collecting labeled responses. The adapter
+learns to approximate the CFG-guided distribution at each target level, enabling fine-grained control
+while keeping inference cost close to that of the base LLM. DIAL thus provides a fine-grained,
+efficient, and scalable way to condition an LLM on general instructions and adherence levels.
+3
+Method: DIAL (Distilled Instruction-Adherence Levels)
+DIAL uses a text-conditioned steering adapter to control instruction adherence in a frozen LLM at
+different levels. We first define adherence levels via CFG (Section 3.1), and then describe how on-
+policy distillation trains the adapter at different adherence levels (Section 3.2). Finally, we introduce
+the adapter’s lightweight classifier-based architecture and closed-form steering edit (Section 3.3).
+3.1
+Instruction-Adherence Levels via Classifier-Free Guidance
+Let x denote a request (e.g., “How do vaccines work?”), c an instruction (e.g., “Keep it short”),
+and α > 0 an adherence level. Given a response prefix y<t, the frozen LLM yields two next-
+token distributions: πbase, conditioned on the request alone, and πprompted, conditioned on both the
+request and the instruction. For brevity, we write π·(· | y<t) and leave the conditioning on x and c
+implicit. Following CFG [12, 13], we define the teacher distribution at level α as
+πT
+α(· | y<t) ∝πbase(· | y<t)1−α πprompted(· | y<t)α.
+(1)
+For α = 1, the teacher recovers πprompted. For 0 < α < 1, it interpolates toward πbase, weakening
+the instruction’s influence. For α > 1, it extrapolates beyond πprompted, strengthening the instruc-
+tion’s influence. Thus, larger α corresponds to stronger instruction adherence, and CFG provides a
+next-token distribution at each adherence level for any instruction text, without labeled responses,
+external generators, or judges. The prompt format for each instruction type is given in Appendix B.4.
+3.2
+On-Policy Self-Distillation across Adherence Levels
+Training across Adherence Levels. We train DIAL’s steering adapter to match the CFG teacher
+distributions at different adherence levels. The student πS
+α is the frozen LLM with generation steered
+by DIAL at layer ℓ. The request x is passed to the frozen LLM, while the instruction c and adherence
+level α are passed to DIAL’s steering adapter. At each prompt and generated position, the adapter
+replaces the residual hidden state ht ∈RdLLM with an edited state h′
+t. As in guidance distillation in
+diffusion models [34], a single adapter is trained to match the CFG distributions across levels.
+For each request–instruction pair, we sample α ∼LogUniform[0.5, 2], a distribution that is sym-
+metric in log α about α = 1, where the CFG teacher recovers the prompted distribution. This range
+covers weaker and stronger instruction adherence than prompting. For 0.5 ≤α < 1, the teacher
+weakens the instruction’s influence relative to prompting, providing fine-grained intermediate train-
+ing signals between unprompted and prompted generation. Beyond α = 2, the CFG teacher’s coher-
+ence degrades (Appendix B.4), consistent with prior work [12]. We empirically found that sampling
+4
+
+
+1
+Inputs
+Request 𝑥
+Instruction 𝑐
+Sample Level 𝛼
+Weaker       Stronger
+2
+CFG Teacher
+Request 𝑥 +  
+Response Prefix 𝑦
+Request 𝑥 + Instruction 𝑐 +  
+Response Prefix 𝑦
+❄ Frozen LLM
+❄ Frozen LLM
+𝜋base
+𝜋prompted
+CFG
+𝜋
+T
+𝛼
+∝𝜋
+1−𝛼
+base
+𝜋
+𝛼
+prompted
+Remind me to 
+drink water.
+Write like 
+Shakespeare.
+3
+DIAL Student
+Request 𝑥 + Response Prefix 𝑦
+❄ Frozen LLM
++
+🔥 DIAL 
+Instruction 𝑐 + Level 𝛼
+On-Policy Loss
+𝜋
+S
+𝛼
+JSD ( 𝜋
+T
+𝛼, 𝜋
+S
+𝛼)
+Response Prefix 𝑦<𝑡
+<t
+<t
+<t
+(· | 𝑦
+(· | 𝑦
+(· | 𝑦
+<t
+<t
+<t
+4
+Hark! Drink thy 
+water,
+Request 푥+
+Response Prefix 푦<푡
+Request 푥+ Instruction 푐+
+Response Prefix 푦<푡
+Request 푥+ Response Prefix 푦<푡
+푦<푡
+!· | 푦<푡
+"
+!· | 푦<푡
+"
+!· | 푦<푡
+"
+Request 푥+
+Response Prefix 푦<푡
+Request 푥+ Instruction 푐+
+Response Prefix 푦<푡
+Request 푥+ Response Prefix 푦<푡
+푦<푡
+!· | 푦<푡
+"
+!· | 푦<푡
+"
+!· | 푦<푡
+"
+푥
+푐
+푥
+푦<푡
+푥
+푐
+푦<푡
+푥
+푦<푡
+푐
+Figure 2: DIAL’s Training Pipeline. Given a request x and an instruction c, we sample adherence
+levels. CFG defines the teacher distributions on prefixes sampled from the student (on-policy), and
+the frozen LLM steered by DIAL defines the student distributions. DIAL’s steering adapter is
+trained with a Jensen–Shannon divergence (JSD) loss across adherence levels.
+24 adherence levels per instruction–request pair worked well for training DIAL across LLM fami-
+lies. We also verify that sampling α is important for fine-grained instruction adherence levels, and
+that training on more diverse instructions works better than training longer (see Appendix D.4).
+On-Policy Self-Distillation. The student’s response distribution varies with adherence level and
+can differ from the prompted LLM’s. We therefore use on-policy self-distillation [45, 46], sampling
+student responses and computing the CFG teacher distribution at each response prefix. We minimize
+the Jensen–Shannon divergence (JSD) between teacher and student distributions per response token:
+L = E(x,c)∼D, α, y∼πS
+α
+"
+1
+|y|
+X
+t
+JSD
+ πT
+α(· | y<t), πS
+α(· | y<t)
+
+#
+,
+(2)
+where D is the distribution of training request–instruction pairs. Both distributions are restricted
+to the union of the base, prompted, and student top-64 tokens. We also add a regularization term
+to encourage stable training and generalization by penalizing large relative edits (Appendix B.4).
+Our loss ablation in Appendix D.4 suggests that JSD performs best, with forward KL performing
+substantially worse and reverse KL performing slightly worse. We refer to Appendices B.4 and B.5
+for training details and pseudocode of the full on-policy training loop across adherence levels.
+3.3
+Lightweight and Adaptive Classifier-Based Steering Adapter
+Instruction and Memory Conditioning. We design the adapter to condition each steering edit on
+the instruction and the response generated so far. We encode the instruction through the frozen LLM
+and cache its layer-ℓhidden states I. At each position, the current hidden state ht attends to I and
+a memory of the 16 most recent edited states, Mt = {h′
+t−16, . . . , h′
+t−1}:
+zt = Attnℓ(query = ht; [I; Mt]) ,
+ft = GELU(LayerNorm(Linear(zt))) .
+(3)
+Here, Attnℓreuses the frozen layer’s normalization and query, key, and value projections. The
+current state is the query, while the instruction and memory states supply the keys and values. Since
+these states come from the same LLM layer, the adapter does not require a separate text encoder
+for the instructions. Attention combines instruction and memory states, followed by a linear map,
+LayerNorm, and GELU to produce the 512-dimensional feature ft. In our experiments, a memory
+window of the 16 most recent states performed well while keeping attention cost low.
+Adaptive Classifier-Based Steering. From ft, the adapter predicts a unit direction ut ∈RdLLM,
+a threshold τt(α) ∈R, and a norm weight λt(α) ∈[0, 1]. The direction and threshold define a
+linear classifier with half-space {h : ⟨ut, h⟩≥τt(α)}. Unlike classifiers fitted separately for each
+instruction, DIAL’s classifier is generated from instruction and memory information at each token.
+5
+
+
+Rather than linearly scaling a fixed steering edit, DIAL learns the threshold and norm weight as
+functions of α. On-policy distillation provides rich supervision from the CFG teacher for learning
+steering magnitude and geometry at different adherence levels.
+The classifier (ut, τt(α)) determines whether and how much to steer the current hidden state. If ht
+lies outside the half-space, we project it onto the boundary with a minimum-norm step, following
+classifier-based steering [37–39]. We then adjust the projected state’s norm using the norm weight
+λt(α) while retaining its direction. Both operations have closed-form expressions:
+hP
+t = ht +
+
+τt(α) −⟨ut, ht⟩
+
++ ut,
+h′
+t =
+h
+λt(α) +
+ 1 −λt(α)
+ ∥ht∥
+∥hP
+t ∥
+i
+hP
+t ,
+(4)
+where [a]+ = max(a, 0). The gap [τt(α) −⟨ut, ht⟩]+ sets the projection magnitude. Thus, the edit
+depends on the current state as well as the generated classifier, rather than applying a fixed steering
+magnitude to every token. If the state already lies inside the half-space, the edit leaves ht unchanged.
+The norm weight lets the adapter interpolate between two steering geometries, which we visualize
+in Appendix B.2. At λt = 1, the edited state is the minimum-norm projection h′
+t = hP
+t [37–39].
+At λt = 0, it preserves the original norm, h′
+t = ∥ht∥hP
+t /∥hP
+t ∥, giving a rotation in the span of
+ht and ut [41–43]. Intermediate values preserve the projected direction with norm (1 −λt)∥ht∥+
+λt∥hP
+t ∥. Learning this weight allows the geometry to adapt at each token. We found that adapters
+trained for different LLM families learn different norm weights and edit magnitudes, suggesting
+that appropriate steering magnitudes and geometries depend on the base LLM (see Appendix D.3).
+DIAL’s steering adapter has 20.6M trainable parameters on Gemma-2-9B (see Appendix B.1).
+Efficient Inference. During inference, instruction and memory keys and values can be cached, so
+each token requires only a single-layer attention computation and a closed-form steering edit.
+4
+Experiments
+We evaluate DIAL when the instruction is to express a concept, adopt a persona, or satisfy a verifi-
+able requirement. We also compare its training and inference efficiency against baselines.
+Base LLMs. We train DIAL’s adapters for instruction-tuned LLMs: Gemma-2-9B [25], Qwen2.5-
+7B [47], Llama-3.1-8B [48], Phi-4-14B [49], LFM2.5-1.2B [50], and Ministral-8B [51]. These
+cover six LLM families with 1.2–14B parameters, including Transformer and hybrid architectures.
+Training Setup. We train DIAL on 14, 880 concept descriptions from Concept16k [19]. We also
+construct SteerIF, an instruction-only dataset of 98, 625 instructions covering concepts, personas,
+and verifiable and descriptive requirements, given as single or composite instructions. We train one
+shared adapter per LLM on SteerIF, denoted DIAL-IF. For both datasets, we remove exact and
+near matches to held-out evaluation instructions to assess generalization. We select a steering layer
+for each LLM and train its adapter at that layer. See Appendix B.3 for more details on dataset
+construction and to Appendix B.4 for the steered layer chosen for each LLM.
+4.1
+Controlling Concept Expression Levels
+Training and Baselines.
+We train DIAL for one epoch on 14,880 concept descriptions from
+Concept16k [19]. We use FLAS’s released Gemma-2-9B checkpoint, trained on Concept16k with
+LLM-generated labeled responses [21], whereas DIAL uses only concept descriptions. We com-
+pare with prompting, per-concept methods (LoReFT, LoRA, ReFT-r1, DiffMean, and SAE [19], SV
++ RePS [52], and S-PSR [53]), and text-conditioned methods (HyperSteer and FLAS). We also in-
+clude CFG [12, 13] for fine-grained control over concept expression, and prompting w/ level [54],
+which uses the same prompt as prompting but also asks the LLM to follow it at adherence level α,
+on a scale from 0 (ignore) to 2 (follow strongly). See Appendix C.1 for implementation details.
+Evaluation Protocol. We evaluate on AxBench’s Concept500 (Held-In) and FLAS’s 100 held-
+out concepts (Held-Out). HyperSteer’s published Held-Out score uses its own held-out concepts.
+Neither Concept500 nor the held-out concepts appear in DIAL’s training pool. Following the
+AxBench protocol, we limit responses to 128 tokens and steer DIAL at layer 20 for Gemma-2-9B.
+Per-concept methods select a steering level for each concept, while DIAL uses a fixed adherence
+level α across concepts. FLAS controls concept expression through its flow time T, with larger T
+6

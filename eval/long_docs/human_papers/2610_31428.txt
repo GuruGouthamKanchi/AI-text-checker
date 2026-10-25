@@ -1,0 +1,514 @@
+Predictable performance is suboptimal
+and what it means for model routing
+Guanhua Zhang*, Moritz Hardt
+Max Planck Institute for Intelligent Systems, Tübingen
+Tübingen AI Center
+Abstract
+Large language models (LLMs) differ in capabilities and costs, motivating routing methods
+that adaptively choose a model for each query. These methods rely on performance prediction:
+given a query, estimate whether a model will answer it correctly. Most routing methods train
+separate predictors of candidate models’ performance to guide model selection. Our work
+shows that performance prediction only beats a simple baseline when the candidate model is
+suboptimal on the task or the performance predictor adds significant capacity relative to the
+candidate model. Specifically, we take a model’s self-confidence, the probability it assigns to
+its chosen answer, as a baseline and study how much a performance predictor can improve on
+it. First, we show that any performance predictor that outperforms a model’s self-confidence
+can be used to improve the model’s loss: the predictor’s advantage transfers exactly in log loss
+through recalibration. Second, accounting for the predictor’s additional parameters, we bound
+its advantage by the model’s suboptimality plus the gain from those parameters. Third, we
+extend our theoretical results to two-model cascades, which route queries to a more capable
+model when the first model is predicted to fail. Experiments with 16 language models on
+four benchmarks show that predictors gain a larger advantage over self-confidence on more
+suboptimal models. This advantage shrinks as models improve through finetuning. Cascading
+exhibits the same two patterns: predictor-based routing offers larger gains over confidence-
+based routing for more suboptimal models, and these gains diminish after finetuning. Code is
+available at https://github.com/socialfoundations/performance-prediction.
+1
+Introduction
+Performance prediction estimates whether a model answers a query correctly (Kadavath et al.,
+2022; Shnitzer et al., 2024). These predictions can help routing systems decide when to trust an
+answer and when to call a stronger model (Geifman and El-Yaniv, 2017; Chen et al., 2024). By
+catching a weak model’s errors accurately, routing can achieve better performance at the same
+cost. But what makes a model’s errors predictable, and what does that reveal about the model?
+In this paper, we study the predictability of a model’s performance relative to a simple baseline:
+the model’s self-confidence, the probability it assigns to its chosen answer. Our key observation is
+that any predictor that beats self-confidence can improve the model by the same amount. This means that
+*Corresponding author: guanhua.zhang@tuebingen.mpg.de
+1
+arXiv:2610.31428v1  [cs.LG]  22 Oct 2026
+
+
+0.0
+0.5
+1.0
+1.5
+0.0
+0.5
+1.0
+1.5
+r=0.98, p+ <0.001
+WinoGrande
+0
+1
+2
+0
+1
+2
+r=0.98, p+ <0.001
+CommonsenseQA
+0
+1
+2
+0.0
+0.2
+0.4
+0.6
+r=0.93, p+ <0.001
+GSM8K
+0.0
+0.5
+1.0
+0.0
+0.1
+r=0.65, p+ <0.001
+MMLU-Pro
+Excess predictability
+E (nats)
+Empirical suboptimality ̂δ (nats)
+Released
+Finetuned
+Base
+Instruction-tuned
+Linear fit
+Figure 1: Predictors have a larger advantage over self-confidence on more suboptimal models. Each point
+is a released (orange) or finetuned (blue) model. Empirical suboptimality is the gap to the best observed
+answer log loss on each task. Excess predictability E is the reduction in correctness log loss achieved by
+a separately trained 4B predictor over self-confidence. Colors identify training stage; shapes identify the
+release type. Lines are least-squares fits; r is Pearson correlation and p+ its one-sided p-value for positive
+correlation. See Section 3.4.1 for experimental details.
+a predictor’s advantage over self-confidence is limited by the model’s room for improvement. We
+formalize and test this connection, and extend the analysis to routing.
+1.1
+Our Contributions
+Suboptimality bounds excess predictability. We connect performance prediction and model
+improvement through recalibration: replacing the model’s confidence in its chosen answer with
+the predictor’s estimate, and normalising the rest. We call the predictor’s reduction in correctness
+log loss relative to self-confidence excess predictability. Recalibration reduces the model’s answer
+log loss by exactly the same amount (Proposition 1). We assume a scaling floor: the lowest answer
+loss achievable on a fixed task at each parameter budget (Assumption 1). The recalibrated model
+cannot beat the floor at the combined parameter budget of the model and predictor. This gives
+the bound (Theorem 1)
+excess predictability ≤suboptimality + capacity gain .
+Here, suboptimality is the model’s gap to the floor at its own budget. The capacity gain is the
+decrease in the floor from adding the predictor’s parameters.
+Greater excess predictability comes with greater suboptimality. Our upper bound does
+not imply that more suboptimal models are necessarily easier to predict beyond self-confidence.
+Empirically, however, we observe a positive association between the two. We conduct experiments
+on WinoGrande, CommonsenseQA, GSM8K, and MMLU-Pro, using 16 language models from eight
+families, ranging from 7 to 12B parameters. Using the gap to the best observed answer loss on
+each task as a proxy for suboptimality, we find a positive association with excess predictability on
+all four tasks, with Pearson correlations of 0.98, 0.98, 0.93, and 0.65, respectively (Figure 1). We
+also finetune the models, retaining the 59 model-task pairs whose development accuracy improves.
+2
+
+
+Answer loss falls in all 59 retained pairs and excess predictability falls in 55 (Figure 2), despite
+training separate 4B predictors for the released and finetuned models.
+Suboptimality bounds error capture beyond confidence routing. We extend our analysis
+to two-model cascades, where a router decides when to escalate a query to a stronger model.
+We compare a learned router with confidence routing, which escalates the weak model’s lowest-
+confidence queries, at the same escalation rate. Any router that captures more weak-model errors
+can be converted into a predictor with positive excess predictability, even if the router does not
+explicitly estimate correctness (Lemma 1). This bounds the additionally captured weak-model
+errors by weak-model suboptimality and the capacity gain from the router’s added parameters
+(Theorem 2). The cascade accuracy gain equals the additional weak-model errors captured minus
+the additional strong-model errors encountered. The same bound applies to the cascade accuracy
+gain if the learned router encounters at least as many strong-model errors as confidence routing
+(Corollary 2).
+More suboptimal models have larger routing advantages. Using the same models and
+predictors, we compare predictor-based routing with confidence routing at equal escalation rates.
+We measure the routing advantage as the gain in cascade accuracy, averaged over escalation rates.
+Models with greater empirical suboptimality tend to have larger routing advantages on all four
+tasks, with Pearson correlations between 0.66 and 0.91 (Figure 4). This advantage shrinks after
+finetuning in 53 of the 59 retained pairs (Section 4.3).
+Main takeaway. Together, these results suggest three sources of predictability: the model’s self-
+confidence, its suboptimality, and the predictor’s added capacity. Improving the underlying model
+generally reduces the additional value of learned prediction and routing beyond self-confidence.
+2
+Related Work
+Performance prediction. Performance predictors, also called assessors, estimate whether a system
+will succeed on a given input (Hernández-Orallo et al., 2022; Zhou et al., 2022). They use model
+outputs (Yao and Koller, 2024), reference evaluations and question features (Pacchiardi et al.,
+2024), follow-up queries (Sam et al., 2025), or internal activations before the model answers
+(Moreno Cencerrado et al., 2026). Kapoor et al. (2024) finetune language models on graded
+answers to predict their own correctness and that of other models. Xiao et al. (2026) find that
+models predict their own correctness no better than unrelated models do, and train predictors
+that work across models. Beyond binary correctness, Hsu et al. (2025) estimate continuous quality
+scores and uncertainty intervals for free-form generation. At the benchmark level, studies forecast
+performance from training compute (Owen, 2024) or scores on other benchmarks (Ruan et al.,
+2024). Others estimate benchmark scores from a small set of evaluated examples (Maia Polo et al.,
+2024; Zhang et al., 2025a). We study where predictability on individual inputs comes from, using
+self-confidence as the baseline and correctness log loss to measure a predictor’s advantage.
+Model routing and cascading. Performance predictions help routing systems balance cost and
+performance by choosing which models to use for each query (Ong et al., 2025). We use routing
+broadly to include cascading, where a cheaper model answers first and a router uses its output
+to decide whether to call a stronger model (Chen et al., 2024; Dekoninck et al., 2025). Routers
+learn which model to use from preference data, as in RouteLLM (Ong et al., 2025), benchmark
+3
+
+
+results (Shnitzer et al., 2024; Mohammadshahi et al., 2024), or reward-model scores (Lu et al.,
+2024). Some predict query difficulty to guide model selection (Ding et al., 2024). RouterBench
+provides a common framework for evaluating routing methods (Hu et al., 2024). In cascades,
+routing rules often escalate to a larger model when the first model has low confidence or gives
+inconsistent answers (Varshney and Baral, 2022; Yue et al., 2024; Chuang et al., 2025). Learned
+routing rules use token-level uncertainty and model embeddings (Gupta et al., 2024) or verify
+the first model’s answer before deciding whether to escalate (Aggarwal et al., 2024). Wang et al.
+(2024a) also improve cascades by training the first model to account for deferral. Dekoninck et al.
+(2025) derive an optimal cascading policy and prove that an existing routing policy is optimal;
+both depend on good estimates of answer quality. Jitkrittum et al. (2023) show when confidence
+alone gives an optimal deferral rule and when a learned rule (Narasimhan et al., 2022) is needed.
+We bound how many more of the first model’s errors a learned router can catch than confidence
+routing under the same escalation rate.
+Confidence and selective prediction. Language models can estimate whether their answers
+are correct (Kadavath et al., 2022) through stated confidence (Tian et al., 2023; Xiong et al., 2024) or
+agreement among sampled answers (Wang et al., 2023; Kuhn et al., 2023). Learned verifiers score
+candidate solutions to select better answers (Cobbe et al., 2021; Lightman et al., 2024), and the
+gap between generation and verification abilities is linked to self-improvement (Song et al., 2025).
+Confidence also guides decisions about when to answer. Selective prediction uses it to decide
+when to abstain (Chow, 1970; Geifman and El-Yaniv, 2017), while learning to defer also considers
+whether another expert will be correct (Mozannar and Sontag, 2020). For selective prediction,
+both calibration and how confidence ranks inputs matter (Rabanser and Papernot, 2025). Inputs
+with the same confidence can still differ in their probability of correctness; grouping loss measures
+this variation (Kull and Flach, 2015; Perez-Lebel et al., 2023). Melo et al. (2026) estimate grouping
+loss and excess decision risk to guide LLM cascades, and find that grouping loss decreases with
+model scale and instruction tuning. Our experiments examine how gains over confidence vary
+with answer-loss suboptimality across models of similar size and before and after task-specific
+finetuning.
+Calibration and loss minimization. Language models can produce informative but poorly
+calibrated risk scores (Cruz et al., 2024). Post-hoc calibration adjusts confidence to match observed
+correctness (Platt, 2000; Guo et al., 2017; Kumar et al., 2019).
+Multicalibration extends this
+requirement to identifiable groups (Hebert-Johnson et al., 2018), including those defined by LLM
+embeddings and self-annotations (Detommaso et al., 2024). Loss minimization and multicalibration
+theory show how correcting predictable errors in probability estimates can reduce loss, including
+squared loss and cross-entropy (Gopalan et al., 2022, 2023; Błasiok et al., 2024). We show that any
+reduction in correctness log loss over self-confidence yields an equal reduction in answer log loss.
+Under our assumptions for combining models and counting parameters, this gain is bounded by
+the original model’s suboptimality plus the improvement possible with the added parameters.
+3
+Predictable Performance is Suboptimal
+We show that gains over self-confidence transfer exactly to lower answer loss and are bounded by
+model suboptimality and added predictor capacity. Proofs are deferred to Appendix A.1.
+4
+
+
+3.1
+Problem Definition
+Let (X, Y) be drawn from a fixed population, where X ∈X is the query and Y ∈Y = {0, . . . , K −
+1} is the answer. A model f ∈F is defined as a conditional probability mass function f (y|x). Its
+point prediction is ˆf (x) = arg maxy f (y | x), with ties broken by a fixed rule. We score any model
+f by its answer loss LY( f ) = E[−log f (Y | X)].
+We define the correctness indicator Z = 1{Y = ˆf (X)} ∈{0, 1}. A performance predictor g ∈G
+is defined as a conditional probability mass function g(z | x) that may read f’s output on x. We
+require full support, g(z | x) > 0, and score g by its correctness loss LZ(g, f ) = E[−log g(Z | X)].
+The model’s self-confidence provides a natural baseline: any model f induces a performance
+predictor fZ with fZ(1 | x) = f ( ˆf (x) | x). We abbreviate LZ( f ) := LZ( fZ, f ).
+The goal of performance prediction is to minimize LZ(g, f ), where LZ( f ) serves as a baseline.
+We call LZ( f ) −LZ(g, f ) the excess predictability achieved by g relative to f’s self-confidence; a
+performance predictor is effective when its excess predictability is positive.
+3.2
+Any Effective Performance Predictor Improves the Model
+We use g to change how much probability f assigns to its chosen answer, while preserving the
+relative probabilities of the other answers.
+Assuming fZ(0 | x) > 0, define the alternative distribution and the recalibrated model by
+fAlt(y | x) = f (y | x)/ fZ(0 | x),
+y̸ = ˆf (x),
+(1)
+Cg( f )(y | x) =
+(
+g(1 | x)
+y = ˆf (x),
+g(0 | x) fAlt(y | x)
+y̸ = ˆf (x) .
+(2)
+Thus, Cg( f ) assigns mass g(1 | x) to ˆf (x) and distributes the remaining mass among the other
+answers in their original proportions. Since only the correctness probabilities change, the following
+proposition transfers the predictor’s improvement exactly to the answer loss.
+Proposition 1 (Exact transfer). For any f with LY( f ) < ∞and any performance predictor g,
+LY
+ Cg( f )
+ = LY( f ) −
+ LZ( f ) −LZ(g, f )
+
+.
+(3)
+Recalibrating with an effective g strictly lowers the answer loss by exactly its excess predictabil-
+ity over f’s self-confidence, LZ( f ) −LZ(g, f ) > 0. Recalibration is also hard to beat: any model
+with lower answer loss than Cg( f ) must predict f’s correctness better than g, or predict better
+among the alternative answers when f is wrong (Proposition 2 in Appendix A.2).
+3.3
+Predictable Performance is Suboptimal
+For parameter budgets P, Q ≥0, let FP ⊆F denote the models with at most P parameters, and
+let GQ ⊆G denote the performance predictors with at most Q parameters. Both sets are therefore
+nested in their respective budgets.
+We allow models in F to use performance predictors and routers as components, and apply
+the same convention to predictors in G. We count all parameters, including frozen weights, but
+5
+
+
+count shared parameters only once. The fixed arithmetic and decision operations used below add
+no parameters. Thus, recalibrating f ∈FP with g ∈GQ gives a model Cg( f ) ∈FP+Q. The loss
+floor and suboptimality statements below apply to the full set F on the fixed task distribution of
+(X, Y).
+Empirical neural scaling laws suggest that the best loss achievable follows a predictable frontier
+as model size increases (Kaplan et al., 2020; Hoffmann et al., 2022). We idealize this as follows.
+Assumption 1 (Scaling floor). For each budget P, some model f ∗
+P ∈FP achieves the lowest loss L∗
+Y(P)
+in FP:
+LY( f ) ≥L∗
+Y(P) = LY( f ∗
+P)
+for every f ∈FP.
+(4)
+The floor L∗
+Y(P) is non-increasing in P, since a larger budget includes all models available at a
+smaller budget. Relative to this floor, define the suboptimality at budget P of f ∈FP as
+δP( f ) := LY( f ) −L∗
+Y(P) ≥0.
+(5)
+The experiments use the gap to the best observed loss in a cohort of similar-size models as a proxy
+for this suboptimality (Section 3.4.2).
+The recalibrated model uses at most P + Q parameters, so its loss cannot fall below L∗
+Y(P + Q).
+Together with exact transfer, this limits how much g can improve on f’s self-confidence.
+Theorem 1 (Excess predictability bounded by suboptimality and added capacity). Under Assump-
+tion 1, every f ∈FP with LY( f ) < ∞and every g ∈GQ satisfy
+LZ( f ) −LZ(g, f ) ≤
+
+L∗
+Y(P) −L∗
+Y(P + Q)
+ + δP( f ) .
+(6)
+Equation 6 separates two sources of excess predictability. For the loss-optimal model f ∗
+P, a
+predictor can recover at most the scaling gain L∗
+Y(P) −L∗
+Y(P + Q), the decrease in the loss floor
+from adding Q parameters. A model farther from the floor increases this recoverable excess
+predictability by at most its suboptimality δP( f ). Any improvement over f’s self-confidence that
+exceeds the scaling gain therefore certifies δP( f ) > 0. In particular, if the performance predictor
+adds no parameters, then strictly positive excess predictability implies δP( f ) > 0.
+Additional results.
+First, under diminishing returns, a predictor much smaller than the model
+has excess predictability bounded by the model’s suboptimality plus a small capacity correction
+(Corollary 1, Appendix A.3). Second, suboptimality does not determine excess predictability:
+lowering answer loss does not necessarily lower correctness loss. Models can have the same maxi-
+mum excess predictability yet differ in suboptimality because they assign different probabilities to
+the answers they do not choose (Proposition 3, Appendix A.4).
+3.4
+Experiments
+Motivated by the preceding bound on excess predictability, we study two empirical questions on
+16 language models across four benchmarks. Do more suboptimal models exhibit greater excess
+predictability over self-confidence? Does task-specific finetuning reduce this advantage?
+6
+
+
+3.4.1
+Setup
+Models and tasks. We evaluate 16 base and instruction-tuned models from eight families, with
+7 to 12B parameters. We select four tasks, WinoGrande (Sakaguchi et al., 2020), CommonsenseQA
+(Talmor et al., 2019), GSM8K (Cobbe et al., 2021) and MMLU-Pro (Wang et al., 2024b). WinoGrande and
+CommonsenseQA are evaluated by scoring answer options, and GSM8K and MMLU-Pro are evaluated
+by generating answers. The binary task WinoGrande is a sanity check: predicting a fixed model’s
+correctness is equivalent to predicting the answer. Appendix B.1 lists model releases and data
+splits, shared across models.
+Evaluation. We use five-shot evaluation with lm-eval-harness (Gao et al., 2024). The answer
+distribution f (· | x) comes from normalized option likelihoods on the first two tasks and answer
+frequencies from 128 sampled solutions per question on the generation tasks. We select the
+highest-probability answer ˆf and use its probability as self-confidence. On test questions, we
+measure answer log loss LY( f ) and correctness log loss LZ( f ); cascades are evaluated by accuracy.
+Appendix B.2 details scoring, sampling, answer extraction, and probability estimation.
+Finetuning. We use LoRA (Hu et al., 2022) to finetune on gold answers for the option-
+scoring tasks and on reasoning traces by Qwen3.5-122B-A10B for the generation tasks, selecting
+checkpoints on development performance. Our experiment design is built upon the idea that
+task-specific finetuning reduces suboptimality. Therefore, for each task, we consider all models
+whose development accuracy does not improve after finetuning to be anomalous and remove the
+corresponding model pairs from the analysis. This leaves 16, 16, 14, and 13 model pairs for the
+respective tasks. Appendix B.3 gives training and retention details.
+Suboptimality. For each task, let C contain the released and finetuned versions of the retained
+models. We use their best observed answer loss as a proxy for the loss floor at similar model sizes:
+bδ( f ) = LY( f ) −min
+h∈C LY(h).
+(7)
+This reference is fixed for all models, so changes in empirical suboptimality equal changes in
+answer loss; changing the reference shifts all gaps equally and leaves correlations unchanged.
+Performance predictor. We train a separate Qwen3-Embedding-4B predictor (Zhang et al.,
+2025b) for each model, task, and finetuning stage. Its input contains the question, the model’s final
+answer, option probabilities or sampled-answer frequencies, and, for generation tasks, a sampled
+reasoning trace ending in the majority answer. A linear head on the embedding corrects the self-
+confidence logit; we train the head and LoRA adapters from a Platt-calibrated initialization (Platt,
+2000). We fit predictors on 85% of the development set and select the checkpoint and seed with
+lowest correctness loss on the remaining 15%. On the test set, excess predictability is
+E( f ) = LZ( f ) −LZ(g, f ).
+(8)
+Appendix B.4 gives the architecture and training details.
+3.4.2
+Results
+Greater excess predictability comes with greater suboptimality. Figure 1 shows a positive
+correlation between empirical suboptimality and excess predictability across all four tasks. We plot
+7
+
+
+0.0
+0.5
+1.0
+1.5
+0.0
+0.5
+1.0
+1.5
+14/16 reduced
+r=0.99, p+ <0.001
+WinoGrande
+0
+1
+2
+0
+1
+2
+16/16 reduced
+r=0.99, p+ <0.001
+CommonsenseQA
+0.0
+0.5
+1.0
+0.0
+0.2
+0.4
+12/14 reduced
+r=0.78, p+ <0.001
+GSM8K
+0.0
+0.2
+0.4
+0.6
+0.00
+0.05
+0.10
+0.15
+13/13 reduced
+r=0.49, p+ =0.044
+MMLU-Pro
+Excess predictability
+reduction ΔE (nats)
+Suboptimality reduction Δ̂δ (nats)
+Base
+Instruction-tuned
+Linear fit
+Figure 2: Finetuning reduces excess predictability in 55 of 59 model-task pairs. Each point compares
+one released model with its selected finetuned version; both axes show released minus finetuned values.
+∆bδ is the reduction in answer log loss, and ∆E is the reduction in excess predictability. Points above zero
+have lower excess predictability after finetuning; counts report these pairs. Suboptimality decreases in all
+59 pairs. Shapes identify the release type; lines are least-squares fits; r is Pearson correlation and p+ its
+one-sided p-value for positive correlation.
+released and finetuned models together because the relationship concerns a model’s suboptimality,
+regardless of how it was trained. Appendix C.2 shows the two groups separately; the association
+also holds among released models alone.
+The association is stronger on the simpler tasks,
+WinoGrande and CommonsenseQA, with Pearson correlations of 0.98 for both; on WinoGrande this
+is the expected sanity-check outcome (Section 3.4.1). On the generation-based tasks, GSM8K and
+MMLU-Pro, the correlations are 0.93 and 0.65, respectively. The weaker association on MMLU-Pro
+may partly reflect variation in alternative loss: models can differ in answer loss without differing
+in excess predictability (Appendix A.4).
+0
+200
+400
+600
+Finetuning step
+0.35
+0.45
+0.55
+0.65
+Log loss (nats)
+Answer loss LY(f)
+Self-confidence LZ(f)
+4B predictor LZ(g,f)
+Figure 3: Answer and correctness losses
+during finetuning of Llama-3.1-8B on
+CommonsenseQA. Shading shows excess pre-
+dictability E( f ); predictor loss averages
+three seeds.
+Finetuning reduces excess predictability. Excess pre-
+dictability falls in 55 of the 59 retained model-task pairs
+after finetuning (Figure 2): 14 of 16 on WinoGrande, all
+16 on CommonsenseQA, 12 of 14 on GSM8K, and all 13 on
+MMLU-Pro. The four exceptions have relatively small re-
+ductions in suboptimality, indicating that finetuning im-
+proves their answer loss only modestly. Note that we
+train a new predictor for each finetuned model, yet its
+gain over self-confidence still shrinks. Larger reductions
+in suboptimality tend to accompany larger reductions in
+excess predictability, with Pearson correlations of 0.99,
+0.99, 0.78, and 0.49 in task order.
+During finetuning of Llama-3.1-8B on CommonsenseQA,
+self-confidence catches up with separately retrained pre-
+dictors: excess predictability falls from 0.107 to 0.004 nats (Figure 3). Appendix B.3 gives the
+trajectory setup.
+8
+
+
+Predictor capacity. We compare how much excess predictability 0.6B, 4B, and 8B predictors
+capture on the same models (Appendix C.3). Larger predictors generally capture more: the
+0.6B predictor adds little beyond Platt-calibrated self-confidence, while the 4B and 8B predictors
+generally improve on it. Our main finding holds at all three predictor sizes: finetuning reduces
+mean excess predictability on every task. For the 4B predictor, mean gains over Platt-calibrated
+self-confidence also decrease after finetuning on every task (Appendix Figure 9).
+4
+Suboptimality Bounds Cascading
+In a cascade, a router decides which queries to send from a weak model to a stronger model.
+We compare a learned router with the weak model’s self-confidence at the same escalation rate.
+Cascades are judged by accuracy at that rate, so this section bounds error rates rather than log
+loss. The key connection is that a router that finds more weak-model errors also supplies a better
+performance predictor. Proofs are deferred to Appendices A.5–A.7.
+4.1
+Cascading Setup
+Let f1 ∈FP1 and f2 ∈FP2 be the weak and strong models, with P1 < P2 and LY( f1) < ∞. For
+i = 1, 2, write Zi = 1{Y = ˆfi(X)} and ϵi(x) = Pr(Zi = 0 | X = x) for correctness and the actual
+error probability. The weak model estimates its error probability by f1,Z(0 | x) = 1 −f1( ˆf1(x) | x),
+assumed strictly between zero and one almost surely.
+A budget-Q router assigns a score r : X →R using at most Q additional parameters beyond
+f1. At escalation rate ρ ∈[0, 1], we escalate the highest-scoring ρ fraction of queries to f2, breaking
+ties uniformly at random. Its routing decision Br,ρ(x) is one for escalation and zero for keeping f1’s
+answer. Self-confidence routing applies the same rule to f1,Z(0 | x), giving Bf,ρ. At a fixed rate,
+abbreviate these decisions as Br, Bf , with E[Br] = E[Bf ] = ρ, and set u = Br −Bf .
+Writing Err( f ) for a model’s error rate, the difference between the two cascades decomposes as
+Err( fcas,Br) −Err( fcas,Bf ) = −
+E[uϵ1(X)]
+|
+{z
+}
+additional weak errors captured
++
+E[uϵ2(X)]
+|
+{z
+}
+additional strong errors encountered
+.
+(9)
+A router can improve on confidence by capturing more weak-model errors, encountering fewer
+strong-model errors, or both. We first bound the weak-error contribution, then state when this
+also bounds the cascade advantage.
+4.2
+From Performance Prediction to Cascade Bounds
+At a fixed escalation rate, Bf escalates the lowest-confidence ρ fraction of queries and therefore
+maximizes the predicted weak errors captured, E[Bf f1,Z(0 | X)]. Thus E[u f1,Z(0 | X)] ≤0. A
+router that captures more actual errors must therefore identify where self-confidence misestimates
+their probability:
+E[uϵ1(X)] = E[u f1,Z(0 | X)] + E[u(ϵ1(X) −f1,Z(0 | X))]
+≤E[u(ϵ1(X) −f1,Z(0 | X))].
+(10)
+9

@@ -1,0 +1,547 @@
+SphereLab Technical Report
+RETHINKING SEQUENCE COMPRESSION WITH
+TEST-TIME REGRESSION
+Sihan Yang1
+Jie Huang2
+Hanxuan Li1
+Yifan Guo1
+Weigao Sun3
+Yiran Zhong3
+Weiyang Liu1,*
+1The Chinese University of Hong Kong
+2Independent Researcher
+3Token Foundry, Alibaba Group
+*Corresponding author
+spherelab.ai/ttr-compressor
+"
+
+ 
+	"	
+ 
+
+
+
+
+
+
+	
+
+
+
+	
+	
+
+
+
+
+!
+
+
+ 
+   
+
+
+
+!
+
+
+
+
+
+
+	
+	
+
+
+
+Pooling
+Projection
+Fixed channel map at each position
+TTR-Compressor
+Fit all tokens jointly
+tokens
+weights
+x₁
+⊙
+α₁
+x₂
+⊙
+α₂
+x₃
+⊙
+α₃
+Σ
+h
+Channel-wise aggregation without interaction
+tokens
+weights
+x₁
+×
+W₁
+x₂
+×
+W₂
+x₃
+×
+W₃
+Σ
+h
+X
+Regression
+joint solve
+Closed-form
+solution
+(a) Comparison of three sequence compression paradigms
+Block-wise sparse attention
+Blocks
+Compress
+Retrieval keys
+Top-k
+q
+Attend to selected blocks
+Visual token merger
+Image
+ViT
+Visual tokens
+Compress
+LLM
+Fewer input tokens
+ℎ⋆= arg min
+𝒉∈$! )
+%&'
+(
+ℒ))* ℎ; 𝑥% + 𝜆
+2 ‖ℎ‖
+ℎ= )
+%&'
+(
+W%𝑥%
+ℎ= )
+%&'
+(
+αₜ ⊙ 𝑥%
+h⋆
+(b) Applications and empirical comparison
+RULER Retrieval Accuracy
++
++
+Multimodal Understanding Score
+Figure 1: Overview of TTR-Compressor. (a) Unlike pooling and projection, which process tokens inde-
+pendently, TTR-Compressor fits all tokens jointly and thereby captures the interplay among them. (b) TTR-
+Compressor outperforms existing methods on both block-wise sparse attention and visual token merging.
+ABSTRACT
+Sequence compression is a fundamental operation and a critical information bot-
+tleneck in efficient language and multimodal models, and yet prevailing ap-
+proaches based on pooling or learned projections remain underperforming. We
+revisit sequence compression through the lens of test-time regression: input tokens
+define a regression problem whose fitted coefficients form the compressed repre-
+sentation. Importantly, the regression problem is learned end-to-end via back-
+propagation, while its coefficients are computed efficiently in closed form during
+the forward pass. This leads to TTR-Compressor, a general alternative to conven-
+tional pooling and projection-based compression. We evaluate TTR-Compressor
+as the compressor for block-wise sparse attention and the visual token merger
+for multimodal large language models. On block-wise sparse attention, TTR-
+Compressor improves RULER performance over attention-based compressors by
+a large margin. For visual token merging, it consistently outperforms the stan-
+dard MLP merger and matches its performance with 55.6% fewer visual tokens.
+These results establish test-time regression as an effective primitive for sequence
+compression in efficient language and multimodal models.
+1
+INTRODUCTION
+Sequence compression is a ubiquitous operation in modern efficient large model architectures (Qwen
+Team, 2026b; DeepSeek-AI, 2026), and yet remains surprisingly underexplored.
+For example,
+block-wise sparse attention compresses each token block into a summary vector used to score and
+1
+arXiv:2610.31574v1  [cs.LG]  22 Oct 2026
+
+
+SphereLab Technical Report
+select relevant blocks (Jiang et al., 2024; Lu et al., 2025; Yuan et al., 2025), while multimodal large
+language models (MLLMs) merge neighboring visual features into compact tokens before feeding
+them into the language backbone (Wang et al., 2025; Bai et al., 2025; Team et al., 2026a). In both
+settings, the compressor acts as a critical information bottleneck. Once information is discarded,
+it cannot be recovered downstream. One would expect compression to be a carefully designed ar-
+chitectural component. However, most models rely on simple mechanisms, such as parameter-free
+pooling, learned projections over concatenated tokens, or at best, attention-weighted pooling.
+We argue that these default compressors share a fundamental structural limitation, i.e., they aggre-
+gate tokens using weights that do not account for inter-token relationships. Mean pooling uses
+uniform weights, linear projection uses fixed position-dependent weights, and attention-weighted
+pooling scores each token independently. As a result, redundant tokens can reinforce one another,
+while distinctive information is diluted. From a statistical perspective, these methods primarily
+exploit first-order token statistics while ignoring second-order inter-token correlations, the very
+structure that reveals which information is redundant and which is distinctive.
+We introduce a fundamentally different compression strategy. Rather than asking which weighted
+average best summarizes a set of tokens, we let the tokens define a regression problem and take its
+fitted coefficients as the summary. Specifically, our proposed TTR-Compressor, constructs a self-
+supervised ridge-regression problem directly from the input tokens, requiring no external labels,
+and uses its closed-form solution as the compressed representation. This formulation creates a nat-
+ural division: the outer training loop meta-learns which regression problem produces task-useful
+representations, while the inner closed-form solution determines how that problem should be fitted
+to each input. The key distinction from conventional pooling and projection arises from the Gram
+matrix in the regression solution. By explicitly capturing inter-token correlations, TTR-Compressor
+fits correlated tokens jointly, so redundant evidence has diminishing rather than purely additive in-
+fluence. This input-adaptive behavior cannot be reproduced by a fixed projection or additive token
+combination. Moreover, learning the regularizer removes the need for ridge hyperparameter tuning
+in large-scale pretraining. Because the compression window is typically smaller than the channel
+dimension (i.e., T < d), we solve the dual problem with an efficient T × T Cholesky factorization.
+Thus, TTR-Compressor incurs minimal overhead and introduces only 2d learnable parameters per
+compressor, making it an effective drop-in replacement for sequence compression.
+We evaluate TTR-Compressor on two applications that impose fundamentally different requirements
+on compression. In block-wise sparse attention, the compressed summary must act as a faith-
+ful retrieval key. In this setting, TTR-Compressor consistently outperforms traditional baselines
+on RULER (Hsieh et al., 2024) retrieval tasks, surpassing sophisticated attention-based compres-
+sors (Hu et al., 2026) by a considerable margin. In visual token merging, by contrast, the compressed
+summary must preserve a faithful representation. Here, TTR-Compressor consistently outperforms
+the widely used MLP merger across diverse compression ratios, and achieves comparable perfor-
+mance with 55.6% fewer visual tokens. Our contributions are summarized below:
+• A novel compression framework. We introduce a test-time regression framework for sequence
+compression, reframing token summarization as an instance-adaptive optimization problem.
+• A practical operator. We derive an efficient dual closed-form solution and eliminate hyperpa-
+rameter tuning, making TTR-Compressor fully practical and scalable for large-scale pretraining.
+• Empirical effectiveness. As a drop-in component in large models, TTR-Compressor consistently
+outperforms conventional baselines in both block-wise sparse attention and visual token merging.
+2
+RELATED WORK
+Sequence compression. Compressing a sequence of tokens into a single vector is a fundamen-
+tal operation across modern architectures, with applications ranging from multimodal token reduc-
+tion (Bolya et al., 2022; Li et al., 2023; Yao et al., 2024; Cha et al., 2024; Chu et al., 2024) to
+block-wise sparse attention (Jiang et al., 2024; Lu et al., 2025; Gao et al., 2024; Lai et al., 2025).
+Existing compression operators largely fall into three paradigms: (1) parameter-free pooling, such
+as mean pooling; (2) concatenation followed by learned projection; and (3) attention-based com-
+pression, which summarizes tokens via attention-weighted averaging (Mohtashami & Jaggi, 2023;
+Yang et al., 2025b). A fundamental limitation of these families is that they compute token combi-
+nations without explicitly accounting for the inter-token correlations. In contrast, TTR-Compressor
+2
+
+
+SphereLab Technical Report
+derives its representation as the solution to a linear system whose Gram matrix directly encodes
+these correlations, providing an expressive, drop-in replacement for the operators above.
+Test-time regression and test-time training. The idea of adapting part of a network on each input
+at inference time dates back to fast-weight programmers (Schmidhuber, 1992; Schlag et al., 2021)
+and was revived as test-time training (TTT), first for robustness under distribution shift (Sun et al.,
+2020) and then as sequence-modeling layers whose hidden states are small models updated by gra-
+dient descent on a self-supervised loss (Sun et al., 2024; Behrouz et al., 2026b;a; Han et al., 2026).
+In-Place TTT (Feng et al., 2026) further extends this paradigm by directly adapting the existing
+MLP projection weights of pretrained Transformers. A parallel line of work reinterprets linear at-
+tention and its descendants (e.g., DeltaNet (Yang et al., 2024), Gated DeltaNet (Yang et al., 2025c),
+Longhorn (Liu et al., 2025), Titans (Behrouz et al., 2026b)) as online regression: each layer main-
+tains a key-to-value regressor that is refined with one gradient or delta-rule step per token and read
+out by the query. MesaNet (von Oswald et al., 2026) pushes the inner optimization to convergence,
+solving the problem at every time step with conjugate gradients, while LaCT (Zhang et al., 2026)
+updates fast weights over large, unordered chunks to improve hardware utilization.
+TTR-Compressor differs from these methods in two fundamental ways. First, because compression
+operates independently on small, disjoint blocks without cross-block dependencies, the regression
+admits an efficient, exact closed-form solution via a single T × T dual solve. This avoids both iter-
+ative gradient-based inner optimization (as in TTT, ViT3, In-Place TTT, and MesaNet) and single-
+step approximations (such as delta-rule updates). Second, rather than using test-time regression to
+produce input-dependent model weights (Bertinetto et al., 2018; Sun et al., 2020) or a fast-weight
+memory that is subsequently queried (Schlag et al., 2021; Yang et al., 2025c; Behrouz et al., 2026b),
+we use regression to directly yield a representation of a token block. Specifically, the fitted coeffi-
+cients themselves serve as the compressed representation (e.g., a visual token or a retrieval key).
+3
+JOINT SEQUENCE COMPRESSION VIA TEST-TIME REGRESSION
+We introduce TTR-Compressor, a sequence compression operator based on test-time regression, as
+shown in Figure 2(a). Given a sequence of token representations, TTR-Compressor constructs a
+regression problem from the tokens and uses its fitted coefficients as the compressed representation.
+We first present the regression formulation of compression and specify its construction, then derive
+an efficient solution and describe how TTR-Compressor is learned end-to-end within a model.
+3.1
+COMPRESSION AS TEST-TIME REGRESSION
+We formulate sequence compression as ridge regression (Hoerl & Kennard, 1970). The tokens in a
+sequence provide regression observations, and the fitted regression coefficients serve as a compact
+representation of that sequence. The regression objective encourages this representation to capture
+the relationships among tokens, while regularization controls the magnitude of the fitted coefficients.
+Given a sequence X = [x1, . . . , xT ]⊤∈RT ×d, our goal is to compress its T token representations
+into a single vector h ∈Rd. We associate each token with a regression key kt ∈Rd and a scalar
+target vt ∈R, and define the compressed representation as:
+h⋆= arg min
+h∈Rd
+1
+2
+T
+X
+t=1
+ωt
+ k⊤
+t h −vt
+2 + λ
+2 ∥h∥2
+2,
+(1)
+where ωt ≥0 determines the contribution of each token and λ > 0 controls regularization. h⋆sum-
+marizes the sequence by fitting the key-target relationships across its tokens. The regression target vt
+is meta-learned through the task loss, while the regression itself is constructed and solved for each
+input sequence during both training and inference. Overall, we are solving a bi-level optimization,
+where the outer objective is the task loss that finds the task-useful target vt, and the inner objective
+is the test-time regression Eq. 1 that solves the compressed representation h⋆. Here, test-time refers
+to fitting these input-specific coefficients; the learned model parameters remain fixed at inference.
+3.2
+CONSTRUCTING THE REGRESSION PROBLEM
+Keys and Targets. We construct regression keys by normalizing the input features and generate
+scalar targets using a learned projection: kt =
+xt
+∥xt∥2 , vt = a⊤xt, where a ∈Rd is shared across
+3
+
+
+SphereLab Technical Report
+(a) Bilevel learning Outer loop: learn the regression objective
+Target projection a
+Regularizer
+ρ
+Learned in training; fixed at inference
+Task gradients through the solve
+Inner solve: adapt to each input
+Input tokens
+X ∈ℝT×d
+Regression problem
+min
+h
+½ ǁKh − vǁ2 + ½ hTDh
+Exact dual solve
+T × T Cholesky
+h*
+Fitted coefficients
+h∗= D−1KTα
+Fθ
+Task model
+ℒtask
+Task loss
+(b) Input-dependent second-order adaptation
+Illustration: D = I, v = (1, 1, 1, 1)ᵀ
+Current tokens
+Gram matrix
+Jointly fitted weights
+Relative influence
+k₁
+k₂
+k₃
+k₄
+same
+distinct
+1
+1
+1
+0
+1
+1
+1
+0
+1
+1
+1
+0
+0
+0
+0
+1
+G = KKᵀ
+α =
+1/4
+1/4
+1/4
+1/2
+(I +G)⁻¹v
+Additive pooling
+Kᵀα
+Joint regression
+3 : 1
+3 : 2
+repeated
+distinct
+Redundant evidence has diminishing influence
+K = RowNorm(X),    v = Xa
+D = diag(softplus(ρ))
+(I + KD−1KT) α = v
+Figure 2: Overview of TTR-Compressor. (a) Bilevel learning: The inner solve formulates sequence compres-
+sion as test-time ridge regression with an exact dual Cholesky solve to obtain the representation h∗, while the
+regression parameters are learned end-to-end via task gradients. (b) Input-dependent second-order adaptation:
+By jointly coupling tokens through the Gram matrix, TTR naturally diminishes the relative influence of redun-
+dant tokens compared to additive pooling. For intuitive illustration, we set D = I and uniform targets v = 1;
+as typically learned in practice, a smaller regularizer D further amplifies this deduplication effect, yielding an
+even higher relative share for distinct tokens.
+tokens and sequences within a compressor. Key normalization ensures that K⊤K measures direc-
+tional (semantic) similarity alone (Liu et al., 2017). Crucially, this normalization is asymmetric, as
+targets retain original token magnitudes (vt = a⊤xt). If targets were also normalized (vt = a⊤kt),
+the fitting term would reduce to 1
+2∥K(h−a)∥2
+2, trivially collapsing h⋆toward the sequence-invariant
+static vector a. By preserving token norms in the targets, no constant vector can fit varying magni-
+tudes, forcing h⋆to dynamically integrate both token semantics and their relative importance. The
+targets are derived entirely from the input, so fitting h⋆requires no additional labels. Optionally, tar-
+gets can be further enriched by first applying a local convolution (1D for language and 2D for vision)
+to aggregate neighboring context before the projection, i.e., vt = a⊤Conv(X), where Conv(·) de-
+notes the convolution operator and X represents the local context window of n neighboring tokens
+around position t. Alternative parameterizations of vt are explored in the Appendix E.2.
+Uniform Token Contributions. We use uniform weights ωt = 1, assigning the same coefficient
+to every token’s regression error. Let K = [k1, . . . , kT ]⊤∈RT ×d and v = [v1, . . . , vT ]⊤∈RT .
+Setting the gradient of Eq. 1 to zero gives us a closed-form solution:
+(K⊤K + λId)h⋆= K⊤v,
+h⋆= (K⊤K + λId)−1K⊤v.
+(2)
+Since λ > 0, the objective is strictly convex and has a unique solution. The solution combines the
+key-target statistic K⊤v with the sequence-dependent feature geometry K⊤K.
+Learnable Diagonal Regularization. In conventional ridge regression, λ is a tunable hyperparam-
+eter. Such tuning is expensive during large-model pretraining and complicates scaling to different
+model sizes. To avoid this, we replace λId with a learnable positive diagonal matrix (meta-learned
+via the task loss), yielding a generalized ridge regression objective (Tikhonov & Arsenin, 1977):
+D = diag(δ1, . . . , δd),
+δj = softplus(ρj),
+(3)
+where ρ ∈Rd is trainable. The resulting objective and its solution are:
+h⋆= arg min
+h
+1
+2∥Kh −v∥2
+2 + 1
+2h⊤Dh,
+(4)
+= (K⊤K + D)−1K⊤v,
+(5)
+which solves a regularized linear system that takes the pairwise interaction of tokens into account.
+3.3
+EFFICIENT DUAL-FORM SOLUTION
+Directly evaluating Eq. 2 requires solving a d × d linear system. When the number of tokens be-
+ing compressed is typically smaller than the feature dimension, we instead use the equivalent dual
+4
+
+
+SphereLab Technical Report
+form (Saunders et al., 1998) in order to improve the computational efficiency:
+h⋆= K⊤(KK⊤+ λIT )−1v.
+(6)
+This replaces the feature-space system with a T × T token-space system. Its entries depend on
+pairwise similarities between regression keys, allowing the fitted representation to account for
+correlations among tokens.
+We evaluate Eq. 6 by solving (KK⊤+ λIT )α = v and com-
+puting h⋆= K⊤α, without explicitly forming an inverse. The resulting computational cost is
+O(T 2d + T 3), compared with O(Td2 + d3) for the direct primal formulation. The dual form is
+therefore particularly suitable for compressing short sequences of high-dimensional features.
+Obtaining an Efficient Dual Solution. With the learnable diagonal regularization introduced in
+Section 3.2, λId is replaced by D. To obtain an efficient dual solution, we rescale the keys as
+f
+K = KD−1/2, yielding the final form of TTR-Compressor:
+TTR(X) = D−1/2f
+K⊤ IT + f
+K f
+K⊤−1v
+(7)
+Because D is diagonal, rescaling the keys costs only O(Td), preserving the dual formulation’s
+overall complexity. In practice, we compute a Cholesky factorization LL⊤= IT + f
+K f
+K⊤, solve
+LL⊤α = v through triangular solutions, and return D−1/2f
+K⊤α.
+3.4
+FULLY END-TO-END TRAINING
+The target projection a and diagonal parameters ρ are optimized end-to-end through the differen-
+tiable closed-form solution using the original model’s training objective. Each compressor main-
+tains its own parameters, which are shared across all input sequences. At inference time, these
+learned parameters remain fixed, while h⋆is recomputed independently for each input sequence.
+TTR-Compressor therefore combines a learned regression objective with an exact, input-adaptive
+solution, without requiring iterative gradient-based optimization at test time.
+4
+UNDERSTANDING TTR-COMPRESSOR
+The learning process of TTR-Compressor can be decomposed into two distinct mechanisms: outer-
+loop training learns which regression problem is useful for compression, while the inner solution
+adapts the compressed representation to the current input’s statistics. We examine them separately.
+4.1
+TASK-SUPERVISED LEARNING OF THE COMPRESSION OBJECTIVE
+The regression objective is not prescribed independently of the task. Its targets vt = a⊤xt and
+regularization matrix D are learned through the downstream use of the compressed representation.
+Writing h⋆
+a,ρ for the regression solution, the training objective takes the form:
+min
+θ,a,ρ E(x,y)
+
+Ltask
+ Fθ
+ h⋆
+a,ρ(Xθ(x))
+
+, y
+
+,
+(8)
+where Xθ produces the input representations and Fθ denotes the subsequent computation. Thus, the
+outer objective evaluates the usefulness of h⋆for the final task, rather than leveraging its learnability
+to merely minimize the inner regression error.
+Learning the Targets and Regularization. This coupling can be seen directly from the gradients.
+Let A = K⊤K +D, g = ∇h⋆Ltask, and s = A−1g. Differentiating the regression solution gives:
+∇aLtask = X⊤Ks,
+∇ρLtask = −sigmoid(ρ) ⊙h⋆⊙s,
+(9)
+where ⊙denotes element-wise multiplication. The downstream gradient therefore shapes both the
+scalar targets derived from tokens via a and the coordinate-wise penalties imposed through ρ. Con-
+sequently, the scalar targets require no predefined semantics; instead, they serve as learned mea-
+surements whose fitted coefficients yield informative representations for downstream layers. In this
+sense, the regression provides a structural inductive bias for compression, while outer-loop opti-
+mization steers this structural bias towards better handling the downstream task.
+5
+
+
+SphereLab Technical Report
+4.2
+INPUT-DEPENDENT SECOND-ORDER ADAPTATION
+Beyond learning the regression objective, the inner solve adapts the compressed representation to
+the correlation structure of each input. For isotropic regularization, the dual-form solution is
+h⋆= K⊤(KK⊤+ λI)−1v.
+(10)
+Let G = KK⊤∈RT ×T . Since the keys are normalized, each entry Gij = k⊤
+i kj directly mea-
+sures the similarity between tokens i and j. Thus, G captures the input-dependent second-order
+correlation structure of the token group.
+The compressed representation can equivalently be written as
+h⋆= K⊤α,
+α = (G + λI)−1v.
+(11)
+Unlike pooling and projection, where token contributions are aggregated independently, the effective
+weights α are determined jointly by the target responses and all pairwise token correlations. Highly
+similar tokens are explicitly coupled through the Gram matrix, so redundant evidence exhibits di-
+minishing rather than additive influence. Conversely, information not already explained by strongly
+correlated tokens can retain a larger relative influence when supported by the regression targets, as
+shown in Figure 2(b). TTR therefore adapts its compression rule to the second-order structure of
+every input rather than applying a fixed or independently weighted combination of tokens.
+Learning the inter-token geometry. With the learnable diagonal regularizer D, this interpretation
+extends to the rescaled keys f
+K = KD−1/2. The corresponding token Gram matrix becomes
+e
+G = f
+K f
+K⊤= KD−1K⊤.
+(12)
+Training therefore learns which feature dimensions should matter more when measuring token sim-
+ilarity. The outer loop learns a task-adapted correlation geometry, while the inner solve adapts the
+compressed representation to the correlation structure of each individual input.
+5
+APPLICATIONS AND EXPERIMENTAL RESULTS
+We evaluate TTR-Compressor in two settings: block-wise sparse attention for efficient language
+modeling, where compressed representations guide context selection, and visual token merging for
+efficient multimodal understanding, where they serve as the visual input to the language backbone.
+5.1
+BLOCK-WISE SPARSE ATTENTION
+Architecture and Baselines. Block-wise sparse attention partitions the context into blocks, scores
+their compressed representations against each query, and attends to tokens in selected blocks along-
+side a local window. The compressor therefore determines which distant information remains ac-
+cessible: an uninformative summary can prevent a relevant block from being selected, regardless of
+the quality of its individual token representations.
+We adopt HiLS-Attention (Hu et al., 2026) as a base framework and vary only the compressor. HiLS-
+Attention has three effective architectural components: hierarchical softmax attention, which com-
+bines within-block attention with learned block-level weights; low-rank query calibration, which
+adapts queries for scoring compressed representations; and HoPE, which applies RoPE to only a
+subset of feature dimensions to support length extrapolation. We compare four compressors: mean
+pooling, concat & projection, the attention-weighted pooling used in the original HiLS-Attention,
+and TTR-Compressor. Full attention and sliding-window attention serve as additional references.
+Training and Evaluation.
+We train 345M-parameter language models on the FineWeb
+dataset (Penedo et al., 2024) with an 8K context length. Training runs for 30,000 optimization
+steps with a global batch size of 128 sequences, corresponding to approximately 30B tokens, and
+uses AdamW with a learning rate of 3 × 10−4. All sparse attention variants use 64-token blocks,
+select up to 32 distant blocks per query, and retain a 512-token local window.
+Evaluation covers two complementary aspects. First, since queries use the compressed represen-
+tations to retrieve relevant blocks, retrieval accuracy directly reflects compression quality. Follow-
+ing (Hatamizadeh et al., 2026), we evaluate on the single-needle (S-NIAH) and multi-key (MK-
+NIAH) retrieval tasks from RULER (Hsieh et al., 2024), which require locating relevant information
+6

@@ -1,0 +1,1000 @@
+FocusVLA: Future-Intent Guided Dynamic View
+Routing for Vision-Language-Action Models
+Huixin Xu1,2,3,4
+Ziya Yu1,2,3,5
+Peng Li2,3,1,∗
+1 Nanjing Institute of Software Technology
+2 Institute of Software, Chinese Academy of Sciences
+3 University of Chinese Academy of Sciences, Nanjing
+4 Nanjing University of Posts and Telecommunications
+5 Hohai University
+∗Corresponding author
+FocusVLA
+Dominant visual focus should 
+change across manipulation stages
+Approach the 
+blue block
+Grasp the 
+blue block
+Transfer 
+to target 
+position
+Place the 
+blue block
+Baseline
+Local
+FocusVLA
+Local
+Local
+Global
+Local
+Global
+Global
+Local
+Step 0
+Step 27
+Step 85
+Step 150
+Global 
+View
+Local 
+View
+global 
+planning 
+fine 
+interaction 
+global 
+planning 
+Stage
+Global View
+Local View
+Task
+State
+History
+Success rate
+Medium 
+Horizon
+Short 
+Horizon
+Extra-Long 
+Horizon
+Medium-Long 
+Horizon
+Long 
+Horizon
+RDT
+𝜋0
+FocusVLA
+𝜋0.5
+0
+0.2
+0.4
+0.6
+0.8
+1
+类别1 类别2 类别3
+𝝅𝟎.𝟓FocusVLA
+𝝅𝟎
+global 
+planning 
+Missing 
+Context
+Missing 
+Context
+Missing 
+Context
+#Simulation Benchmark                    #Real-world Benchmark
+Motivation: Stage-View Misalignment
+Experimental Results
+59.4%
+71.7%
+85.0%
+VLM 
+Backbone
+Temporal
+ State-History 
+Encoder
+Future Intent Bridge
+Action  Generation 
+Ours Global
+Ours Local
+Usage
+Ratio
+Usage
+Ratio
+FocusVLA Dynamic View Routing
+30-step intent  probabilities 
+𝜶seq
+FocusVLA: Architecture
+Action  Backbone
+Action-to-Global
+Cross-Attention
+Action-to-Local
+Cross-Attention
+Adapter and Output Heads
+Dynamic View Routing over Time
+𝜶seq dynamically routes views
+Step 0
+Step 150
+Step 75
+0
+1
+Step 0
+Step 75
+Step 150
+Ours: Dynamic View Routing
+0
+1
+Baseline Global
+Baseline Local
+Baseline: Static View Preference
+Which view does the model mainly relies on at each stage?
+Figure 1: Overview of FocusVLA. Static multi-view fusion can cause view-dependency inertia,
+making the policy rely on a fixed view across task stages. FocusVLA predicts future action intent
+from multimodal observations and action history, and uses it to guide dynamic view routing during
+action generation, improving multi-view utilization in both simulation and real-world tasks.
+Abstract: Vision-language-action (VLA) models have become an important
+paradigm for robotic manipulation by unifying visual perception, language un-
+derstanding, and action generation. Since reliable manipulation requires sufficient
+observation of objects, end-effectors, and their spatial relationships, multi-view
+inputs are widely used to provide complementary spatial information. However,
+our experiments show that existing VLA models do not fully exploit such multi-
+view complementarity. The policy tends to persistently rely on the wrist view,
+lacking the ability to dynamically adjust global-local view dependency across ma-
+nipulation stages, which limits stage adaptability and robustness. To address this
+issue, we propose FocusVLA, a stage-aware multi-view routing framework. Fo-
+cusVLA predicts future interaction intent from historical actions and uses it to
+guide dynamic view routing during action generation. By adaptively coordinating
+global and local observations across different task stages, FocusVLA improves
+multi-view utilization. On RoboTwin 2.0, FocusVLA improves the average suc-
+cess rate over the strongest baseline π0.5 by 10.10 pp. In real-world evaluation,
+FocusVLA improves the success rate from 71.7% to 85.0%, achieving a 13.3%
+gain over π0.5. Moreover, the intent prediction and dynamic routing modules of
+FocusVLA can be integrated into existing VLA frameworks without modifying
+their core architectures.
+Keywords: Robotic manipulation, Imitation learning, VLA models
+10th Conference on Robot Learning (CoRL 2026), Austin TX, USA.
+arXiv:2610.31423v1  [cs.RO]  22 Oct 2026
+
+
+1
+Introduction
+Recent Vision-Language-Action (VLA) models [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] have shown strong
+potential for generalist robotic manipulation by unifying visual perception, language understanding,
+and action generation. In real-world manipulation, robust action generation often requires visual
+observations that can handle occlusions, viewpoint variations, and fine-grained interactions. There-
+fore, multi-view inputs are widely used to provide complementary visual information [12, 13, 14]:
+third-person cameras provide global scene context for target localization and motion planning, while
+wrist cameras provide local cues for alignment, grasping, and contact-rich execution. However, ex-
+isting VLA models typically fuse visual observations with language instructions and robot states
+into a fixed context for action generation. Although this paradigm effectively integrates multimodal
+information, it rarely considers that the policy’s visual dependency may change across manipulation
+stages.
+Our empirical analysis further shows that, under the static fusion paradigm, the model is prone to
+view-dependency inertia during action generation: the policy may develop a strong reliance on a
+particular view at an early task stage according to the current manipulation demand. Although such
+reliance may be reasonable at the early stage, the lack of explicit awareness of task progress causes
+the early-formed observation preference to persist into later stages, making it difficult for the policy
+to dynamically adjust the contributions of different views to action generation according to chang-
+ing manipulation requirements. This phenomenon suggests that improving multi-view utilization
+requires not only fusing multi-view information, but also enabling the policy to dynamically select
+and coordinate different view observations during action execution. Motivated by these observa-
+tions, we aim to mitigate the stage-view misalignment caused by static fusion. Achieving this goal
+requires answering two key questions: (1) how can a VLA policy acquire a representation that re-
+flects task progress and use it to infer the visual requirements of upcoming manipulation stages?
+(2) how can such a representation be transformed into effective multi-view routing signals without
+disrupting the pretrained VLA backbone?
+To answer these questions, we propose FocusVLA, a stage-aware dynamic view routing framework
+for multi-view VLA policies, as shown in Fig. 1. FocusVLA predicts future action intent from mul-
+timodal observations and short-term action history, and uses it to generate action-step-wise routing
+weights that dynamically coordinate visual features from different views during action generation.
+The framework is non-invasive, requiring no modification to the visual encoder, language model,
+or action-generation backbone. We evaluate FocusVLA in both simulation and real-world settings.
+The simulation experiments cover all 50 RoboTwin [15] tasks, and the real-world experiments in-
+clude 6 representative manipulation tasks with diverse object configurations, viewpoint variations,
+and interaction requirements. Results show that FocusVLA consistently outperforms static multi-
+view fusion baselines, demonstrating its effectiveness in mitigating stage-view misalignment and
+improving policy adaptability.
+In summary, our contributions are: (1) We identify and quantify a temporal failure in static multi-
+view VLA policies: view dependence formed at earlier stages persists after visual requirements
+change, causing stage–view misalignment. (2) We propose FocusVLA, a task-progress-aware visual
+modulation framework that converts future action intent into action-step-wise view-routing weights
+for non-invasive dynamic multi-view modulation. (3) We evaluate FocusVLA on all 50 RoboTwin
+simulation tasks and 6 real-world manipulation tasks, demonstrating improved adaptability and ro-
+bustness over static multi-view baselines.
+2
+Related Works
+2.1
+Vision-Language-Action Models.
+Vision-Language-Action (VLA) models unify visual perception, language understanding, and
+action generation for robotic control [16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26].
+Recent
+models have improved generalist manipulation through diverse action generation paradigms,
+2
+
+
+model scaling, and data scaling [27, 28].
+However, most existing VLA models still fol-
+low a relatively fixed perception-to-action pipeline.
+As shown in Fig. 2, visual observa-
+tions are first encoded into image tokens or visual features, fused with language instructions
+and robot states, and then provided as context to the action generation module [2, 3, 7, 17].
+VLM
+Backbone
+Global 
+View
+Local View
+Action
+Generation
+vit
+vit
+Other Modalities
+（e.g. language, state)
+Figure 2: Fusion pathway of multi-view per-
+ception in VLA models.
+While this paradigm effectively integrates multi-
+modal information, it rarely considers that the pol-
+icy’s visual dependency may change across different
+manipulation stages. This limitation becomes espe-
+cially important in multi-view settings, where global
+and local views provide complementary but stage-
+dependent information [12, 13, 14, 29, 30, 31]. Un-
+like prior works that mainly improve action decoders
+or scale VLA backbones, FocusVLA introduces a
+lightweight, architecture-agnostic view-routing module on the action-generation side. By predicting
+future action intent, FocusVLA dynamically modulates global and local visual contexts, enabling
+stage-aware multi-view adaptation without modifying existing VLA architectures.
+2.2
+Multi-View Perception and Dynamic Visual Routing.
+Multi-view perception provides complementary information for robotic manipulation [12, 14]:
+third-person views capture global scene context, while wrist views provide fine-grained hand–object
+interaction cues. Existing methods exploit such observations through representation learning, 3D re-
+construction, feature aggregation, cross-attention, or perspective-adaptive fusion [32, 33, 34, 35, 36,
+37, 38]; recent VLA-oriented works further demonstrate the value of multi-view inputs for action
+generation [39, 40, 41, 42]. Most methods nevertheless adopt fixed view organization or generic
+fusion. BFA [13] addresses redundancy from equally treating current multi-view features by pre-
+dicting vision-based view weights and fusing the features before an imitation policy. FocusVLA
+instead addresses temporal mismatch between learned view dependence and changing future action
+requirements in chunked VLA. The two methods differ in four key aspects: (1) prediction hori-
+zon: BFA produces one current-view allocation, whereas FocusVLA predicts H step-specific future
+routes from multimodal context; (2) fusion site: BFA fuses views before the policy, whereas Fo-
+cusVLA performs per-step fusion within action generation; (3) label construction: BFA uses offline
+VLM annotations and task-specific mappings, whereas FocusVLA derives task-agnostic labels from
+trajectories; and (4) intent token: FocusVLA introduces chunk-level intent conditioning absent from
+BFA. Together, these designs enable future-intent-guided coordination of global and local visual
+contexts without altering the core VLA backbone.
+3
+Method
+3.1
+Motivation: Diagnosing Stage-Invariant View Dependency in Multi-View VLA
+Expected 
+stage-aware 
+routing
+Global Planning
+Local Interaction
+Observed in
+Existing  VLA
+Global Planning / Local Interaction
+0.345
+0.35
+0.355
+0.36
+0.365
+overall success failure
+0
+0.001
+0.002
+0.003
+0.004
+overall success failure
+Dominance
+Margin
+Local dom
+Delta var
+Stronger bias
+Harder to correct 
+1
+2
+step0
+step50 step100
+base
+wrist
+Quantitative Evidence of Bias and Rigidity
+Expected vs. Observed View Routing
+Attention Ratio
+Persistent  Local-View Dominance！
+Figure 3: Motivation analysis of stage-insensitive
+view dependency in multi-view VLA models.
+To diagnose view usage in existing multi-view
+VLA models, we analyze the π0.5 [2] multi-
+view baseline by computing per-step attention
+ratios over global and local visual contexts.
+At action step t, aglobal
+t
+and alocal
+t
+denote the
+normalized attention ratios for the global view
+and aggregated local views, respectively, with
+aglobal
+t
++ alocal
+t
+= 1. When multiple local cam-
+eras are used, their attention ratios are summed
+as alocal
+t
+, allowing a unified comparison be-
+tween global and local reliance. We quantify
+view usage with two metrics. The first is the
+Dominance Margin, which measures global-
+3
+
+
+local imbalance:
+Dt =
+aglobal
+t
+−alocal
+t
+ ,
+D = 1
+T
+T
+X
+t=1
+Dt.
+(1)
+The second is the temporal variation of local-view reliance:
+Lt = alocal
+t
+,
+∆Lt = Lt −Lt−1,
+V∆L = Var
+ {∆Lt}T
+t=2
+
+.
+(2)
+A larger D indicates stronger dominance of one visual context, while a smaller V∆L suggests weaker
+adjustment of visual reliance over time. Empirically, both successful and failed rollouts exhibit
+imbalanced global-local reliance, typically biased toward the local visual context. This suggests that
+local-view preference itself is common and not necessarily harmful. However, failed rollouts show
+a larger Dominance Margin and a smaller V∆L, indicating stronger and less adaptive local-view
+dependency over time.
+Since attention ratios do not necessarily imply causal reliance [43, 44, 45, 46], we further conduct a
+Table 1: Stage-conditioned View Masking.
+Model
+Masking Mode
+SR
+∆SR
+Baseline
+No Mask
+85.0%
+–
+Baseline
+Mask Global@Planning
+65.0%
+-20.0 pp
+Baseline
+Mask Local@Planning
+20.0%
+-65.0 pp
+stage-conditioned view masking experiment on the
+Stack Blocks Three task, using the π0.5 [2] multi-
+view baseline. For each masking setting, we evaluate
+20 rollouts. During global planning stages, we sepa-
+rately mask the global view and the local view. If the
+policy effectively uses global observations for plan-
+ning, masking the global view should cause a larger performance drop. However, Table 1 shows the
+opposite pattern: masking the global view reduces the success rate from 85.0% to 65.0%, whereas
+masking the local view causes a much larger drop to 20.0%. This suggests that the static multi-view
+baseline remains highly dependent on local observations even during global-planning stages.
+Together, the attention analysis and masking intervention provide complementary evidence for
+stage-insensitive view dependency. The attention metrics indicate that failed rollouts exhibit stronger
+local-view dominance and weaker temporal adjustment of visual reliance, while the intervention re-
+sults further show that the baseline fails to shift its reliance toward the global view when global
+scene context is needed. This limitation motivates FocusVLA, which uses future intent to dynami-
+cally regulate global and local visual contexts during action generation.
+3.2
+The FocusVLA Model Architecture
+As shown in Fig. 4, FocusVLA is built upon the π0.5 [2] multi-view VLA backbone. Given global
+and local observations ot = {Ig
+t , Il
+t}, a language instruction L, robot state st, and short-term ac-
+tion history ht, FocusVLA predicts a future action chunk At = [at, at+1, . . . , at+H−1]. Different
+from static multi-view fusion, FocusVLA uses future action trends to guide view dependency, al-
+lowing visual reliance to evolve with task progress. It consists of two modules: Future Intent
+Bridge, which predicts future interaction intent and produces a chunk-level intent token with step-
+wise routing weights α1:H, and Action-Side Dynamic Routing, which uses these signals to regulate
+the contributions of global and local visual contexts during action generation. This design enables
+stage-aware multi-view modulation without modifying the pretrained VLA backbone.
+3.2.1
+Future Intent Bridge
+Future Intent Bridge aims to infer future interaction trends from the current multimodal context.
+Given the vision-language features from the VLA prefix backbone, together with the robot state and
+short-term action history, the module first encodes recent action dynamics into a temporal summary.
+It then performs cross-modal attention, using language features as queries and visual/state-history
+features as keys and values, to obtain a contextualized representation for future intent prediction.
+Based on this representation, the bridge predicts a step-wise intent sequence over the future action
+horizon, It = [i(1)
+t , i(2)
+t , . . . , i(H)
+t
+], where i(k)
+t
+∈[0, 1] denotes the probability that the k-th future
+action step requires local interaction-oriented visual evidence. Accordingly, 1 −i(k)
+t
+can be inter-
+preted as the probability of workspace-level motion, such as target localization or object transport.
+4
+
+
+FocusVLA
+Frozen
+Co-training
+Pre-trained
+VLM Backbone
+(PaliGemma Prefix)
+Robot State
+History Actions
+Temporal
+ State-History Encoder
+Context 
+token
+Global 
+View
+Instruction
+Vision 
+Encoder
+Text 
+Tokenizer
+Vision 
+Encoder
+Local 
+View
+Future Intent Prediction 
+Cross-Attention
+（Text -> Vision + history)
+ 
+Query: text
+Key / Value (G/L Vision + history)
+Intent Prediction Head
+Residual + 
+LayerNorm
+Masked Mean 
+Pooling
+MLP 
+Head
+intent token
+step-wise routing sequence  𝜶seq  
+Action Generation Module
+Noisy Actions
+Timestep
+Action-side Dynamic Multiview Routing
+Adapter 
+and Output 
+Heads
+per-step global-local view 
+ratio over the next H steps
+𝜶seq
+t
+= [αglobal
+t
+, αlocal
+t
+]
+step t
+1
+2
+3
+…
+H
+αglobal
+t
+αlocal
+t
+0.75
+0.75
+0.65
+…
+0.32
+0.25
+0.25
+0.35
+…
+0.68
+Action 
+Backbone
+Action-to-Global 
+Cross-Attention
+Action-to-Local
+Cross-Attention
+Step-wise Alpha Fusion
+（Fused Action Contextt =
+αglobal
+t
+∙GlobalContextt
++αlocal
+t
+∙LocalContextt)
+Gated 
+Residual 
+Injection
+“Put the 
+carrot
+in the box” 
+Dynamic View Routing
+Figure 4: Architecture of FocusVLA. Given multi-view observations, language instructions, robot
+states, and action history, FocusVLA predicts future action intent and uses it to guide action-side
+dynamic view routing for adaptive multi-view feature modulation.
+The predicted intent sequence is used in two ways. First, it is aggregated into a chunk-level in-
+tent token, zintent = MLPtoken(Pool(It)), which summarizes the overall future interaction trend.
+Second, each step-wise intent prediction is converted into global–local routing weights through a
+routing function, α(k) = froute(i(k)
+t
+), where α(k) = [α(k)
+g , α(k)
+l
+] consists of nonnegative weights
+that sum to one and controls the relative contributions of global and local visual contexts for the
+k-th future action step. In our implementation, froute is a fixed bounded linear mapping that retains
+complementary information from both views.
+During training, we construct trajectory-derived weak supervision labels y(k)
+t
+∈{0, 1} from end-
+effector trajectories, avoiding manual stage annotations. Based on the observation that manipula-
+tion trajectories alternate between workspace-level motion and local interaction, we initialize all
+time steps as movement-oriented labels 0, and then identify interaction-oriented intervals from end-
+effector dynamics. When gripper-closing signals are available, a short window before closing is
+treated as a high-confidence interaction interval; otherwise, interaction intervals are detected as low-
+speed local motions enclosed by higher-speed movements, using translational speed, accumulated
+path length, and axis-dominance cues. Short low-motion pauses that resemble transport pauses are
+filtered out. Steps within detected interaction intervals are labeled as 1, while the rest remain 0.
+These labels are used only as weak supervision, rather than hard semantic stage annotations. At in-
+ference time, FocusVLA directly predicts continuous intent probabilities from multimodal context
+and action history, and converts them into step-wise routing weights. Detailed label construction
+procedures are provided in Appendix A.
+3.2.2
+Action-Side Dynamic Routing
+Action-Side Dynamic Routing applies the stage-aware control signals produced by the Future In-
+tent Bridge, including the chunk-level intent token and step-wise routing weights, to the action-
+generation process. Specifically, the action backbone first generates action features over the future
+horizon conditioned on noisy action tokens [47], the chunk-level intent token, and the diffusion
+timestep embedding injected through adaptive RMS normalization [48, 49]. These action features
+are then used as queries to perform cross-attention with global and local visual features, extracting
+the corresponding global action context c(k)
+g
+and local action context c(k)
+l
+for each future action step
+k. Unlike methods that directly modify multi-view representations inside the visual encoder, Fo-
+cusVLA performs view modulation on the action-generation side, allowing visual information to be
+selected and fused according to the requirements of each action step. Given the step-wise routing
+weight α(k) = [α(k)
+g , α(k)
+l
+] predicted by the Future Intent Bridge, the global and local visual contexts
+are fused as
+c(k) = α(k)
+g c(k)
+g
++ α(k)
+l
+c(k)
+l
+.
+(3)
+5
+
+
+Table 2: Evaluation on RoboTwin 2.0 simulation tasks.
+We report success rates on all 50
+RoboTwin [15] tasks, grouped by task horizon. FocusVLA achieves the best overall performance
+and shows consistent improvements across diverse manipulation tasks.
+Short Horizon Tasks
+Model
+Click
+Alarmclock
+Press
+Stapler
+Turn
+Switch
+Adjust
+Bottle
+Grab
+Roller
+Lift
+Pot
+Scan
+Object
+Rotate
+Qrcode
+Place Object
+Scale
+Click
+Bell
+Avg.
+RDT [4]
+61.0%
+41.0%
+35.0%
+81.0%
+74.0%
+72.0%
+4.0%
+50.0%
+1.0%
+80.0%
+49.90%
+π0 [3]
+63.0%
+62.0%
+27.0%
+90.0%
+96.0%
+84.0%
+18.0%
+68.0%
+10.0%
+44.0%
+56.20%
+π0.5 [2]
+28.0%
+85.0%
+46.0%
+100.0%
+100.0%
+95.0%
+35.0%
+82.0%
+56.0%
+4.0%
+63.10%
+FocusVLA
+65.0%
+91.0%
+53.0%
+100.0%
+100.0%
+98.0%
+60.0%
+66.0%
+71.0%
+36.0%
+74.00%
+Medium Horizon Tasks
+Model
+Move Can
+Pot
+Move Pillbottle
+Pad
+Move Playingcard
+Away
+Move Stapler
+Pad
+Place Mouse
+Pad
+Place A2B
+Left
+Place A2B
+Right
+Place Phone
+Stand
+Place Object
+Stand
+Place Object
+Basket
+Avg.
+RDT [4]
+25.0%
+8.0%
+43.0%
+2.0%
+1.0%
+3.0%
+1.0%
+15.0%
+15.0%
+33.0%
+14.60%
+π0 [3]
+58.0%
+21.0%
+53.0%
+0.0%
+7.0%
+31.0%
+27.0%
+35.0%
+36.0%
+16.0%
+28.40%
+π0.5 [2]
+75.0%
+50.0%
+83.0%
+20.0%
+35.0%
+62.0%
+10.0%
+60.0%
+77.0%
+77.0%
+54.90%
+FocusVLA
+93.0%
+79.0%
+95.0%
+35.0%
+47.0%
+67.0%
+32.0%
+63.0%
+82.0%
+85.0%
+67.80%
+Medium-Long Horizon Tasks
+Model
+Place Cans
+Plasticbox
+Place Bread
+Basket
+Place Bread
+Skillet
+Place Burger
+Fries
+Place Container
+Plate
+Place Can
+Basket
+Place Empty
+Cup
+Place
+Fan
+Place
+Shoe
+Place Dual
+Shoes
+Avg.
+RDT [4]
+19.0%
+10.0%
+5.0%
+50.0%
+78.0%
+19.0%
+56.0%
+12.0%
+35.0%
+4.0%
+28.80%
+π0 [3]
+34.0%
+17.0%
+23.0%
+80.0%
+88.0%
+41.0%
+37.0%
+20.0%
+28.0%
+15.0%
+38.30%
+π0.5 [2]
+60.0%
+74.0%
+74.0%
+90.0%
+95.0%
+76.0%
+97.0%
+44.0%
+54.0%
+56.0%
+72.00%
+FocusVLA
+90.0%
+77.0%
+81.0%
+95.0%
+97.0%
+87.0%
+99.0%
+58.0%
+63.0%
+60.0%
+80.70%
+Long Horizon Tasks
+Model
+Stack Blocks
+Two
+Stack Blocks
+Three
+Stack Bowls
+Two
+Stack Bowls
+Three
+Pick Dual
+Bottles
+Pick Diverse
+Bottles
+Put Bottles
+Dustbin
+Blocks Ranking
+Size
+Blocks Ranking
+Rgb
+Beat Block
+Hammer
+Avg.
+RDT [4]
+21.0%
+2.0%
+76.0%
+51.0%
+42.0%
+2.0%
+21.0%
+0.0%
+3.0%
+77.0%
+29.50%
+π0 [3]
+42.0%
+17.0%
+91.0%
+64.0%
+57.0%
+27.0%
+88.0%
+7.0%
+19.0%
+43.0%
+45.50%
+π0.5 [2]
+89.0%
+60.0%
+84.0%
+65.0%
+100.0%
+84.0%
+64.0%
+42.0%
+88.0%
+95.0%
+77.10%
+FocusVLA
+99.0%
+69.0%
+92.0%
+74.0%
+100.0%
+87.0%
+96.0%
+53.0%
+90.0%
+96.0%
+85.60%
+Extra-Long Horizon / Dexterous Tasks
+Model
+Shake
+Bottle
+Shake Bottle
+Horizontally
+Stamp
+Seal
+Hanging
+Mug
+Handover
+Block
+Handover
+Mic
+Dump Bin
+Bigbin
+Open
+Laptop
+Put Object
+Cabinet
+Open
+Microwave
+Avg.
+RDT [4]
+74.0%
+84.0%
+1.0%
+23.0%
+45.0%
+90.0%
+64.0%
+59.0%
+33.0%
+37.0%
+51.00%
+π0 [3]
+97.0%
+99.0%
+3.0%
+11.0%
+45.0%
+98.0%
+83.0%
+85.0%
+68.0%
+80.0%
+66.90%
+π0.5 [2]
+98.0%
+99.0%
+60.0%
+15.0%
+52.0%
+48.0%
+86.0%
+93.0%
+55.0%
+64.0%
+67.00%
+FocusVLA
+100.0%
+100.0%
+60.0%
+25.0%
+63.0%
+94.0%
+92.0%
+98.0%
+72.0%
+61.0%
+76.50%
+Overall Avg.
+RDT: 34.76%
+π0: 47.06%
+π0.5: 66.82%
+FocusVLA: 76.92%
++10.10%
+The fused context is then injected back into the corresponding action feature through a residual con-
+nection and further processed by a lightweight action refinement module for final action prediction.
+Through this step-wise routing mechanism, FocusVLA dynamically adjusts the relative contribu-
+tions of global and local visual information during action generation according to the predicted task
+progress. This design preserves the stability of the pretrained visual backbone while mitigating the
+limitation of static fusion, where view dependency is difficult to adapt across different task stages.
+3.3
+Training Objective
+FocusVLA is trained with a joint objective for action generation and future-intent prediction. Given
+the future action target Ut and intent labels Yt = [y(1)
+t
+, . . . , y(H)
+t
+], the Future Intent Bridge predicts
+the intent sequence It = [i(1)
+t , . . . , i(H)
+t
+], which produces the chunk-level intent token and routing
+weights α1:H. Conditioned on these signals, the action backbone predicts the denoised action output
+Vt. We optimize FocusVLA with a joint loss consisting of an action generation loss ∥Vt −Ut∥2
+2
+and an intent prediction loss λintent 1
+H
+PH
+k=1 BCE(i(k)
+t
+, y(k)
+t
+), where the first term supervises action
+generation and the second term supervises future-intent prediction with binary labels. To stabilize
+training, we first warm up the intent prediction branch for Sw steps, and then jointly optimize both
+objectives with occasional teacher forcing to improve training stability.
+4
+Experiment
+In this section, we evaluate FocusVLA through simulation, real-world experiments, spatial rear-
+rangement tests, visualization analysis, and ablation studies. We aim to answer the following ques-
+tions: RQ1: How does FocusVLA compare with existing VLA baselines on large-scale simula-
+tion tasks? RQ2: Does FocusVLA improve real-world manipulation performance? RQ3: Can Fo-
+cusVLA adapt to unseen spatial rearrangements? RQ4: Does FocusVLA dynamically adjust view
+dependency across task stages? RQ5: How do its key components contribute to performance? To en-
+sure a fair comparison, all baseline models and FocusVLA are trained with the same demonstration
+data, the same number of optimization steps, and evaluated under identical test seeds and evaluation
+protocols across all tasks and experimental settings, without additional data or tuning.
+6

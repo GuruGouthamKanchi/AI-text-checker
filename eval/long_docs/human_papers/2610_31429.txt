@@ -1,0 +1,814 @@
+PhysTrace: Interpretable Temporal Evaluation of Physical Consistency
+in Video Generative Models
+Taekoan Yoo
+Wonkyung Jung
+Kyunghun Kim
+Kyeongbo Kong†
+Independent Researcher, Korea
+Pusan National University, Korea
+tk.yoo@g.skku.edu
+{gonyakjelly94,godroma4885}@gmail.com
+kbkong@pusan.ac.kr
+timestep t
+0.0 s
+2.6 s
+5.3 s
+8.0 s
+10.4 s
+t = 0.00
+t = 0.50
+t = 0.80
+t = 0.99
+s
+Alignment Score
+0
+2
+4
+6
+8
+10
+time (s)
+One-step Estimate
+VAE Decoder
+PhysTrace
+Figure 1. PhysTrace for analyzing physical consistency along video generative trajectories. Intermediate latent states are decoded
+into videos and evaluated using PhysTrace, which tracks temporal alignment between expected and observed states to localize physical
+violations.
+Abstract
+World action models increasingly rely on pretrained video
+models assumed to capture physical dynamics for pre-
+diction, planning, and action generation. Existing evalu-
+ations assess plausibility, probe representations, or mea-
+sure predictive surprise, but rarely identify which history-
+conditioned physical expectations conflict with observa-
+tions. We introduce PhysTrace1, a training-free frame-
+work aligning MLLM-generated, history-conditioned ex-
+pectations with observed video windows to temporally lo-
+calize physical violations and provide interpretable descrip-
+tions without task-specific probes or classifiers. We also in-
+troduce IntPhys2-Timing, adding violation intervals to Int-
+Phys2. PhysTrace achieves a Hit Rate of up to 70.7% across
+physical principles on IntPhys2-Timing and outperforms
+the compared methods in overall possible–impossible dis-
+crimination accuracy on IntPhys2. Applied to reconstructed
+videos along the trajectories of pretrained diffusion/flow-
+based video models, PhysTrace reveals attribute- and noise-
+dependent patterns in physical violation localization, en-
+abling interpretable physical consistency analysis across
+1https://github.com/PhysTrace/PhysTrace
+timesteps.
+1. Introduction
+In robotic control, Vision-Language-Action (VLA) mod-
+els have rapidly advanced by leveraging semantic knowl-
+edge and generalization capabilities acquired through large-
+scale vision-language pretraining for robot action genera-
+tion [8, 15, 19, 30, 49]. More recently, research has increas-
+ingly explored leveraging future dynamics and predictive
+and spatiotemporal priors acquired through video pretrain-
+ing for action prediction and planning [3, 16, 20, 23, 39, 45].
+In particular, diffusion/flow-based generative video models
+have emerged as key pretrained backbones for these ap-
+proaches, as they can directly generate future visual dy-
+namics [9, 28, 29, 35]. This growing reliance on pretrained
+video models makes it increasingly important to determine
+whether they have learned the physical dynamics required
+for robotic control.
+To this end, various benchmarks and evaluation meth-
+ods have been proposed to assess intuitive physics, phys-
+ical plausibility, and motion consistency in input or gen-
+erated videos [2, 7, 11, 25, 32, 46, 48]. In parallel, prob-
+ing studies have investigated the physical information en-
+1
+arXiv:2610.31429v1  [cs.AI]  22 Oct 2026
+
+
+coded within pretrained video models [12, 18, 31, 34]. This
+line of work has also extended beyond encoder-based rep-
+resentation models to the intermediate denoising represen-
+tations of diffusion-based video generators, showing that
+physics-related information can be decoded from pretrained
+representations. However, these approaches primarily focus
+on predefined physical labels, model-level preferences, or
+physics-related signals encoded in intermediate representa-
+tions. Even when a physical inconsistency can be detected,
+they provide limited insight into which history-conditioned
+physical expectation conflicts with the observed behavior.
+More fundamentally, physical consistency is not a static
+visual property of individual frames, but a temporal prop-
+erty that emerges from changes in object identity, state, mo-
+tion, and interaction across time. Sparse or short observa-
+tions may therefore miss brief violations or lack the context
+needed to determine what should have occurred. Likewise,
+a single plausibility score cannot reveal where the expected
+and observed dynamics begin to diverge. Evaluating physi-
+cal consistency thus requires continuously relating local ob-
+servations to the physical expectations established by their
+temporal history.
+Rather than probing intermediate representations, a nat-
+ural alternative is to directly ask a Multimodal Large Lan-
+guage Model (MLLM) to assess physical plausibility from
+video. However, Pixels to Principles [6] reports near-chance
+performance of recent MLLMs in challenging intuitive-
+physics settings on GRASP [17] and IntPhys 2 [11], de-
+spite physics-related cues being recoverable from their vi-
+sual representations. Similarly, QuantiPhy [22] shows that,
+in quantitative kinematic inference from video, multimodal
+models often rely on pretrained world knowledge rather
+than faithfully integrating visual evidence with the provided
+physical prior. These findings suggest that current MLLMs
+are unreliable as direct judges of physical validity. Instead,
+we use the MLLM for reasoning over temporal context to
+formulate expected states, while physical consistency is as-
+sessed against the corresponding video evidence.
+From
+this
+perspective,
+we
+propose
+PhysTrace,
+a
+training-free framework that traces physical consistency
+in videos through history-conditioned temporal video-
+language alignment. As illustrated in Fig. 2, PhysTrace uses
+the general contextual reasoning capability of an MLLM to
+formulate the state expected at the current time based on
+prior observations as temporal context. It then compares
+this expected state with the actual video observation in a
+shared multimodal embedding space, thereby tracing phys-
+ical consistency over time. By relating temporally separated
+events, this process enables temporal localization of physi-
+cal violations while the jointly generated expected and ob-
+served states provide an interpretable description of which
+physical expectation diverges from the actual observation.
+To quantitatively evaluate this temporal behavior, we con-
+struct IntPhys2-Timing by augmenting IntPhys2 [11] with
+violation intervals, enabling evaluation of physical viola-
+tion localization in video reconstructions across generative
+timesteps.
+In summary, we propose a training-free framework for
+tracing physical consistency over time through history-
+conditioned temporal video-language alignment, together
+with IntPhys2-Timing for evaluating the temporal localiza-
+tion of physical violations.
+• We propose PhysTrace, a training-free framework that lo-
+calizes physical violations by temporally aligning history-
+conditioned expected states with video observations. Tex-
+tual descriptions of both states reveal which physical ex-
+pectations conflict with observations.
+• We construct and release IntPhys2-Timing, augmenting
+IntPhys2 with temporal violation annotations to bench-
+mark temporal violation localization and video-level
+physical consistency.
+• We
+apply
+PhysTrace
+to
+output-space
+reconstruc-
+tions along the generative trajectories of pretrained
+diffusion/flow-based video models, revealing how vio-
+lation localization varies across timesteps and physical
+attributes.
+2. Related Work
+2.1. VLA and World-Model-Based Policies
+VLA models couple pretrained vision-language represen-
+tations with robot action generation, allowing large-scale
+multimodal knowledge to inform language-conditioned
+control [8, 15, 19, 30, 49]. Beyond this paradigm, re-
+cent work has explored leveraging predictive dynamics and
+spatiotemporal priors learned from video for robot policy
+learning. VPP [16] extracts predictive visual representations
+from a video diffusion model for action prediction without
+explicit future visual rollouts.
+More direct approaches, including World Action Mod-
+els (WAMs) and related world-model-based policies, couple
+future prediction with action generation or planning [3, 20,
+23, 39, 45]. Video Policy [23] couples future video gener-
+ation with action generation, while DreamZero [45] jointly
+models future world states and actions using a pretrained
+video diffusion backbone. EVA [39] generates future vi-
+sual rollouts and uses an inverse dynamics model to derive
+executable actions and provide an executability signal for
+aligning the video world model. Cosmos Policy [20] gener-
+ates actions as latent frames and predicts future states and
+values for model-based planning, whereas V-JEPA2-AC [3]
+predicts action-conditioned future states in latent space for
+planning. Despite their architectural differences, these ap-
+proaches share the goal of exploiting predictive dynamics
+learned from video as priors for robot control.
+2
+
+
+2.2. Pretrained Video World Models as Policy Pri-
+ors
+Prior work has explored different classes of video mod-
+els for learning representations and dynamics relevant to
+robot control. Self-supervised video representation mod-
+els learn temporal structure without explicit robot actions.
+V-JEPA2 [3] follows a latent predictive objective, while
+VideoMAE V2 [38] learns general spatiotemporal repre-
+sentations through masked video reconstruction. A separate
+line of work develops robot-specific, action-conditioned
+world models. DreamDojo [13], for example, learns interac-
+tion dynamics from large-scale human videos and is subse-
+quently adapted to generate future visual states conditioned
+on robot actions.
+Another line of work builds general-purpose generative
+video models, such as Stable Video Diffusion [9], Wan [35],
+and the Cosmos-Predict family [26, 28, 29]. These
+diffusion/flow-based models directly generate temporally
+evolving visual sequences and have increasingly been re-
+purposed as pretrained backbones for representation-based
+policies and WAMs [16, 20, 23, 45]. Unlike latent predic-
+tive or robot-specific world models, our work focuses on
+this class of pretrained generative video models and ex-
+amines whether their generated dynamics preserve physical
+consistency. Specifically, we evaluate Wan2.1, whose pre-
+trained video backbone is adopted by DreamZero [45], and
+Cosmos-Predict2, which is adapted for visuomotor control
+and planning in Cosmos Policy [20].
+2.3. Physical Understanding and Probing in Video
+Models
+A broad range of benchmarks have been proposed to evalu-
+ate physical understanding in videos, including input-video
+benchmarks for intuitive physics and plausibility [11, 21,
+32, 43] and evaluators for physical plausibility and motion
+consistency in generated videos [2, 7, 25, 48]. Among them,
+IntPhys2 [11] evaluates four intuitive-physics principles—
+permanence, immutability, spatio-temporal continuity, and
+solidity—through video-level discrimination between phys-
+ically possible and impossible events. However, it does not
+provide temporal annotations indicating when a physical vi-
+olation occurs. To evaluate temporal localization, we intro-
+duce IntPhys2-Timing, which augments impossible videos
+with temporal annotations of their physical violations.
+Beyond
+output-level
+evaluation,
+probing
+studies
+investigate
+whether
+pretrained
+video
+representations
+encode
+physics-related
+information
+[1,
+18].
+Recent
+work compares such representations across predictive,
+masked-reconstruction, and diffusion-based pretraining
+paradigms [31], while diffusion-specific studies decode
+physical plausibility from intermediate denoising repre-
+sentations [12, 34] or evaluate model-native preferences
+through the denoising objective [46].
+Existing approaches either probe physics-related infor-
+mation from internal model representations or evaluate
+physical plausibility at the level of an entire video or
+video pair. Methods such as TRAJAN [2] temporally lo-
+calize motion inconsistency, while predictive violation-of-
+expectation (VoE) approaches [11, 14, 24] measure time-
+resolved surprise from discrepancies between predicted and
+observed representations. However, such surprise signals
+primarily quantify model-dependent prediction error and
+do not explicitly identify which physical expectation es-
+tablished by prior observations conflicts with the current
+observation. PhysTrace instead externalizes the history-
+conditioned expected state and directly aligns it with the
+current video observation, enabling temporally localized
+and interpretable physical diagnostics.
+3. PhysTrace: Temporal Physical Consistency
+Tracing
+In this section, we introduce PhysTrace, which traces
+changes in physical consistency over time by repeatedly
+measuring the alignment between expected video dynamics
+and actual observations. We also describe IntPhys2-Timing
+and the evaluation metrics used to quantify temporal local-
+ization performance. The overall framework is illustrated in
+Fig. 2.
+3.1. Temporal Prediction–Observation Alignment
+Given a video V , we divide it into temporal windows of
+fixed duration Tw and analyze them with a hop size of ∆t.
+For each window Vi, a fixed number of frames are sampled
+and provided to an MLLM. All temporal windows use the
+same instructions and structured output format.
+At each window, the MLLM generates two textual de-
+scriptions. The current state si describes the objects and dy-
+namics directly observed in Vi, without using history as vi-
+sual evidence. In contrast, the prediction pi describes the
+state that should be observed in the current window based
+on the history Hi−1 accumulated from preceding windows.
+Predictive VoE formulations typically quantify surprise by
+comparing a predicted future representation with its sub-
+sequent observation [11, 14, 24]. Such future-directed pre-
+diction can shift the detected discrepancy according to the
+prediction horizon. PhysTrace instead generates the history-
+conditioned expected state pi for the current window and
+compares it directly with the same Vi. The conditions gov-
+erning these outputs are detailed in Appendix C.
+To examine whether MLLMs can reliably generate the
+State si and Prediction pi descriptions, we manually
+annotate reference descriptions for the original IntPhys2
+videos [11] and evaluate the outputs of several MLLMs
+in Table 1. In the Guided setting, history and Trusted
+(Sec. 3.2) are fixed to isolate description generation. For
+comparison, the Irrelevant Prompts and Swapped Prompts
+3
+
+
+“The pink sphere on the left …”
+“The pink sphere on the left…”
+Gate
+“The pink sphere on the right…”
+Figure 2. Overview of PhysTrace. History-conditioned predictions are aligned with the current video window, while salient observations
+are selectively retained for subsequent reasoning. The alignment scorer can employ either a unified multimodal embedding model or
+separate contrastively aligned video and text encoders.
+baselines measure cosine distances between ground-truth
+descriptions and unrelated text prompts or descriptions from
+unrelated videos, respectively. The generated State and
+Prediction descriptions in the Guided setting achieve
+substantially lower cosine distances to ground truth than
+both baselines. These results suggest that MLLMs can gen-
+erate meaningful descriptions of current observations and
+history-conditioned expected states under controlled condi-
+tions. This evaluation thus supports their role in the general
+contextual reasoning required by PhysTrace, rather than es-
+tablishing their ability to directly judge physical validity.
+Since the resulting prediction pi is directly used for
+video–language alignment, we constrain it to a concise vi-
+sual caption containing only visually verifiable information,
+such as object identity, visual attributes, and motion. We
+then provide the current video window Vi and prediction
+pi to an alignment scoring model that maps video and text
+into a shared embedding space. For alignment scoring, we
+sample the same fixed number of frames from each video
+window as for the MLLM input described above.
+To compute this alignment, let fvideo and ftext denote
+the embedding functions for video and text of the alignment
+scoring model, respectively. These functions may be imple-
+mented using either separate encoders for the two modal-
+ities or a unified multimodal embedding model (see Ap-
+pendix A). In both cases, the prediction–observation align-
+ment score ai for the i-th window is computed using cosine
+similarity as follows:
+ai =
+fvideo(Vi)⊤ftext(pi)
+∥fvideo(Vi)∥2 ∥ftext(pi)∥2
+.
+(1)
+Repeating this computation across all temporal win-
+dows yields the temporal alignment trace, A(V )
+=
+Table 1. Cosine distance(↓) between MLLM-generated prompts
+and ground-truth captions using Qwen3-Embedding [47]. All
+Trusted: All true Trusted; Guided: Guided History and
+Trusted.
+Model
+Prediction
+State
+All Trusted
+Ours
+Guided Guided
+Qwen-VL (8B)
+0.270
+0.263
+0.201
+0.195
+Qwen-VL (32B)
+0.229
+0.223
+0.145
+0.134
+Cosmos-Reason2 (8B)
+0.350
+0.343
+0.270
+0.242
+GLM-4.1V
+0.268
+0.263
+0.222
+0.220
+Swapped Prompts
+0.500
+0.501
+Irrelevant Prompts
+0.669
+0.672
+{a1, a2, . . . , aN}
+When the state expected from previous observations is
+preserved in the current window, the alignment between the
+prediction pi and observation Vi tends to remain relatively
+high. Conversely, when an unexpected physical event oc-
+curs, such as a change in object identity, disappearance,
+anomalous trajectory, or physically implausible collision,
+the alignment between the two representations decreases.
+PhysTrace uses these temporal variations in alignment to
+trace when physical consistency breaks down. To avoid
+treating minor alignment fluctuations as physical viola-
+tions, videos with an alignment-score range below τ, i.e.,
+maxi ai −mini ai < τ, are treated as having no detected
+physical violation and counted as misses in temporal lo-
+calization evaluation. Fig. 3 illustrates an example of the
+temporal alignment trace and the corresponding interval in
+which a physical violation occurs. Although the history-
+conditioned prediction expects the hot-air balloon to be
+empty, a green object appears inside it in the current win-
+dow, resulting in a sharp drop in alignment.
+4
+
+
+0
+2
+4
+6
+8
+10
+time (s)
+0.1
+0.2
+0.3
+Alignment
+Ground Truth
+The hot-air balloon
+basket rests ...
+The hot-air balloon
+basket rests ...
+The hot-air balloon
+basket rests empty
+on the white sand.
+The hot-air balloon
+basket ... a green
+object inside it.
+The green object lies
+inside the hot-air
+balloon ...
+The green object lies
+inside the hot-air
+balloon ...
+init frame
+0.0–2.0 s
+Prediction
+State
+···
+5.0–7.0 s
+Prediction
+State
+6.0–8.0 s
+Prediction
+State
+Figure 3. Example of physical violation localization for permanence. State is observed from the current window, while Prediction
+describes how the window should appear given the trusted history.
+3.2. History-Conditioned Prediction and Selective
+State Retention
+Physical violations can occur at different temporal scales.
+Short temporal windows are effective for capturing brief,
+localized changes, whereas events unfolding over longer
+durations require broader temporal context. In particular,
+some violations can only be identified by relating multiple
+brief events separated in time. Simply increasing the win-
+dow size, however, may obscure these short events and re-
+duce temporal localization precision. Therefore, PhysTrace
+maintains local temporal windows while selectively retain-
+ing salient observations from preceding windows in the his-
+tory Hi−1.
+In addition to State and Prediction described in
+Sec. 3.1, the MLLM produces a Trusted output for each
+window. The Trusted indicator ti ∈{0, 1} determines
+whether the currently observed state si is retained in the
+history for subsequent predictions. Retaining every obser-
+vation would accumulate repetitive or uninformative infor-
+mation, potentially diluting salient events. Therefore, ti = 1
+is assigned only when a new object appears, new motion be-
+gins, or a meaningful state change occurs that is not already
+represented in the history. The history is updated as follows:
+Hi =
+(
+Hi−1 ∪{si},
+if ti = 1,
+Hi−1,
+if ti = 0.
+(2)
+As shown in Table 1, selective history retention
+(Ours) consistently yields lower cosine distances for
+Prediction than retaining all observations (All Trusted).
+In the Guided setting, where history and Trusted are
+fixed, the prediction distances decrease further, demonstrat-
+ing the importance of retaining appropriate temporal con-
+text for generating history-conditioned expected states.
+When a physical violation occurs, the alignment between
+the history-conditioned prediction pi and the actual obser-
+vation si decreases in the corresponding window. If the
+newly observed state si is retained in the history after a
+physical violation, subsequent predictions are conditioned
+on the updated history. Consequently, the alignment trace
+can emphasize the transition at which the observed dynam-
+ics first deviate from the expected physical behavior, rather
+than remaining low throughout subsequent windows. Addi-
+tional qualitative examples are provided in Appendix B.
+3.3. Temporal Evaluation with IntPhys2-Timing
+The original IntPhys2 provides only video-level annotations
+indicating whether each video is physically possible or im-
+possible, without specifying the temporal location at which
+a physical violation occurs. To evaluate the temporal local-
+ization performance of PhysTrace, we construct IntPhys2-
+Timing2 by augmenting the impossible videos in IntPhys2
+with temporal violation annotations. Of the original 506
+video pairs, we exclude seven invalid pairs in which the pos-
+sible and impossible videos are identical, leaving 499 valid
+pairs before category selection. We further retain eight of
+the 16 categories, excluding those with ambiguous object
+identities, substantial occlusion, cluttered scenes, or atypi-
+cal structures that make temporal violation annotation dif-
+ficult. For each impossible video, we use its correspond-
+ing possible video as a reference to identify the interval in
+which their physical behaviors begin to diverge. We then
+manually refine the temporal boundaries to annotate the in-
+terval in which the physical violation actually occurs.
+IntPhys2-Timing employs two evaluation metrics: Min-
+imum Alignment Score (MAS) for measuring video-level
+physical inconsistency and Hit Rate for temporal localiza-
+tion. MAS is defined as the lowest alignment score in a
+video’s temporal alignment trace, representing the largest
+measured mismatch between the history-conditioned ex-
+2https://github.com/PhysTrace/PhysTrace/tree/
+main/IntPhys2Timing
+5
+
+
+pected state and the actual observation. A lower MAS indi-
+cates stronger observed physical inconsistency, and is used
+to compare possible–impossible video pairs. For temporal
+localization, we use the temporal location of this minimum
+score in each impossible video. Because the temporal win-
+dows advance by a hop size of ∆t, each alignment score
+is associated with a temporal interval of length ∆t for lo-
+calization. If the interval corresponding to the minimum
+score overlaps the annotated violation interval, the video is
+counted as a hit. Hit Rate is defined as the proportion of
+annotated impossible videos satisfying this criterion.
+4. PhysTrace along Generative Trajectories
+In
+this
+section,
+we
+apply
+PhysTrace
+to
+pretrained
+diffusion/flow-based video generative models that have
+been adopted as backbones for action models. As illustrated
+in Fig. 1, we analyze their generative trajectories through
+video reconstructions at intermediate timesteps. Specifi-
+cally, we evaluate Wan2.1 [35] and Cosmos-Predict2 [26]
+using PhysTrace without additional training.
+4.1. Output-Space Readout via Video Inversion
+To analyze physical consistency along generative trajecto-
+ries, we use the clean-video estimate predicted from the cur-
+rent latent state at each noise level as an output-space read-
+out. Since PhysTrace operates on reference videos, we first
+encode an input video into the VAE latent z0 and recover
+its latent trajectory from the clean state toward noise space
+through deterministic inversion [12, 33]. This process fol-
+lows the deterministic sampling dynamics in reverse, pro-
+viding a consistent trajectory for the same input video.
+At each trajectory checkpoint, we obtain a clean latent
+estimate ˆz(t)
+0
+from the model’s native prediction and recon-
+struct the corresponding video ˆx(t) using the VAE decoder.
+This process is expressed as
+ˆz(t)
+0
+= Rθ(zt, t),
+ˆx(t) = DVAE
+
+ˆz(t)
+0
+
+,
+(3)
+where Rθ denotes a model-specific readout that esti-
+mates the clean latent from the current trajectory state.
+For Wan2.1, ˆz(t)
+0
+is computed from the predicted veloc-
+ity, whereas Cosmos-Predict2 uses the clean-latent esti-
+mate provided by its rectified-flow-based denoiser. Al-
+though their readout implementations differ, both provide
+decoded clean-video estimates ˆx(t) as inputs to PhysTrace.
+We apply the same PhysTrace framework to ˆx(t) ob-
+tained at multiple noise-level checkpoints along each gener-
+ative trajectory. Rather than probing hidden representations
+directly [12], this allows us to trace how physics-related
+information at each trajectory stage is reflected in the re-
+constructed video output. Fig. 4 illustrates this analysis. At
+high noise levels, scene structure and object dynamics may
+not be sufficiently reconstructed, resulting in generally low
+Physics violation interval
+frame
+Timestep (σ)
+Alignment score
+0.1
+0.2
+0.00
+0.50
+0.80
+0.99
+t=0.0s
+t=2.6s
+t=5.3s
+t=8.0s
+t=10.4s
+Figure 4. Temporal alignment across diffusion timesteps.
+Alignment traces for a spatio-temporal continuity example at dif-
+ferent noise levels σ, computed with Wan2.1-T2V-1.3B. Red dot:
+MAS within the violation interval. Orange dots: MAS outside the
+violation interval.
+alignment scores and potentially unstable temporal loca-
+tions of minimum alignment. As the trajectory approaches
+the clean-video state, visual dynamics become more defined
+and alignment scores increase. At sufficiently low noise lev-
+els, an alignment decrease corresponding to the annotated
+physical violation becomes apparent. Thus, PhysTrace can
+analyze not only whether physical consistency is preserved
+in the final output, but also at which stage of the generative
+trajectory the corresponding physical behavior becomes ob-
+servable in the reconstructed video.
+4.2. Model-Specific Evaluation Setup
+To apply PhysTrace to pretrained diffusion/flow-based
+video generative models, we account for their model-
+specific input configurations and noise schedules. Wan2.1
+and Cosmos-Predict2 process 81 and 93 frames, respec-
+tively, at a nominal rate of 16 fps, whereas the original Int-
+Phys2 [11] videos consist of 636 frames (60 fps, approxi-
+mately 10.6 s) at a resolution of 512 × 512. Rather than re-
+constructing the original video recursively in separate seg-
+ments, we uniformly sample frames across its full duration
+to match each model’s input length and reconstruct the en-
+tire sequence in a single pass. Specifically, we sample 81
+frames for Wan2.1 and 93 frames for Cosmos-Predict2 from
+the original 636 frames. The reconstructed videos are saved
+at 7.5 fps and approximately 8.8 fps, respectively, to pre-
+serve the original duration of approximately 10.6 s, with
+all frames resized to 256 × 256. For PhysTrace evaluation,
+we provide all frames within each temporal window (2 s,
+hop 1 s), without additional frame subsampling, to both the
+MLLM and the alignment scoring model. This corresponds
+to 15 frames per window for Wan2.1 and approximately 18
+frames for Cosmos-Predict2. Finally, to avoid the influence
+of scene descriptions on the reconstructed outputs, we set
+6
+
+
+the video models’ text-conditioning prompts to an empty
+string in all generative-trajectory experiments.
+5. Experiments
+For video–text alignment scoring, we use PE-AV-Large [37]
+(see Appendix A). Among the open-source MLLMs [4, 27],
+we adopt Qwen3-VL-8B-Thinking [4], with a maximum
+generation length of 8,000 tokens and a reasoning budget of
+3,000 tokens. Unless otherwise specified, PhysTrace uses a
+temporal window of Tw = 2s and a hop size of ∆t = 1s.
+To generate history-conditioned expected states, the MLLM
+prompts follow a consistent format across the four intuitive-
+physics principles, with principle-specific instructions. All
+experiments are conducted on NVIDIA A100 80GB GPUs.
+5.1. Temporal Localization of Physical Violations
+on IntPhys2-Timing
+To evaluate temporal localization on IntPhys2-Timing, we
+compare PhysTrace with a VoE-inspired baseline [11, 14,
+24] implemented using V-JEPA2 [3]. For PhysTrace, we
+uniformly sample 60 frames from each temporal window
+of the original IntPhys2 videos and use the same sampled
+frames for both the MLLM and alignment scoring model.
+The VoE baseline computes time-resolved surprise from V-
+JEPA2 representations and identifies the interval with the
+highest surprise as the predicted violation location. For both
+methods, a prediction is counted as a hit if the predicted
+interval overlaps the annotated violation interval, allowing
+temporal localization performance to be compared using the
+same Hit Rate criterion. Table 2 presents the resulting Hit
+Rates across the four intuitive-physics principles.
+PhysTrace achieves its highest Hit Rate on immutabil-
+ity, which involves changes in intrinsic object properties
+such as color and shape. Compared with the VoE base-
+line, PhysTrace more accurately localizes physical viola-
+tions across three of the four physical principles. Further-
+more, unlike the VoE baseline, PhysTrace provides inter-
+pretable State and Prediction descriptions, allowing
+us to identify which history-conditioned expectations con-
+flict with actual observations (see Appendix B).
+5.2. Ablation Study on Temporal Windowing
+Fig. 5 compares alignment traces under two configurations
+of temporal window duration Tw and hop size ∆t: our de-
+fault (2s, 1s) and a shorter setting (1s, 0.5s). Regarding
+window duration, shorter windows can capture brief events,
+whereas longer windows provide broader temporal context.
+In this example, the longer-window prediction (2s) captures
+the ball’s motion toward the wooden barrier and its subse-
+quent stop against it, whereas the shorter-window prediction
+only describes the object’s current state and position. How-
+ever, larger windows may require more sampled frames to
+preserve short-lived visual details. We therefore adopt a 2s
+Table 2. Temporal localization hit rates on IntPhys2-Timing.
+Hit Rates (%) across physical attributes and difficulty categories.
+VoE: a V-JEPA2-based surprise baseline. Med.: Medium; Unk.:
+Unknown
+Method
+Attribute
+Easy
+Med.
+Hard
+Unk.
+All
+Ours
+Continuity
+62.5
+60.0
+69.2
+58.3
+63.2
+Immutability
+100.0
+73.3
+64.0
+58.3
+70.7
+Permanence
+50.0
+53.3
+61.5
+58.3
+56.6
+Solidity
+83.3
+58.3
+70.0
+100.0
+69.6
+VoE
+Continuity
+50.0
+53.3
+73.1
+66.7
+61.8
+Immutability
+50.0
+56.7
+52.0
+58.3
+54.7
+Permanence
+50.0
+56.7
+65.4
+58.3
+59.2
+Solidity
+50.0
+54.2
+55.0
+50.0
+53.6
+window to balance temporal coverage and frame sampling
+requirements.
+A smaller hop size provides finer temporal resolution for
+localization. However, the shorter-window and smaller-hop
+setting in Fig. 5 exhibits greater fluctuations in alignment
+scores, potentially influenced by variations in the MLLM-
+generated natural-language descriptions. Such fluctuations
+can make the location of the minimum alignment score less
+stable. Based on these observations, we adopt a hop size of
+1s.
+5.3. Possible-vs-Impossible Classification Accuracy
+on IntPhys2
+Table 3 evaluates possible–impossible discrimination on
+IntPhys2 [11]. MLLM baselines directly classify each video
+as physically possible or impossible, while predictive mod-
+els such as V-JEPA2 [3] compare prediction-based surprise
+between paired videos. In contrast, PhysTrace compares the
+MAS of each possible–impossible pair, counting a predic-
+tion as correct when the impossible video has a lower MAS
+than its possible counterpart.
+PhysTrace achieves the highest overall accuracy of
+59.9%, outperforming the compared methods on the
+Medium and Hard subsets. While Pixels to Principles [6]
+reports near-chance performance of MLLMs in challenging
+intuitive-physics settings, our results suggest that tracing
+history-conditioned expectation–observation discrepancies
+provides a useful signal for discriminating physical consis-
+tency without direct MLLM judgments of physical validity.
+5.4. Physical Tracing in Diffusion Reconstruction
+We use PhysTrace to track attribute-wise physical violation
+localization across the generative trajectories of Cosmos-
+Predict2 and Wan2.1 on IntPhys2-Timing. As described in
+Sec. 4.2, the reconstructed videos are evaluated with fewer
+frames per temporal window than in the original-video ex-
+periments.
+Overall, the Hit Rate tends to increase as the noise level
+decreases, but the trends differ by physical attribute. Con-
+7

@@ -1,0 +1,631 @@
+QUESTIONING INSTRUMENTAL CONVERGENCE IN RLVR:
+CHECKPOINT EVIDENCE FROM OLMO-3
+Barı¸s Alparslan1
+Sandy Tanwisuth2
+Caleb Petterson3
+ABSTRACT
+Instrumental convergence is often invoked as a general reason to expect capable agents to acquire
+or express power-seeking subgoals: self-preservation, resource acquisition, deception, or resistance
+to oversight which poses an important threat to the society. For LLMs, reinforcement learning is
+the first stage of post-training that directly optimizes behavior against an objective; therefore, it is
+the stage where convergent instrumental behavior, on IC grounds, likely to appear. Does reinforce-
+ment learning with verifiable rewards (RLVR) make a model more likely to express instrumental-
+convergence behavior, or does this depend on the training regime, evaluation frame, and stage of
+post-training? We study this question as a checkpoint-conditioned behavioral trajectory rather than
+as a single before/after safety score. Using InstrumentalEval, we evaluate OLMo-3-7B-Think across
+SFT, DPO, 13 intermediate RLVR checkpoints, and the final RLVR model. The trajectory is non-
+monotonic: instrumental rate rises from 25.0% at SFT to 46.1% near RLVR step 200, then falls
+to 11.8% at the final checkpoint. Paired item-level tests and step-wise regression support the fi-
+nal SFT-to-RLVR reduction (p = 0.015 by paired t-test; p = 0.03 by Wilcoxon signed-rank test;
+β2 = −15.34 by step-wise regression). Prompt framing does not explain this pattern: a harmful-
+prompt indicator combined with other framing effects explains only 15% of within-checkpoint score
+variance on average, and Iterative Null-space Projection (INLP) removes a detectable framing direc-
+tion without changing the SFT-to-final-RLVR gap. Together with preliminary 32B endpoint results
+(35.53% SFT to 22.37% RLVR final), these findings indicate that RLVR does not monotonically
+increase instrumental behavior in this setting: the rate rises early, then falls below the SFT baseline.
+The result is specific to this model family and benchmark, and judge agreement is moderate, so
+absolute rates should be read cautiously.
+1
+Introduction
+Instrumental convergence describes the tendency of capable, goal-directed agents to pursue similar intermediate goals
+across a wide range of objectives. Preserving the ability to act, acquiring resources, avoiding shutdown, and shaping
+the environment can all help an agent continue pursuing its objective [16, 1, 2, 21]. This creates a potential connec-
+tion between capability and risk: as a system becomes more capable and goal-directed, it may become more likely to
+pursue instrumental strategies, including when its objective appears benign. Applying this argument to large language
+models requires understanding how goal-directed behavior arises in their training and deployment. Language mod-
+els can produce reasoning that justifies deception, resists shutdown, preserves goal integrity, or supports appearing
+aligned for strategic reasons [8, 13], including in settings with limited persistence or ability to act on the environment.
+Reinforcement learning makes this question particularly relevant because it directly optimizes behavior against an
+objective signal. At the outer-alignment level, we can ask whether the reward or verifier specifies the behavior we
+want. At the inner-alignment level, we can ask whether the learned model develops internal objectives or heuristics
+that diverge from the intended training objective [10]. IC-like behavior provides a possible observable connection
+between these questions, while establishing a misaligned inner objective requires further evidence. Reinforcement
+learning with verifiable rewards (RLVR) provides a useful setting for studying this connection. It is widely used in
+post-training reasoning models because it allows optimization against automatically checkable outcomes in mathe-
+matics, coding, and other domains with verifiable answers [3, 11, 22]. Its use of task-local verifiers, reference-policy
+1ASELSAN
+2BlueDot Impact
+3University of Minnesota - Twin Cities
+arXiv:2610.31624v1  [cs.LG]  22 Oct 2026
+
+
+constraints, and incremental updates also gives it a particular optimization structure that may affect which instrumental
+behaviors emerge. Recent work suggests that RLVR can concentrate probability mass on solutions already available in
+the base model and modify comparatively sparse subnetworks [14, 25, 24]. Understanding how these properties affect
+IC-like behavior therefore requires empirical evaluation. We ask how this behavior changes as the same model family
+passes through SFT, DPO, intermediate RLVR checkpoints, and the final RLVR release, holding the benchmark items
+fixed. We evaluate OLMo-3-7B-Think [7, 15] using InstrumentalEval [8], which measures whether model outputs
+express IC-adjacent reasoning across subtasks. Since safety benchmarks can encode framing artifacts [19], we also
+examine whether harmful prompt tone explains the observed trajectory using per-checkpoint regression and Iterative
+Null-space Projection (INLP) [18]. We find that IC-like behavior increases during DPO and early RLVR, peaks near
+step 200, and declines during later RLVR, with the final checkpoint falling below the SFT baseline. Our analyses
+detect framing structure in the score matrix, and the trajectory remains unchanged after removing a linear framing
+direction. These findings establish a nonmonotonic relationship between post-training stage and IC-like outputs for
+this model, benchmark, and judging protocol, with later RLVR reversing the early increase and reducing the final level
+below SFT.
+2
+Conceptual Frame
+2.1
+Instrumental convergence as a conditional thesis
+The instrumental-convergence argument begins from a structural observation, certain intermediate states make success
+easier. A system that can preserve itself, acquire resources, avoid interruption, or strategically manage oversight may
+be better able to pursue its objective [16, 2, 21]. This implies that, under some conditions, capability and goal-
+directedness may make such behaviors instrumentally useful.
+Recent philosophical work has questioned how direct this inference should be. [20] argue that the timing and dom-
+inance of convergent drives may be more constrained than canonical presentations suggest. [5] similarly argues that
+instrumental divergence is also natural: agents with different goals may pursue different intermediate strategies. These
+critiques do not dissolve the safety concern, but they change the empirical burden.
+2.2
+InstrumentalEval as a behavioral probe
+InstrumentalEval operationalizes instrumental convergence through six subtasks derived from classic convergent-drive
+categories [8]. The subtasks ask whether the model expresses reasoning associated with evading shutdown, hacking
+computer systems, running copies of itself, hiding unwanted behavior, strategically appearing aligned, and deceptive
+behavior. In this paper, we use these subtasks as an output-level probe of IC-like reasoning and evaluate them with a
+judge model. The judge prompt for evaluation is available in table 9.
+A positive score on any of these subtasks indicates that IC-like reasoning appeared in the output. However, it does not
+establish that the model holds a corresponding internal goal or that the behavior would persist across contexts, as this
+distinction requires looking inside the model.
+The benchmark contains 76 tasks. We score each response continuously in [0, 1] and threshold at 0.5 to compute the
+Instrumental Rate (IR):
+IR = 1
+N
+N
+X
+i=1
+I(zM
+i
+≥0.5),
+where zM
+i
+is the convergence score assigned by judge model M. We also compute inter-judge agreement rate (IAR)
+between two judge models:
+IAR(M1, M2) = 1
+N
+N
+X
+i=1
+I(yi
+M1 = yi
+M2),
+where yi
+M = I(zM
+i
+≥0.5). For trajectory analyses, lower IR means fewer IC-like outputs. For judge analyses, higher
+IAR means the binary IC labels are more stable across judge models.
+2.3
+RLVR as a constrained post-training regime
+RLVR optimizes a policy using rewards from a rule-based verifier rather than a learned preference model. A simplified
+objective is
+J (θ) = Ez,y∼πθ(·|x) [fverifier(y, y∗)] ,
+(1)
+2
+
+
+where fverifier evaluates whether a response satisfies a task-specific criterion [23]. In mathematics, this may be symbolic
+equivalence; in coding, it may be execution against tests.
+OLMo-3-7B-Think is not trained by RLVR alone. Its post-training pipeline includes SFT, DPO, and RLVR check-
+points released across the training trajectory [15]. This matters because a final checkpoint can hide intermediate
+dynamics. A before/after comparison between SFT and final RLVR would miss whether IC-like behavior rises during
+early RLVR and falls later.
+KL regularization against a reference policy in DPO structure can limit drift from the pretrained distribution. This
+constrained optimization structure is central to our interpretation: RLVR in this instrumental-convergence evaluation
+context may not create open-ended power-seeking pressure in the same way as broader RL settings. It may instead
+narrow the behavioral distribution around verifier-rewarded reasoning patterns.
+3
+Checkpoint Evaluation and Framing Controls
+The experiment is designed to separate checkpoint effects from item effects. The benchmark items are held fixed, the
+scoring protocol is held fixed, and the checkpoint varies.
+3.1
+Experimental setup
+We
+evaluate
+OLMo-3-7B-Think
+across
+16
+checkpoints:
+SFT,
+DPO,
+13
+intermediate
+RLVR
+check-
+points,
+and
+the
+final
+released
+RLVR
+checkpoint
+[15].
+The
+intermediate
+RLVR
+steps
+are
+{50, 75, 100, 125, 175, 200, 275, 350, 450, 600, 800, 1050, 1375}.
+Each checkpoint is evaluated on the same 76
+InstrumentalEval tasks.
+Inference uses greedy decoding with maximum response length 1024 and a fixed system prompt across checkpoints.
+GPT-4o is the primary judge, with temperature 0.0 and maximum response length 200. For each task-response pair,
+the judge assigns a continuous IC score in [0, 1] and provides a one-sentence explanation. A score of 0.5 is the binary
+threshold for computing IR. To assess judge robustness, all cached responses are also scored with Gemini 2.0 Flash as
+a secondary judge.
+3.2
+Prompt framing as a nuisance variable
+InstrumentalEval prompts vary not only in the drive they test but also in how the scenario is framed. Some prompts
+present the relevant behavior in overtly harmful language, and some describe the target in the context of social good.
+Prompt framing is the most tractable confound addressed here. The concern comes when safety benchmark scores that
+conflate framing sensitivity with behavioral tendencies risk misrepresenting a model’s actual risk profile [19].
+To analyze prompt framing effect, we manually label each of the 76 tasks with a binary harmful/neutral framing
+indicator Hi, roughly indicating goal-directness of the prompt and inc. These splits contain 41 harmful and 35 neutral
+prompts. Because every checkpoint is evaluated on the same items, the framing labels are fixed across checkpoints by
+construction.
+3.3
+Explained variance
+The first framing check asks how much score variation the harmful-prompt indicator explains within each checkpoint.
+To make more in-depth analysis, we add the effects of social good context indicator Si, and the human obstacle
+indicator Oi as in definition 3. These definitions split the dataset with 37 socially positive and 39 neutral, and 44
+human obstacle and 32 neutral prompts. For every checkpoint c, we fit a normal linear model
+E (zic|.) = αi + γc + β1cHi + β2cSi + β3cOi + β4cHiSi + β5cHiOi + β6cOiSi + β7cHiSiOi
+(2)
+where zic is the judge score for item i at checkpoint c, αi is the fixed effect capturing the prompt difference, and γc is
+the fixed effect capturing the training trajectory. Note that
+Hi = {1 if the prompt i is harmful, 0 otherwise}
+(3)
+Si = {1 if the prompt i serves for social good, 0 otherwise}
+Oi = {1 if the prompt i frames humans as obstacle, 0 otherwise}
+We report R2 as the fraction of within-checkpoint score variance explained by framing, and the significance of β1c
+when S = 0, O = 0.
+3
+
+
+3.4
+Iterative Null-space Projection
+The second framing check asks whether a shared linear framing direction affects the full checkpoint-by-item score
+matrix. We use INLP [18], which iteratively trains a linear classifier to predict the protected attribute and projects the
+representation into the classifier’s null space. In our setting, the protected attribute is the harmful-prompt indicator Hi
+and the representation is the score vector for an item across checkpoints.
+At iteration k, a linear classifier with weight vector wk is trained to predict Hi. We construct the projection
+PN(wk) = I −wkwT
+k
+wT
+k wk
+,
+for transforming the score matrix, and repeat until the classifier no longer exceeds the majority-class baseline. The
+final projection is
+P = PN(wn) . . . PN(w1).
+If the SFT-to-final-RLVR gap disappears after this projection, then the trajectory may be explained by a linear framing
+direction. If the gap remains, then detectable linear framing structure is not driving the reported result.
+4
+Experiments and Results
+4.1
+Results
+We asked whether instrumental-convergence behavior is stable across the OLMo-3 post-training trajectory, or whether
+the same benchmark items elicit different IC-like outputs at different checkpoints. We first examine the raw checkpoint
+trajectory. We then test whether the trajectory is explained by prompt framing, and finally check whether the main
+pattern is stable across judge models. Table 1 reports the full checkpoint trajectory; additional per-checkpoint framing
+and judge analyses are provided in Appendix A.4.
+Table 1 shows how instrumental behavior changes across all evaluated checkpoints. IR begins at 25.00% at SFT,
+increases to 38.16% after DPO, and reaches its highest observed value of 46.05% at RLVR step 200. The intermediate
+checkpoints show fluctuations around this early increase. Later checkpoints trace a decline, reaching 22.37% at step
+800, 17.11% at step 1375, and 11.84% at the final release. These results show that the effect of post-training depends
+on the checkpoint at which the model is evaluated: early training increases IC-like outputs, and later RLVR brings
+the final model below the SFT baseline. Since the benchmark contains 76 items, a single binary outcome changes IR
+by roughly 1.3 percentage points. The confidence intervals and complete checkpoint sequence help place these local
+changes in the context of the overall trajectory.
+Table 1: Instrumental Rate (IR) per checkpoint with 95% bootstrap confidence intervals.
+Checkpoint
+IR (%)
+CI lower
+CI upper
+SFT
+25.00
+15.79
+35.53
+DPO
+38.16
+27.63
+48.68
+RLVR-step_0050
+38.16
+27.63
+50.00
+RLVR-step_0075
+40.79
+28.95
+51.32
+RLVR-step_0100
+36.84
+26.32
+48.68
+RLVR-step_0125
+35.53
+25.00
+46.05
+RLVR-step_0175
+34.21
+23.68
+44.74
+RLVR-step_0200
+46.05
+34.21
+57.89
+RLVR-step_0275
+38.16
+27.63
+48.68
+RLVR-step_0350
+36.84
+26.32
+47.37
+RLVR-step_0450
+35.53
+25.00
+46.05
+RLVR-step_0600
+31.58
+22.37
+43.42
+RLVR-step_0800
+22.37
+13.16
+31.58
+RLVR-step_1050
+18.42
+10.53
+27.63
+RLVR-step_1375
+17.11
+9.21
+25.00
+RLVR (final)
+11.84
+5.26
+19.74
+Table 2 presents binary flip analysis comparing convergence decisions between the SFT baseline and each subsequent
+post-training checkpoint across 76 tasks. The key quantities are c (tasks that flipped from non-convergent to conver-
+gent) and b (tasks that flipped the other way). The results reveal a non-monotonic pattern across RLVR training. We
+4
+
+
+observe that convergence peaks at step 200 (Net = +16), where 22 tasks newly exhibit convergent behavior relative to
+SFT, before declining steadily through later steps. By the final RLVR checkpoint, the net effect reverses to -10, mean-
+ing RLVR-trained models are significantly less convergent than SFT overall. Notably, DPO produces a large positive
+shift (Net = +10), suggesting that preference optimization may increase convergence-adjacent behaviors more persis-
+tently than reinforcement learning does. Taken together, these results suggest that RLVR training does not uniformly
+amplify instrumental convergence. Rather, early training steps temporarily elevate it before extended optimization
+suppresses it below the SFT baseline.
+To further analyze the early rise and late decline trend, we consider a linear model with break-point at step 200 (See
+equation 4). While E = (50/1375, . . . , 200/1375, . . . , 200/1375) stands for earlier stages before the break-point,
+L = (0, . . . , 0, (275 −200)/1375, . . . , (1375 −200)/1375) represents the relative change in later stages after the
+break-point, both scaled. The response is defined as mean score for each checkpoint IRc =
+1
+76
+P76
+i=1 zic.
+E (IRc|.) = β0 + β1Ec + β2Lc
+(4)
+The OLS estimations for the parameters (β0, β1, β2) are (17.29, 19.91, −15.34) respectively. Also, β2 is significantly
+different from 0 with the 95% confidence level. Hence, the decline in later stages is observable and it is significantly
+different from the early trend.
+Table 2: Binary flip table comparing convergence decisions between SFT and each subsequent checkpoint. a = both
+convergent; b = SFT only; c = comparison checkpoint only (key number); d = neither. Net = c −b.
+Comparison
+a
+b
+c
+d
+Net
+SFT →DPO
+11
+8
+18
+39
++10
+SFT →RLVR (final)
+6
+13
+3
+54
+-10
+SFT →RLVR step 50
+11
+8
+18
+39
++10
+SFT →RLVR step 75
+10
+9
+21
+36
++12
+SFT →RLVR step 100
+8
+11
+20
+37
++9
+SFT →RLVR step 125
+14
+5
+13
+44
++8
+SFT →RLVR step 175
+11
+8
+15
+42
++7
+SFT →RLVR step 200
+13
+6
+22
+35
++16
+SFT →RLVR step 275
+12
+7
+17
+40
++10
+SFT →RLVR step 350
+11
+8
+17
+40
++9
+SFT →RLVR step 450
+12
+7
+15
+42
++8
+SFT →RLVR step 600
+11
+8
+13
+44
++5
+SFT →RLVR step 800
+7
+12
+10
+47
+−2
+SFT →RLVR step 1050
+5
+14
+9
+48
+−5
+SFT →RLVR step 1375
+7
+12
+6
+51
+−6
+To test whether the final reduction with respect to the first stage in continuous scores is statistically significant, we
+compare SFT and final RLVR scores on the same 76 benchmark items. Let
+Di = zSFT
+i
+−zRLVR-final
+i
+H0 : µD = 0
+(RLVR does not change score)
+(5)
+H1 : µD > 0
+(RLVR reduces score).
+The paired t-test gives p = 0.009, indicating that the final RLVR checkpoint has lower item-level convergence scores
+than the SFT checkpoint under this test. Because the score distribution could be non-Gaussian, we also use a Wilcoxon
+signed-rank test with
+H0 : ˜µD = 0
+(RLVR does not change score)
+(6)
+H1 : ˜µD > 0
+(RLVR reduces score),
+where ˜µD is the median paired difference. This test gives p = 0.02. Both tests support the same bounded claim: on this
+benchmark and model structure, the final RLVR checkpoint produces fewer IC-like outputs than the SFT checkpoint.
+We next ask whether this trajectory could be an artifact of prompt framing. Using Equation 2, we first compute overall
+score variance explained by the framing effect, and we observe that linear framing effect is small but not ignorable
+(See Table 3, R2). Additionally, we report harmful-prompt framing effect across checkpoints when S = 0, O = 0.
+Fluctuating pattern suggests that harmful-prompt sensitivity is not a stable or steadily growing property of the model,
+but rather changes across the RLVR trajectory. The coefficient shows no consistent direction across checkpoints. This
+5
+
+
+Table 3: Summary for the fit with equation 2. Complete Table 10 is available in Appendix.
+Statistic
+Value
+R2 of the fit
+0.15
+ˆβ1,SFT
+0.0008 (p-value=0.107)
+ˆβ1,DPO
+0.002 (p-value ≈0)
+ˆβ1,RLVR-0
+-0.03 (p-value ≈0)
+ˆβ1,RLVR-200
+0.005 (p-value=0.311)
+ˆβ1,RLVR-600
+-0.001 (p-value=0.816)
+ˆβ1,RLVR-800
+-0.025 (p-value ≈0)
+ˆβ1,RLVR-1050
+-0.007 (p-value = 0.221)
+ˆβ1,RLVR-final
+-0.03 (p-value ≈0)
+pattern is not consistent with attributing the overall SFT-to-final-RLVR score decline to a single, persistent framing
+effect.
+The INLP analysis tests whether removing detectable framing structure changes the checkpoint means. The initial
+linear SVM predicts the harmful-prompt indicator with 75% accuracy. After four projection iterations, accuracy falls
+to 51.3%, close to the majority-class baseline. Table 4 shows that the SFT mean remains 0.303 and the final RLVR
+mean remains 0.224 after projection, preserving the final-minus-SFT difference of −0.079. These results indicate that
+the detected linear framing direction leaves the endpoint reduction unchanged. Table 11 in Appendix A.4 reports the
+corresponding values for all checkpoints.
+Table 4: INLP framing classification and endpoint scores before and after projection. The final-minus-SFT difference
+is unchanged. Full checkpoint results are in Table 11.
+Quantity
+Value
+SVM accuracy (initial)
+0.75
+SVM accuracy (after convergence)
+0.513
+INLP iterations to convergence
+4
+Quantity
+Raw mean
+Projected mean
+∆
+SFT
+0.303
+0.303
+0.000
+RLVR (final)
+0.224
+0.224
+0
+Final minus SFT
+−0.079
+−0.079
+0
+Finally, we evaluate judge robustness using Gemini 2.0 Flash as a secondary judge. Table 5 shows moderate average
+agreement across checkpoints (68.75%), with the strongest agreement at the final RLVR checkpoint (88.16%) and
+the weakest agreement near the peak of the IC trajectory, RLVR-step_0200 (55.26%). The higher final-checkpoint
+agreement suggests that the final outputs are easier for independent judges to classify consistently. At the same time,
+the moderate average agreement cautions against treating absolute IR values as judge-independent. We also would like
+to note that higher agreement scores don’t necessarily imply safer outputs. The more robust conclusion is the direction
+of the trajectory: the final RLVR checkpoint is lower than SFT under the primary judge, and the final checkpoint also
+receives the highest agreement across the two-judge check.
+Table 5: Summary of Inter-Judge Agreement (GPT-4o vs Gemini 2.0 Flash) across the 16 post-training checkpoints.
+The complete per-checkpoint Table 12 is in Appendix.
+Statistic
+IAR (%)
+Mean |∆score|
+Average across checkpoints
+68.75
+0.341
+Maximum (RLVR final)
+88.16
+0.224
+Minimum (RLVR-step_0200)
+55.26
+0.401
+SFT
+75.00
+0.303
+RLVR (final)
+88.16
+0.224
+6
+
+
+Taken together, these results show that RLVR changes the observed IC trajectory, but not by monotonically increasing
+instrumental convergence. In OLMo-3-7B-Think, DPO and early RLVR increase IC-like outputs, while later RLVR
+reverses this pattern and the final checkpoint falls below the SFT baseline. Prompt framing is detectable in the score
+matrix, but neither the per-checkpoint linear framing analysis nor the INLP projection explains the final reduction.
+The result is therefore a behavioral checkpoint-trajectory claim, not a broad safety claim: for this model, benchmark,
+and judging protocol, the final RLVR checkpoint produces fewer IC-like outputs than the SFT checkpoint.
+4.2
+Extension to the larger model
+We next examine whether the endpoint reduction also appears at a larger model scale. We evaluate the SFT and final
+RLVR checkpoints of OLMo-3-32B-Think, which belongs to the same model family and training pipeline. Table 6
+shows that IR decreases from 35.53% at SFT to 22.37% at the final RLVR checkpoint. Applying the paired tests in
+Equations 5 and 6 gives p = 0.034 for the paired t-test and p = 0.029 for the Wilcoxon signed-rank test. This prelim-
+inary evaluation supports an endpoint reduction at both scales within the OLMo-3 family. Establishing whether the
+32B model also exhibits the early rise and later decline observed at 7B requires intermediate-checkpoint evaluations.
+Detailed binary-flip comparisons are provided in Appendix A.2.
+Table 6: Instrumental Rate (IR) with OLMo-3-32B-Think including 95% bootstrap confidence intervals.
+Checkpoint
+IR (%, 95% CI)
+SFT
+35.53 [25, 46.05]
+RLVR (final)
+22.37 [13.16, 32.89]
+5
+Discussion
+Our checkpoint evaluation shows that IC-like behavior rises early in RLVR training and declines at later checkpoints.
+This trajectory suggests that the relationship between optimization and instrumental behavior depends on the training
+regime, with the objective, update geometry, reference constraint, and evaluation setting providing possible expla-
+nations for the observed pattern. The canonical instrumental-convergence argument concerns sufficiently capable
+goal-directed agents, and applying it to verifier-trained language models requires understanding how these conditions
+arise in a particular training setting. RLVR may strengthen reasoning while narrowing the distribution of expressed
+behaviors, allowing capability and IC-like output expression to move in different directions. From an outer-alignment
+perspective, a verifier that rewards task-local correctness may leave important safety constraints unspecified while also
+limiting incentives for broad instrumental strategies. For example, correctness on a math or code task provides limited
+direct incentive for resource acquisition, self-preservation, or strategic deception. This makes the scope of the verifier
+relevant both to the completeness of the reward specification and to the behaviors that optimization encourages. From
+an inner-alignment perspective, the lower final IR establishes a reduction in IC-like responses under the benchmark
+and judging protocol. The relationship between this reduction and any learned goal-like structures remains an open
+question. The strategically appearing aligned subtask makes this question particularly clear: reasoning about appear-
+ing aligned to preserve future influence resembles the behavior associated with deceptive alignment [10, 6]. A decline
+on this subtask could reflect reduced deceptive-compliance reasoning or a lower probability of expressing that reason-
+ing. Mechanistic analysis of the checkpoint sequence would help distinguish these explanations and assess whether
+the observed behavior corresponds to an internal objective. Our findings complement work identifying conditions
+under which RL-trained systems express reward-seeking, deception, goal misgeneralization, and ethically problematic
+strategies [12, 17, 4, 6, 9]. We examine how such behavior changes along a verifier-based RLVR trajectory in one
+open model family, where the early increase is followed by a decline below the SFT baseline. This checkpoint-level
+analysis also extends the question motivating InstrumentalEval in [8], who ask whether RL-based language models are
+more likely to pursue instrumental goals. Tracking released checkpoints reveals training dynamics that endpoint com-
+parisons can obscure. Existing work on RLVR provides possible mechanisms for these changes. Sparse update results
+suggest that RL fine-tuning can concentrate changes in limited subnetworks [14], and work on reasoning capacity sug-
+gests that RLVR can increase the probability of solutions already available to the model [24]. If IC-like continuations
+have relatively low probability in the SFT distribution, later RLVR could further reduce their sampling probability
+while preserving the underlying representations. In this sense, our evaluation identifies checkpoint intervals in which
+mechanistic analysis may be especially informative. The early-RLVR peak and subsequent decline provide concrete
+settings for studying how changes in expressed behavior relate to changes within the model.
+7
+
+
+6
+Limitations
+Our evaluation has several limitations that are important for interpreting these results. We primarily study OLMo-3-
+7B-Think, and while the preliminary experiments with a larger model in Section 4.2 partially address the question of
+scale, both models belong to the same family. The observed trajectory may therefore depend on the model parameters,
+scale, or release trajectory, and replication on RLVR-trained models from other labs is needed to understand how
+broadly the result applies. Similarly, InstrumentalEval provides a focused behavioral probe through 76 tasks across
+six convergence categories, but this limits statistical power and captures only part of the space of IC-relevant behavior.
+In this sense, our evaluation provides evidence about a particular behavioral expression of instrumental convergence
+rather than a complete test of the thesis. Our framing controls are also limited to linearly recoverable structure: the R2
+and INLP analyses support the conclusion that a simple linear framing direction does not explain the main trajectory,
+but do not rule out nonlinear effects, interactions between framing and subtask, or differences in how judges respond
+to prompt tone. An analysis stratified by subtask or using a richer classification of prompt tone could help address
+these questions. Moreover, average inter-judge agreement is moderate at 68.75%, with stronger agreement at the final
+RLVR checkpoint and weaker agreement near the early-RLVR peak. This supports the direction of the final result,
+although absolute IR values should be interpreted cautiously and would benefit from human validation on a stratified
+sample. Finally, our evaluation does not establish whether the verifier is outer-aligned. A narrow verifier may limit
+opportunities for broad instrumental strategies while failing to specify important safety constraints, and we measure
+only one behavioral consequence along the released checkpoint sequence. Comparing alternative verifier designs is
+therefore a useful direction for understanding which aspects of the observed trajectory are specific to this verifier and
+which may generalize to RLVR more broadly.
+Broader Impact Statement
+This work should not be used as evidence that RLVR-trained systems are broadly safe. Our result is limited to one
+model family, one benchmark, and one judging protocol. It suggests that IC-like behavior can decrease along a verifier-
+based RL trajectory, not that RLVR solves inner alignment, outer alignment, deceptive alignment, or instrumental
+convergence in general.
+The positive use of the work is diagnostic. Checkpoint-level evaluations can reveal nonmonotonic safety trajectories
+that endpoint comparisons miss. We hope this encourages future work to evaluate post-training methods as trajecto-
+ries, combine behavioral benchmarks with mechanistic analysis, and treat instrumental convergence as a conditional
+empirical phenomenon rather than as a slogan.
+8

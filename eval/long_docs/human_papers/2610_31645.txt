@@ -1,0 +1,566 @@
+OMNIRAY: CAMERA-AGNOSTIC MONOCULAR 3D RE-
+CONSTRUCTION WITH COMPOSITE RAY FIELDS
+Namitha Guruprasad1
+Abhay Yadav1
+Cheng Peng2
+Rama Chellappa1† Anand Bhattad1†
+1Johns Hopkins University
+2University of Virginia
+ Project Page: https://nam1410.github.io/omniray/
+Figure 1: OmniRay reconstructs 3D geometry from a single image across diverse camera ge-
+ometries. A single model predicts an up-to-scale, camera-frame point cloud without camera intrin-
+sics or camera-type input. Columns show inputs and reconstructions for pinhole, GoPro, fisheye,
+catadioptric, and panoramic cameras, respectively. Note that the GoPro and catadioptric camera
+configurations are withheld from training.
+ABSTRACT
+Monocular models recover 3D geometry from a single image in one pass, but most
+assume a pinhole camera and produce distorted geometry on the wide-angle im-
+agery produced by fisheye and panoramic lenses. Camera-aware models remove
+this assumption by predicting a per-pixel ray field. However, they represent differ-
+ent camera geometries using a single fixed basis to capture both the overall camera
+projection and its finer variations. We argue that camera geometry can be viewed
+as having a hierarchy of complexity for representing rays. We present Omni-
+Ray, a feed-forward model whose Ray Module is composed of three components:
+a monotone radial base that captures radially symmetric structure, a spherical-
+harmonic residual for smooth deviations from it, and a free-form residual for re-
+maining local variation. These components are composed as successive rotations
+on the sphere, allowing the representation to accommodate diverse camera geome-
+tries. Given a single image, OmniRay predicts a ray direction and an up-to-scale
+radial distance for every pixel, from which a 3D point cloud is recovered without
+needing camera information at inference time. Extensive experiments across dif-
+ferent camera configurations demonstrate that OmniRay establishes a new state-
+of-the-art in camera-agnostic monocular 3D reconstruction.
+†Equal advising.
+1
+arXiv:2610.31645v1  [cs.CV]  22 Oct 2026
+
+
+1
+INTRODUCTION
+Monocular 3D reconstruction recovers a 3D point for each pixel in an image. We consider central
+cameras, in which all viewing rays pass through a single optical center, so each 3D point splits into a
+ray direction and a distance along that ray. The ray direction depends only on the camera geometry,
+while the distance depends on the scene under observation. Recent feed-forward models perform
+well on monocular 3D estimation (Yang et al., 2024; Wang et al., 2025b), but their architectures or
+training data focus on pinhole cameras. When applied to wide-angle images, these assumptions often
+lead to distorted reconstructed geometry. Wide-angle cameras are common in robotics (Yogamani
+et al., 2019), augmented and virtual reality (Engel et al., 2023), and 360◦capture (Liao et al., 2022),
+making this a practical limitation. One way to handle these images is to calibrate the camera and
+rectify them to a pinhole view before reconstruction, but a pinhole cannot represent rays at or beyond
+90◦from its optical axis. As such, undistortion typically leads to cropping away part of the field of
+view or strongly stretching the image near its periphery, leading to low-confidence predictions from
+conventional depth estimation or 3D foundation models (Guo et al., 2026).
+Camera-aware models instead account for camera geometry directly (Bogdan et al., 2018; Tirado-
+Gar´ın & Civera, 2025; Piccinelli et al., 2025).
+DeepFocal (Workman et al., 2015) and Deep-
+Calib (Bogdan et al., 2018) first use convolutional neural networks (CNNs) to estimate focal length
+and distortion of fixed camera models. Follow-up works generalize camera parameter estimation to
+arbitrary camera models by estimating ray fields directly. In particular, UniK3D (Piccinelli et al.,
+2025) predicts a per-pixel ray field using a spherical-harmonic (SH) basis and a radial distance
+along each ray. It can therefore reconstruct pinhole, fisheye, and panoramic images without camera
+metadata. In this formulation, the same basis must describe both the overall camera projection and
+its finer variations. We argue that there exists a hierarchy of complexity in camera geometry esti-
+mation, which can lead to more efficient and performant design. Many camera projections have a
+simple structure: for approximately radially symmetric lenses, a smooth radial function is sufficient
+to describe how viewing directions change across the image. Spherical harmonics can be used to
+complement radial functions.
+We therefore propose OmniRay – that takes a single image and predicts a dense, up-to-scale 3D
+reconstruction without intrinsics or camera-type input (Fig. 1). A shared image encoder feeds two
+modules. The Ray Module predicts a monotone radial base and the two residuals, each of which
+refines the preceding ray field. The Distance Module predicts the radial distance of each pixel,
+and the corresponding 3D point is obtained by scaling its predicted ray. We train OmniRay on
+cameras ranging from pinhole to panorama and evaluate it on held-out scenes, datasets, and camera
+configurations. An oracle analysis examines which ray fields each representation can express, while
+benchmark experiments and ablations test the performance of the proposed components.
+In summary, our contributions are:
+1. A composite ray representation built from a monotone radial base, a spherical-harmonic resid-
+ual, and a free-form residual.
+2. OmniRay, a feed-forward model for single-image 3D reconstruction across central camera
+geometries, without needing intrinsics or camera-type input.
+3. An oracle analysis of ray representations, and experiments across seen and held-out scenes,
+datasets, and camera configurations show that OmniRay improves over the evaluated baselines
+in ray field estimation and monocular 3D reconstruction.
+2
+RELATED WORK
+Camera calibration.
+Camera calibration determines the mapping from image pixels to rays in
+the camera frame. Classical methods parameterize this mapping with a low-dimensional model
+whose parameters are estimated from geometric observations (Zhang, 2000; Scaramuzza et al.,
+2006). Different camera geometries are handled by different parametric models: pinhole model
+with radial and tangential distortion for conventional lenses, Kannala & Brandt (2006) model for
+wide-angle optics, and unified camera models (Geyer & Daniilidis, 2000; Mei & Rives, 2007;
+Khomutenko et al., 2015; Usenko et al., 2018) for omnidirectional cameras. Each of these models
+fixes a particular functional form, so a lens whose behavior departs from that form introduces
+2
+
+
+Figure 2: OmniRay Overview. Given a single image, a DINOv2 ViT-L/14 encoder produces global
+and dense features that drive two branches. The Ray Module progressively builds a camera-agnostic
+ray field from a monotone radial base, a spherical-harmonic residual, and a free-form residual. The
+Distance Module predicts a positive radial distance for each pixel. Combining the final ray d and
+distance ρ yields the local pointmap P = ρ d, recovering 3D geometry up to scale without camera
+intrinsics or a camera-type label.
+residual error. Generic models relax these assumptions with more degrees of freedom and capture
+complex lens behavior (Schops et al., 2020) at the cost of a higher-dimensional calibration problem.
+Learning-based methods offer an alternative to this high-dimensional calibration process by learning
+camera geometry directly from images without input calibration. DeepCalib (Bogdan et al., 2018)
+regresses camera parameters, while Perspective Fields (Jin et al., 2023), GeoCalib (Veicht et al.,
+2024), and AnyCalib (Tirado-Gar´ın & Civera, 2025) move toward dense geometric cues: a per-pixel
+up-vector and latitude field (Jin et al., 2023; Veicht et al., 2024), or per-pixel rays (Tirado-Gar´ın &
+Civera, 2025), each of which describes the camera more generally than a parameter vector. Neural
+Ray Surfaces (Vasiljevic et al., 2020) take it further by learning a free-form ray surface from video
+observations and directly representing the pixel-to-ray mapping. These calibration approaches shift
+from explicit parameter estimation toward learning the pixel-to-ray mapping, but leave open how
+this mapping should be represented to remain both compact and expressive simultaneously.
+Monocular 3D.
+Recent foundation models have improved depth estimation through large-scale
+training and distillation (Yang et al., 2024), but do not explicitly model the camera geometry. Depth
+Anything 3 (Lin et al., 2025a) instead predicts depth with per-pixel rays by modeling camera geom-
+etry alongside scene structure. Camera-aware models specifically account for camera geometry in
+monocular depth estimation. UniK3D (Piccinelli et al., 2025) represents a per-pixel ray field with
+spherical-harmonics and predicts radial distance along each ray to handle diverse camera geome-
+tries without camera metadata. Depth Any Camera (Guo et al., 2025) and UniDAC (Ganesan et al.,
+2026) instead transform images into a common equirectangular representation to process different
+camera types before depth estimation, but require input camera intrinsics for the transformation.
+CAM3R (Guruprasad et al., 2026) and Wid3R (Jung et al., 2026) extend the spherical-harmonic ray
+representation to multi-view feed-forward 3D reconstruction. Together, these works highlight the
+value of explicitly accounting for the pixel-to-ray mapping for camera-agnostic 3D geometry, while
+leaving open whether a single ray representation is necessary for all camera geometries.
+3
+
+
+3
+METHOD
+Given a single image I ∈RH×W ×3 from an arbitrary central camera, with no intrinsics, distortion
+parameters or camera-type label, OmniRay predicts for every pixel u = (ux, uy) a unit ray d(u) ∈
+S2 and a radial distance ρ(u) > 0.
+A DINOv2 backbone (Oquab et al., 2023) encodes the image, and its features drive two branches
+(Fig. 2): the Ray Module composes d from radial, spherical-harmonic, and free-form components,
+while the Distance Module predicts ρ. Their combination gives the 3D point in the camera frame:
+P(u) = ρ(u) d(u).
+(1)
+We predict radial distance ρ rather than perpendicular depth Z, related by ρ = Z/dz, since dz →0
+as the ray approaches 90◦from the optical axis and changes sign beyond it; ρ therefore remains
+well-defined across wide fields of view.
+Notation.
+The DINOv2 backbone produces a dense feature map F and a pooled global token g.
+We use the normalized image coordinate m(u) = (u−cimg)/D, where cimg is the image center and
+D is the image half-diagonal in pixels. This normalization places the image corners at ∥m∥= 1 for
+any resolution and aspect ratio. Image scale is provided separately to g through log(W/H) and the
+logarithm of the image diagonal. Ground-truth quantities are marked with a star, d⋆and ρ⋆, and V
+denotes the set of pixels at which they are defined.
+3.1
+RAY MODULE
+The module comprises three stages, d0 →d1 →d, in which the radial base and the spherical-
+harmonic residual are predicted from the global token g, and the free-form residual from the dense
+feature map F.
+Radial base
+models the approximately radially symmetric structure of conventional central
+cameras with a monotone mapping from image radius to incidence angle.
+Monotonicity restricts the base to injective radius-to-angle maps, so no two radii in the modeled
+range receive the same incidence angle, and the profile is evaluated directly rather than inverted
+numerically as a parametric projection model would require. A head maps g to K + 8 values (Fig.
+2b): K increments s ∈RK between fixed knot radii 0 = r0 < · · · < rK, with a principal-point
+offset c, an axis-angle rotation ω, and three parameters forming an upper-triangular map A(a) for
+anisotropic scaling and shear. These give the transformed coordinate m′ = A(a)(m−c), with radius
+r and azimuth φ. The increments are passed through a softplus to ensure positivity, accumulated
+into knot heights, and linearly interpolated,
+θk =
+X
+j≤k
+softplus(sj),
+θ0 = 0,
+θ(r) = lerp
+ clip(r; r0, rK); {rk}, {θk}
+
+,
+(2)
+so that θ(r) is strictly increasing within the knot span and constant outside it. We use K = 16 knots
+spanning r ∈[0, 1.3] in half-diagonal units. The corresponding ray is
+d0 = R(ω)
+"sin θ(r) cos φ
+sin θ(r) sin φ
+cos θ(r)
+#
+,
+(3)
+where R(ω) is the rotation matrix of ω. The largest angle the base can produce is the sum of its
+increments, so nothing caps θ at 90◦and the base already represents lenses whose rays pass the
+equator.
+Spherical-harmonic residual.
+The radial base restricts the incidence angle to a monotone func-
+tion of image radius, which becomes insufficient when the image covers a large portion of the view-
+ing sphere (Fig. 3b). A spherical-harmonic residual supplies an angular correction to it (Fig. 2b). A
+head maps g to a single coefficient matrix W1 ∈R(L+1)2×3 for a real spherical-harmonic basis of
+maximum degree L, shared across all pixels. Thus, the correction field is represented by 3(L + 1)2
+predicted coefficients rather than an independent vector at each pixel. Each pixel evaluates the basis
+at an address on S2 obtained from its normalized image coordinate through the inverse-stereographic
+lift,
+4
+
+
+Figure 3: Why combine the radial construction with the residual corrections? (a) The radial
+representation gives the same incidence angle to pixels that lie at the same radius in the base coordi-
+nates. (b) In the centered 2:1 equirectangular projection, point A is closer to the center of the image
+than point B, yet has a higher incidence angle. A monotone radial function cannot accommodate
+such ordering under fixed coordinate transformation and orientation. (c) The spherical-harmonic
+and free-form residuals improve upon the base direction via iterative correction on the unit sphere.
+b(m) =
+ 2m, 1 −∥m∥2
+1 + ∥m∥2
+,
+w1(u) = W⊤
+1 ΦL
+ b(m(u))
+
+,
+(4)
+where ΦL stacks the (L + 1)2 basis values. We use L = 7, giving 192 coefficients per image.
+The correction is applied through the exponential map on S2. For any ray d, only the component
+of w orthogonal to d is a tangent direction, so the remaining component is discarded, leaving t =
+w −⟨w, d⟩d. Its norm n = ∥t∥is the rotation angle in radians, and the ray is transported that far
+along the great circle through d in the direction of t,
+expd(w) = cos n d + sin n
+n
+t.
+(5)
+Free-form residual.
+The spherical-harmonic residual provides a compact global correction but
+remains limited by the finite-order basis. The free-form residual captures the remaining local varia-
+tion using a lightweight convolutional decoder on the dense feature map F. The resulting correction
+map is interpolated at each pixel to obtain w2(u), so its spatial detail is limited by the resolution of
+F. The two residuals are applied in turn through equation 5, giving the composite ray field
+d1 = expd0
+ w1
+
+,
+d = expd1
+ w2
+
+,
+(6)
+with d0 given by equation 3, and with t1 and t2 the tangential parts of w1 at d0 and of w2 at d1.
+Both residual heads are zero-initialized, so the composition starts from the radial base, and the norms
+∥t1∥and ∥t2∥are the rotation angles each residual applies, measuring how far a camera departs from
+the representation beneath it and letting the representation adapt without model selection or routing.
+3.2
+DISTANCE MODULE
+The Ray Module determines the direction d along which each pixel observes the scene, but not
+how far along that ray the surface lies. The Distance Module predicts this remaining quantity: the
+up-to-scale radial distance ρ(u) from the optical center. It reuses the same encoder pass, fusing
+four intermediate blocks with a Dense Prediction Transformer (DPT) decoder (Ranftl et al., 2021)
+into a dense prediction sampled at each pixel, where a softplus gives a positive distance ρ(u) =
+softplus(fρ(u)) > 0. Scaling each predicted ray by its distance as in equation 1 produces the
+camera-frame point cloud {P(u)} in a single forward pass.
+3.3
+TRAINING OBJECTIVE
+Angular ray loss
+supervises the final ray field and the two intermediate fields with the mean cosine
+residual ℓ(x) =
+1
+|V |
+P
+i∈V
+ 1 −⟨xi, d⋆
+i ⟩
+
+,
+Lray = ℓ(d) + γ0 ℓ(d0) + γ1 ℓ(d1) + Lregion
+(7)
+5
+
+
+Table 1: Oracle representation fitting. Mean angular error in degrees after fitting each representa-
+tion directly to ground-truth rays; lower is better. #Params denotes parameters per camera; the SH
+row adds three rotation parameters to the 3(L + 1)2 = 192 coefficients for the base direction, which
+the residual inherits from the radial base. Best results among compact representations are bold. The
+free field is shown separately as a high-capacity reference.
+Angular error (◦) ↓
+Representation
+#Params
+Fisheye
+Equirectangular
+Catadioptric
+Pinhole
+6
+5.731
+48.080
+50.434
+Double sphere
+8
+0.021
+22.932
+41.876
+Radial (K = 16)
+24
+0.002
+22.802
+0.104
+Radial (K = 32)
+40
+0.002
+22.801
+0.023
+SH (L = 7)
+195
+0.276
+0.641
+0.295
+Radial16 + SH7 residual (ours)
+216
+0.075
+0.217
+0.174
+Free field
+76.8k
+0.005
+0.013
+0.015
+with stage weights γ0, γ1 > 0. This deep supervision of d0 and d1 keeps each stage responsible for
+the structure it represents, so a correct final ray cannot be reached through an arbitrary base.
+Lregion weights the same per-pixel error more heavily where it is largest.
+With ¯e(S) denoting the mean error over a pixel set S, it is λc ¯e(C) + λp ¯e(Q) + λt ¯e(T) over an
+inner region C, an outer region Q, and tail T of the 5% of pixels with the largest error, with λp the
+largest of the three since error concentrates at the periphery for wide fields of view. The regions are
+thresholds on the image radius ∥m∥relative to its maximum, so the split follows the imaged region
+of a circular fisheye as well as a rectangular frame and does not move with the predicted principal
+point.
+point cloud loss
+supervises rays and distances jointly.
+Each cloud is normalized by its own
+mean point norm, zpred =
+1
+|V |
+P
+i∈V ∥ρidi∥for the prediction and zgt =
+1
+|V |
+P
+i∈V ∥ρ⋆
+i d⋆
+i ∥for the
+ground truth, which removes the global scale that a single image leaves undetermined,
+Lpc =
+1
+|V |
+X
+i∈V
+ ρidi
+zpred
+−ρ⋆
+i d⋆
+i
+zgt
+
+2.
+(8)
+It is evaluated on P = ρ d with the ray attached, so a ray error displaces the point even for an exact
+distance and the gradient reaches both modules.
+Overall objective. L = λray Lray + λpc Lpc. Both modules and the shared encoder are trained
+end-to-end under this objective. Sec. A.1 gives the head architectures and the full training schedule.
+4
+EXPERIMENTS
+4.1
+ORACLE TEST: REPRESENTATION CEILINGS
+Before training anything, we measure what each candidate representation can express at all, by
+fitting its parameters directly to analytic ground-truth rays; Sec. A.2 gives the fitting protocol. Table
+1 shows that compact parametric models succeed only on the geometries their assumptions match,
+and that increasing the number of knots in the monotone radial profile reduces the catadioptric error
+but leaves the equirectangular error at 22.8◦, the ceiling identified in Sec. 3.1. The spherical-
+harmonic field removes that ceiling but remains two orders of magnitude behind the radial profile
+on the fisheye. Among the compact representations, only the composition is below 0.25◦on all
+three geometries, and since it reduces to the radial base when the residual vanishes, its capacity is
+bounded below by that of the base.
+4.2
+DATASETS AND CAMERA TYPES
+We train on two panoramic datasets, 2D3DS (Armeni et al., 2017), of indoor offices and corridors,
+and 360Loc (Huang et al., 2024), of larger indoor and outdoor environments, rendering perspective,
+6
+
+
+Table 2: Main benchmark. Results on seen cameras, held-out cameras, and held-out domains.
+Ang. denotes mean ray error in degrees; CD denotes median relative Chamfer distance, normalized
+by each scene’s mean point norm. Metrics are macro-averaged over test images, and all methods
+use per-image median scale alignment. Lower is better; best results are bold. AUG denotes random-
+lens augmentation, and RG denotes ray guidance. † denotes exclusion from our training data; a dash
+indicates that the method does not predict scene geometry. Full per-camera and per-dataset results
+and additional metrics are provided in Sec. A.3.
+Seen cameras
+Held-out cameras
+Held-out domains
+Aggregate
+Catadioptric†
+GoPro†
+PanoCity†
+CO3Dv2†
+Method
+Ang. (◦) ↓
+CD↓
+Ang. (◦) ↓
+CD↓
+Ang. (◦) ↓
+CD↓
+Ang. (◦) ↓
+CD↓
+Ang. (◦) ↓
+CD↓
+GeoCalib (Veicht et al., 2024)
+30.997
+–
+119.662
+–
+14.126
+–
+47.132
+–
+3.713
+–
+AnyCalib (Tirado-Gar´ın & Civera, 2025)
+28.655
+–
+107.129
+–
+10.031
+–
+42.335
+–
+2.711
+–
+DA3 (Lin et al., 2025a)
+33.028
+0.1999
+121.566
+1.0412
+16.637
+0.1097
+50.533
+0.3677
+2.041
+0.0288
+UniK3D (Piccinelli et al., 2025)
+6.336
+0.0760
+75.702
+0.5948
+6.342
+0.0454
+21.220
+0.2120
+2.676
+0.0277
+OmniRay w/o AUG
+1.385
+0.0592
+30.867
+0.3440
+7.965
+0.0641
+6.352
+0.0984
+2.825
+0.0330
+OmniRay + RG
+0.356
+0.0205
+1.118
+0.0113
+5.180
+0.0375
+1.592
+0.0277
+2.935
+0.0411
+OmniRay
+0.140
+0.0179
+1.120
+0.0131
+5.533
+0.0392
+1.350
+0.0240
+2.967
+0.0380
+fisheye, and panoramic views from each panorama; the 2D3DS perspective images are the real cap-
+tures provided with the dataset. We evaluate on held-out scenes of both, and on two unseen datasets,
+PanoCity (Guo et al., 2026), of outdoor street-level captures, and CO3Dv2 (Reizenstein et al., 2021),
+of object-centric images. Two camera configurations are withheld from training entirely, a GoPro
+fisheye and a Nayar catadioptric camera (Nayar, 1997; Baker & Nayar, 1999), both satisfying our
+central-camera assumption. Sec. A.2 gives the splits and the camera specifications.
+Random-lens Augmentation.
+During training we augment each panorama with randomly sam-
+pled synthetic central cameras, each defined by a viewing direction, a monotone radial profile drawn
+from positive spline increments, and an imaged sensor region. This single family covers filled and
+annular domains, from pinhole to wide-angle lenses. Draws whose profile falls close to a held-out
+geometry are rejected, so neither withheld camera nor its neighborhood appears in training. Sec. A.2
+gives the sampling ranges and the rejection criteria, and Fig. 8 shows sampled examples.
+4.3
+BENCHMARK AND ABLATION
+Baselines.
+UniK3D (Piccinelli et al., 2025) and Depth Anything 3 (DA3) (Lin et al., 2025a) jointly
+predict camera geometry and scene structure and are evaluated on all metrics; we fine-tune UniK3D
+on the 2D3DS and 360Loc panoramas so that it sees the same source imagery we train on. Geo-
+Calib (Veicht et al., 2024) and AnyCalib (Tirado-Gar´ın & Civera, 2025) calibrate the camera without
+predicting scene geometry. We convert their estimated cameras to dense ray fields for evaluation so
+all methods are scored identically.
+Metrics.
+We evaluate the predicted ray fields, radial distance, and 3D point clouds using the fol-
+lowing metrics: Ray accuracy is the mean angular error arccos⟨d, d⋆⟩in degrees, and radial distance
+is evaluated with absolute relative error (AbsRel) and δ < 1.25. For point clouds, accuracy and com-
+pleteness are the median nearest-neighbor distances normalized by the scene’s mean point norm, and
+their mean is the Chamfer distance (CD). Predictions in different depth gauges are aligned per im-
+age by s = median(ρ⋆)/ median(ρ), and perpendicular depth is converted to radial distance by
+ρ = Z/dz using the predicted rays. All metrics are computed over pixels with valid ground truth.
+Results.
+Table 2 summarizes performance across camera configurations and domains. On the seen
+camera types, OmniRay achieves a mean ray error of 0.14◦and relative Chamfer distance of 0.0179,
+compared with 6.34◦and 0.0760 for UniK3D and 33.03◦and 0.1999 for Depth Anything 3. On
+the held-out configurations, for the Nayar catadioptric camera, all baselines exceed 75◦while ours
+achieves 1.12◦and 0.0131 CD; on GoPro, ours achieves 5.53◦versus 6.34◦for UniK3D. On PanoC-
+ity, ours achieves 1.35◦ray error versus 21.22◦and 50.53◦for UniK3D and DA3, respectively. On
+CO3Dv2, our 2.97◦ray error remains within a degree of both baselines.
+The w/o AUG row isolates the random-lens sampling of Sec. 4.2. Without it the seen cameras remain
+strong at 1.39◦, but the held-out catadioptric and GoPro errors rise to 30.87◦and 7.97◦; restoring
+it recovers 1.12◦and 5.53◦and improves the seen cameras to 0.14◦. Fig. 5a shows the same effect
+7
+
+
+Figure 4: Qualitative reconstructions on unseen datasets. We compare OmniRay with Depth
+Anything 3 and UniK3D on PanoCity and CO3Dv2 across five camera configurations. Small vi-
+sualizations show viewing-ray fields; larger renderings show the corresponding point clouds, with
+ground truth in the rightmost column. OmniRay better preserves scene structure in the panoramic
+and catadioptric examples without camera intrinsics or camera-type input.
+on a catadioptric example, where the unaugmented model exhibits larger ray-field and geometric
+errors. These results indicate that random-lens sampling is important for extending the composite
+representation beyond the camera configurations encountered during training. Adding ray guidance
+to each DPT scale following Lin et al. (2025b) (+ RG) does not change the metrics consistently. The
+injection is zero-initialized, so the guided head could exploit the prompt if it were beneficial, and we
+therefore omit it from the final model.
+Fig. 4 compares ray fields and camera-frame point clouds on unseen PanoCity and CO3Dv2 images,
+with each ray field colored by its angular error. On the panorama, OmniRay keeps the road contin-
+8
+
+
+Figure 5: Ablation. (a) Held-out catadioptric camera: predicted ray field and point cloud for
+UniK3D, OmniRay trained without random-lens augmentation, and the full model, against the
+ground truth. (b) Panoramic image: the radial base alone covers only part of the sphere (orange)
+and leaves the reconstruction torn, while the spherical-harmonic and free-form residuals complete
+the field (blue) and close the geometry.
+Figure 6: In-the-wild reconstructions. Qualitative reconstructions on photographs collected from
+the internet, shown in order as a panorama, a fisheye image, and a pinhole image. Although these
+camera families are represented during training, the images come from different camera instances
+with unknown intrinsics and lens parameters. OmniRay requires no camera metadata at inference.
+uous while UniK3D breaks it across the image and DA3 fails to recover the ground structure. On
+the fisheye and GoPro rows, OmniRay keeps the road, pavement, and lane markings straight where
+UniK3D bends them and DA3 also distorts the surrounding buildings. On the held-out catadioptric
+camera both baselines produce degraded reconstructions. On the CO3Dv2 pinhole example, Omni-
+Ray remains comparable to the baselines, demonstrating that the additional flexibility for wide-angle
+cameras does not come at the expense of pinhole imagery. On in-the-wild images, OmniRay also
+recovers coherent 3D structure, as shown in Fig. 6.
+Ablation.
+Table 3 isolates and analyzes different ray representations. The radial base performs
+well on fisheye and pinhole cameras (1.761◦and 0.788◦) but gives 21.825◦on panoramas, where a
+monotone radial profile assigns one incidence angle per image radius, an ordering that a panoramic
+projection does not follow (Fig. 3b). The spherical base reduces panoramic error to 5.088◦, while
+the free-form field performs best among single representations on panoramas, fisheye, and pinhole,
+9

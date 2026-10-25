@@ -1,0 +1,433 @@
+A FIX FOR SOFTMAX AND CROSS-ENTROPY
+Jonathan T. Barron
+Google DeepMind
+barron@google.com
+Dan Gnanapragasam
+Google DeepMind
+nanabyte@google.com
+Michael Tschannen
+Google DeepMind
+tschannen@google.com
+ABSTRACT
+Standard implementations of softmax, log-softmax, and cross-entropy have two
+numerical bugs. The first bug, Softmax Collapse, rounds the target logit’s gradient
+to zero if that one logit is much larger than the others, resulting in gradients that
+no longer sum to zero. The second bug, Softmax Cancellation, occurs when stu-
+dent logits are close to teacher logits, and produces non-zero gradients even when
+the student and teacher logits are equal. We present simple implementations of
+log-softmax, softmax, and cross-entropy that fix both bugs. Our fix eliminates the
+previously-observed “Slingshot” phenomenon, speeds up grokking with weight
+decay, prevents accuracy collapse without weight decay, stops student networks
+from drifting away from the teacher during distillation, and shows that after mem-
+orization, logit growth is bounded by an equilibrium between weight decay and
+Adam’s ϵ hyperparameter.
+1
+INTRODUCTION
+Naively computing softmax or cross-entropy on logits z ∈RK as ezk/ P
+j ezj overflows if any logit
+exceeds the floating-point exponent limit (≈88 in fp32), which is why standard implementations in
+all deep learning frameworks (JAX, PyTorch, TensorFlow, etc.) shift the input logits by subtracting
+their maximum value zmax = maxj zj (Higham, 2002):
+˜zk = zk −zmax ,
+logsoftmax(z)k = ˜zk −log
+X
+j
+e˜zj ,
+qk = softmax(z)k =
+e˜zk
+P
+j e˜zj .
+(1)
+For a target distribution p
+∈
+∆K−1, cross-entropy is then computed as L(z, p)
+=
+−P
+k pk logsoftmax(z)k, whose exact gradient is g = ∇zL(z, p) = q −p. Though subtract-
+ing zmax prevents overflow, two numerical bugs remain.
+(a) Softmax Collapse: |gt| vs. margin m.
+(b) Softmax Cancellation: ∥∇zSL∥2 as zS →zT.
+Figure 1: The two bugs in standard softmax and cross-entropy. (a) Softmax Collapse: As a model
+becomes more confident in the correct class (thereby increasing the logit margin m), the true gradient
+on the target logit shrinks exponentially, but standard implementations incorrectly round that gradient
+to zero once m crosses a precision cliff (≈5.5 in bf16, 16.6 in fp32, and 36.7 in fp64). (b) Softmax
+Cancellation: In soft-target distillation, as student logits zS approach teacher logits zT, the true
+gradient shrinks toward zero, but standard implementations lose precision and plateau at a non-zero
+noise floor. Our fix eliminates both bugs and yields accurate gradients across all precisions.
+1
+arXiv:2610.31642v1  [cs.LG]  22 Oct 2026
+
+
+The first bug, Softmax Collapse (Figure 1a), occurs when a model correctly predicts the target class
+t ∈{1, . . . , K} with high confidence, so that zt = zmax is much larger than all non-target logits zj
+(j̸ = t). We measure this confidence by the logit margin, which is how much larger the target logit is
+than the log-sum-exp of all non-target logits:
+m = zt −log
+X
+j̸=t
+ezj .
+(2)
+In Equation 1, subtracting zmax = zt sets the shifted target logit to ˜zt = 0 (so e˜zt = 1 in the
+denominator), while the K −1 non-target exponentials sum to a small positive number e−m =
+P
+j̸=t ezj−zt ≪1. Floating-point numbers have much finer precision near 0 than near 1: in fp32,
+values near 0 can be as small as ∼10−38, whereas values added to 1.0 are lost to rounding below
+∼10−7. Because standard implementations form the denominator 1+e−m by adding e−m to 1.0, the
+e−m term is lost to rounding once the margin m exceeds a threshold cd that we call the precision cliff
+(c16 ≈5.5 in bf16, c32 ≈16.6 in fp32, and c64 ≈36.7 in fp64). When m > cd, the denominator
+1 + e−m evaluates to exactly 1.0, which causes qt = 1/(1 + e−m) to evaluate to 1.0 and zeroes
+out both the loss and the target gradient ˜gt = qt −1 = 0.0. However, the non-target gradients
+˜gj = qj = ezj−zt/(1 + e−m) (j̸ = t) are evaluated near 0 without adding 1.0 to their numerators, so
+they remain positive all the way down to exponent underflow (m ≈88). Because the target gradient
+rounds to 0.0 while the non-target gradients do not, the gradients no longer sum to zero (P
+k ˜gk > 0).
+When training with adaptive optimizers such as Adam and AdamW (Kingma & Ba, 2015; Loshchilov
+& Hutter, 2019), which normalize each gradient by a moving average of its magnitude, this asymmetry
+causes the recurring “Slingshot” loss spikes observed by Thilak et al. (2022) and the grokking failures
+studied by Prieto et al. (2025). While prior works used surrogate losses (Prieto et al., 2025), gradient
+projection (Liu et al., 2026), or fp64 casting (Nanda et al., 2023; Varma et al., 2023) to mitigate these
+issues, we instead fix log-softmax, softmax, and cross-entropy directly (Section 2).
+The second bug, Softmax Cancellation (Figure 1b), occurs in knowledge distillation (Hinton et al.,
+2015) and KL regularization, where the target p = softmax(zT) comes from teacher logits zT.
+Standard implementations compute q = softmax(zS) and p = softmax(zT) separately and subtract
+them to get ˜g = q−p. This means that if zS is close to zT, subtracting these nearly equal probabilities
+loses precision, and slight differences between the forward-pass softmax and backward-pass log-
+softmax formulas leave a non-zero gradient even when zS = zT. We fix this by computing q −p
+directly from zS −zT in log space (Section 3).
+2
+SOFTMAX COLLAPSE
+When the target logit zt = zmax is the largest logit, shifting by zmax in Equation 1 sets ˜zt = 0
+and ˜zj = zj −zt < 0 for j̸ = t, so the denominator is P
+i e˜zi = 1 + P
+j̸=t ezj−zt = 1 + e−m.
+Mathematically, the hard-target loss is L(z, t) = −logsoftmax(z)t = log(1+e−m) and its gradients
+are
+gt =
+1
+1 + e−m −1
+|
+{z
+}
+Standard
+= −
+e−m
+1 + e−m
+|
+{z
+}
+Fixed
+,
+gj =
+ezj−zt
+1 + e−m
+for j̸ = t ,
+(3)
+which sum to zero (P
+k gk = 0). In floating point, however, the two expressions for gt in Equation 3
+behave very differently once m > cd, where e−m is too small to change 1.0 when added to it
+(Figure 1a). Standard implementations add 1 and e−m to form the denominator 1 + e−m, which
+rounds to 1 when m > cd. In the forward pass, log(1 + e−m) then evaluates to log(1) = 0, zeroing
+out both logsoftmax(z)t and L(z, t). In the backward pass, standard cross-entropy implementations
+compute qt = 1/(1 + e−m) = 1 and subtract 1 to get ˜gt = qt −1 = 0. In contrast, our fixed
+expression −e−m/(1 + e−m) keeps e−m in the numerator: even when the denominator 1 + e−m
+rounds to 1.0, dividing −e−m by 1.0 preserves gt ≈−e−m down to exponent underflow (m ≈88).
+While ˜gt rounds to zero when m > cd, the non-target gradients do not. For each non-target class
+j̸ = t, standard cross-entropy computes ˜gj = qj = ezj−zt/(1+e−m). Because the numerator ezj−zt
+is evaluated directly from the negative difference zj −zt without adding 1, it remains accurate down
+to exponent underflow while the denominator rounds to 1. When m > cd, standard cross-entropy
+therefore zeroes out only the target entry t while all K −1 non-target gradients remain positive:
+˜gk = 1[k̸ = t] gk ,
+X
+k
+˜gk = −gt =
+e−m
+1 + e−m > 0
+for m > cd .
+(4)
+2
+
+
+The same bug affects standalone softmax(z): once m > cd, softmax’s backward pass rounds qimax
+(imax = arg maxi zi) to 1 and sets ˜gimax = 0 while the remaining gradients stay non-zero.
+This bug can be fixed by never adding 1 to e−m directly. In logsoftmax(z) and softmax(z), only
+the largest logit imax = arg maxi zi is shifted to 0 (where e0 = 1 in the denominator). Instead of
+including e0 = 1 in the sum of exponentials, we set ˜zimax = 0, compute the margin m by excluding
+imax from the log-sum-exp, and combine them with a numerically stable softplus(x) = log(1 + ex)
+(with softmax(z)k = exp(logsoftmax(z)k)):
+˜zk = 1[k̸ = imax](zk −zimax) ,
+m = −LSE
+j̸=imax ˜zj ,
+logsoftmax(z)k = ˜zk −softplus(−m) .
+(5)
+For hard-target cross-entropy with target t, we can use t directly in place of imax without computing
+an arg max:
+m = −LSE
+j̸=t (zj −zt) ,
+L(z, t) = log(1 + e−m) = softplus(−m) .
+(6)
+Because the t-th slot is replaced with the constant 0 rather than zt −zt, zt only appears in L through
+the K −1 differences zj −zt (j̸ = t), so autodiff correctly computes the target gradient as the negated
+sum of the non-target gradients:
+gj = ezj−zt−L =
+ezj−zt
+1 + e−m
+for j̸ = t ,
+gt = −
+X
+j̸=t
+gj = −
+e−m
+1 + e−m .
+(7)
+Here is a JAX implementation of logsoftmax, softmax, and hard-target cross-entropy, which remains
+accurate down to exponent underflow and satisfies P
+k gk = 0:
+import jax, jax.numpy as jnp, optax
+def log_softmax(z):
+i_max = jnp.argmax(z, axis=-1)
+z_max = jnp.take_along_axis(z, i_max[..., None], axis=-1)
+# Max logit.
+is_max = jax.nn.one_hot(i_max, z.shape[-1], dtype=bool)
+# Max mask.
+shifted = jnp.where(is_max, 0.0, z - z_max)
+# Exact 0 at argmax.
+others = jnp.where(is_max, -jnp.inf, shifted)
+# Exclude argmax from sum.
+m = -jax.nn.logsumexp(others, axis=-1, keepdims=True)
+# Logit margin.
+return shifted - jax.nn.softplus(-m)
+# log_softmax(z).
+softmax = lambda z: jnp.exp(log_softmax(z))
+def cross_entropy(z, t):
+z_t = jnp.take_along_axis(z, t[..., None], axis=-1)
+# Target logit.
+is_t = jax.nn.one_hot(t, z.shape[-1], dtype=bool)
+# Target mask.
+others = jnp.where(is_t, -jnp.inf, z - z_t)
+# Exclude target from sum.
+m = -jax.nn.logsumexp(others, axis=-1)
+# Logit margin.
+return jax.nn.softplus(-m)
+# -log_softmax(z)_t.
+As an example, consider z = [9.0, −9.0, −9.0] and t = 0. The standard jax.nn and optax
+implementations return zero for the target log-probability, loss, and target gradient, while our
+functions return accurate values whose gradients sum to zero:
+z, t = jnp.array([9.0, -9.0, -9.0], dtype=jnp.float32), jnp.array(0)
+std_ce = optax.softmax_cross_entropy_with_integer_labels
+jax.nn.log_softmax(z)
+# ->
+[ 0.0,
+-18.0,
+-18.0
+]
+jax.grad(lambda z: jax.nn.softmax(z)[0])(z) # ->
+[ 0.0,
+-1.523e-8, -1.523e-8]
+jax.value_and_grad(std_ce)(z, t)
+# -> 0.0,
+[ 0.0,
+1.523e-8,
+1.523e-8]
+log_softmax(z)
+# ->
+[-3.046e-8, -18.0,
+-18.0
+]
+jax.grad(lambda z: softmax(z)[0])(z)
+# ->
+[ 3.046e-8, -1.523e-8, -1.523e-8]
+jax.value_and_grad(cross_entropy)(z, t)
+# -> 3.046e-8, [-3.046e-8,
+1.523e-8,
+1.523e-8]
+3
+SOFTMAX CANCELLATION
+Given student logits zS ∈RK and teacher logits zT ∈RK, standard soft-target cross-entropy
+computes p = softmax(zT) and evaluates
+L(zS, zT) = −
+X
+k
+pk logsoftmax(zS)k ,
+q = softmax(zS) ,
+˜gk =
+∂L
+∂zS,k
+= qk −pk .
+(8)
+3
+
+
+As the student logits approach the teacher logits (zS →zT), the true gradient g = q −p shrinks
+toward 0 and equals 0 when zS = zT. In floating point, however, computing q and p separately
+and subtracting them (Equation 8) loses precision when zS is close to zT, because the small logit
+difference δ = zS −zT is lost when q and p are rounded to probabilities before being subtracted
+(Figure 1b). Worse, because p = softmax(zT) in the forward pass and q = exp(logsoftmax(zS))
+in the backward pass are evaluated using slightly different sequences of operations, q and p do not
+match to machine precision even when zS = zT, leaving a non-zero gradient ˜g = q −p̸ = 0.
+To avoid subtracting nearly equal probabilities, we pass zT directly to our loss function and compute
+q −p in log space using expm1(x) = ex −1 and log1p(x) = log(1 + x). Given δ = zS −zT, we
+center δ under p and write the log-ratio sk = log(qk/pk) and difference uk = qk −pk as:
+dk = δk −
+X
+i
+piδi ,
+sk = dk −log1p
+ X
+i
+pi expm1(di)
+!
+,
+uk = pk expm1(sk) . (9)
+Because P
+i pidi = 0 and expm1(x) ≥x, the input to log1p is always non-negative. We then set
+gk = uk −qk
+P
+i ui to remove any remaining floating-point drift from P
+k gk = 0. Because dk, sk,
+and uk are evaluated using expm1 and log1p without adding or subtracting 1, g remains accurate as
+zS →zT and is 0 when zS = zT. Here is a JAX implementation of soft-target cross-entropy (using
+log softmax and softmax from Section 2), which uses jax.lax.stop gradient (sg) to return
+the forward loss while substituting g in the backward pass:
+def soft_target_cross_entropy(z_S, z_T):
+log_q = log_softmax(z_S)
+q, p = jnp.exp(log_q), softmax(z_T)
+delta = z_S - z_T
+# Logit difference.
+d = delta - jnp.sum(p * delta, axis=-1, keepdims=True)
+# Center under p.
+s = d - jnp.log1p(jnp.sum(p * jnp.expm1(d), axis=-1, keepdims=True))
+# log(q / p).
+u = p * jnp.expm1(s)
+# Difference q - p.
+g = u - q * jnp.sum(u, axis=-1, keepdims=True)
+# Ensure sum(g) = 0.
+sg = jax.lax.stop_gradient
+loss = -jnp.sum(p * sg(log_q), axis=-1)
+# Forward loss.
+return loss + jnp.sum(sg(g) * (z_S - sg(z_S)), axis=-1)
+# Custom gradient g.
+As an example, let zS be a small fp32 perturbation of zT. Standard soft-target cross-entropy shrinks
+the second gradient entry by 3×, flips the sign of the third, and fails to sum to zero, while our
+implementation matches the exact fp64 gradient:
+z_T = jnp.array([2.0, 1.0, 0.0], dtype=jnp.float32)
+z_S = z_T + jnp.array([-1e-7, 1e-7, 0.0], dtype=jnp.float32)
+std_soft_ce = lambda z_S, z_T: -jnp.sum(jax.nn.softmax(z_T) * jax.nn.log_softmax(z_S))
+jax.grad(std_soft_ce)(z_S, z_T)
+# -> [-5.960464e-8, 1.451589e-8, -1.123343e-9]
+jax.grad(soft_target_cross_entropy)(z_S, z_T) # -> [-4.595504e-8, 4.144190e-8,
+4.513142e-9]
+# Exact (float64) gradient:
+[-4.595504e-8, 4.144190e-8,
+4.513142e-9]
+4
+THE SLINGSHOT MECHANISM
+In grokking (Power et al., 2022), a network quickly memorizes the training set (qt →1) and
+generalizes much later. While studying grokking on modular addition with Adam (Kingma & Ba,
+2015; Loshchilov & Hutter, 2019), Thilak et al. (2022) observed the Slingshot Mechanism, where
+training after memorization alternates between flat loss plateaus near zero and sudden loss spikes that
+coincide with jumps in test accuracy.
+These Slingshot spikes are a direct consequence of Softmax Collapse (Section 2). Recall that AdamW
+updates parameters θ by subtracting η
+  ˆm/(
+√
+ˆv + ϵ) + λθ
+
+, where ˆm and ˆv are bias-corrected
+moving averages of the parameter gradient g = ∇θL(θ) and its square (with decay rates β1, β2).
+After memorization, the logit margins m grow as the network pushes its target probabilities toward 1.
+Once an example’s margin exceeds the precision cliff cd, standard cross-entropy rounds its target
+gradient ˜gt to zero while its non-target gradients ˜gj > 0 (j̸ = t) remain positive. When all examples
+in a batch sit above cd, the parameter gradients nearly vanish and Adam’s second moment ˆvi decays
+exponentially toward zero while weight decay slowly shrinks the parameters. Eventually, weight
+decay or the residual non-target updates pull a few examples back below cd, where their target
+4
+
+
+(a) Mean logit margin m.
+(b) Training loss.
+(c) Test accuracy.
+Figure 2: The Slingshot mechanism (Thilak et al., 2022) with and without weight decay (5 random
+seeds, fp32). Top row (a + b mod 31, λ = 1, ϵ = 10−8, Varma et al. 2023): Standard cross-entropy
+hits the fp32 cliff (m = c32 ≈16.6, where loss rounds to 0) and repeatedly drops and rebounds,
+slowing and degrading grokking; fixed cross-entropy crosses c32 smoothly, groks faster on all 5
+seeds, and saturates just above c32 at m ≈18.4 (Section 5). Bottom row (a2 + b2 mod 97, λ = 0,
+ϵ = 10−16, Doshi et al. 2024): Without weight decay, hitting c32 around step 1250 triggers a
+spike that drops standard cross-entropy test accuracy from 61% to 23%, whereas fixed cross-entropy
+continues smoothly to 85%.
+gradients ˜gt ≈−e−m abruptly turn back on. Because √ˆvi decayed while those examples were
+above cd, Adam divides the restored gradients by a very small denominator √ˆvi + ϵ, producing a
+large parameter step that spikes the training loss, resets ˆvi, and repeats the cycle. With our fixed
+cross-entropy, the target-logit gradient gt = −e−m/(1 + e−m) does not round to zero at cd, so ˆmi
+and √ˆvi decay smoothly together and Slingshot spikes disappear (Figure 2).
+Whether Slingshot spikes appear to help or hurt generalization depends on how the network’s weight
+norm is controlled (Figure 2). When a network uses LayerNorm before the output layer and no
+weight decay (Thilak et al., 2022; Prieto et al., 2025), growing the pre-LayerNorm weights does not
+change the logits, but it does shrink the effective step size η/∥θ∥2; each Slingshot spike inflates ∥θ∥2
+and acts as an accidental learning-rate decay. When weight norms are already controlled by weight
+decay (Varma et al., 2023), Slingshot spikes at c32 only slow down and hurt grokking (94 ± 5% vs.
+100 ± 0% test accuracy on a + b mod 31; Figure 2, top). And when neither LayerNorm nor weight
+decay is used (Doshi et al., 2024), a single Slingshot spike at c32 is destructive: on a2 + b2 mod 97
+(λ = 0, ϵ = 10−16), standard cross-entropy tracks fixed cross-entropy up to 61% test accuracy until
+m hits c32 around step 1250, where a spike drops test accuracy to 23% (and from 60% to 21% on
+a3 + b mod 97), while fixed cross-entropy continues smoothly to 85% (Figure 2, bottom).
+5
+MARGIN EQUILIBRIA
+In Figure 2a, our fixed cross-entropy eliminates the precision cliff at c32 ≈16.6, yet why does its
+margin still saturate just above c32 at m ≈18.4 when weight decay is applied (λ = 1, top) while
+continuing to climb without weight decay (λ = 0, bottom)? This plateau has nothing to do with fp32
+precision; rather, it is the equilibrium where weight decay balances AdamW’s normalized gradient
+step. At a stationary point where the parameters stop changing, the moving averages converge to
+ˆmi = gi and ˆvi = g2
+i (so √ˆvi = |gi|), and setting the parameter update to zero gives:
+ˆmi
+√ˆvi + ϵ + λθi = 0
+=⇒
+gi
+|gi| + ϵ + λθi = 0
+∀i .
+(10)
+Here η, β1, and β2 cancel out, so RMSProp (Tieleman & Hinton, 2012) and LaProp (Ziyin et al.,
+2020) share the same stationary point. After memorization, the gradients shrink exponentially with
+the margin (|gi| ∝e−m). If ϵ = 0, the normalized gradient gi/|gi| = sign(gi) has a magnitude of 1
+5
+
+
+no matter how small |gi| becomes, which causes the margin to grow until the gradients underflow.
+When ϵ > 0, however, the normalized gradient has magnitude ≈1 while |gi| ≫ϵ, and shrinks
+as gi/ϵ ∝e−m once |gi| ≪ϵ (Figure 3). Balancing this shrinking step against weight decay λθi
+requires |gi| ≈ϵλ|θi| (Wortsman et al., 2024; Molybog et al., 2023; Everett et al., 2024; Kosson et al.,
+2024), which acts like an L2 regularizer with weight ϵλ (Rosset et al., 2004; Soudry et al., 2018).
+Since |gi| ∝e−m, the margin stops growing at:
+m⋆(ϵ) ≈log(1/ϵ) .
+(11)
+Figure 3: Normalized Adam step |gt|/(|gt|+ϵ) vs.
+logit margin m at ϵ = 10−8. With our fixed cross-
+entropy, the step stays near 1 and decays smoothly
+around log(1/ϵ) ≈18.4, whereas standard CE ze-
+roes out ˜gt at c16 ≈5.5 and c32 ≈16.6.
+Equation 11 explains why the default ϵ = 10−8 causes Slingshot in fp32: its equilibrium log(1/ϵ) ≈
+18.4 sits just above the fp32 cliff c32 ≈16.6 (Figure 3), so standard cross-entropy hits the cliff
+right before reaching equilibrium (whereas for ϵ ≥10−7, log(1/ϵ) ≤16.1 < c32 and standard
+cross-entropy settles without spiking). To verify Equation 11 across many orders of magnitude down
+to ϵ = 0 in fp32 (Figure 4), we use LaProp and update
+√
+ˆv directly without squaring g2
+i (which would
+otherwise underflow in fp32 once |gi| < 2−63, or m ≈38).
+Figure 4: Logit margins when training with our fixed cross-entropy and LaProp on a + b mod 31 in
+fp32 (β1 = 0.9, β2 = 0.98; 3 seeds per setting as solid lines, analytical predictions as dashed lines).
+(a) With weight decay (λ = 1), the margin for each ϵ > 0 grows along the ϵ = 0 trajectory and levels
+off at the predicted equilibrium m⋆(ϵ) = log(1/ϵ) (colored y-ticks), whereas ϵ = 0 keeps growing
+until the fp32 gradients themselves underflow at m ≈81.2 (gray). (b) Without weight decay (λ = 0),
+nothing balances the gi/ϵ step, so the margins rise past log(1/ϵ) and continue drifting upward.
+6
+GROKKING ACROSS PRECISIONS AND BENCHMARKS
+To see how the precision cliff behaves across floating-point formats, we follow Varma et al. (2023)
+and Lyle et al. (2025) and train a 1-layer width-64 ReLU Transformer on a+b mod 31 (50% training
+split) for 10,000 epochs of full-batch AdamW with η = 10−3, β1 = 0.9, β2 = 0.98, and λ = 1. We
+vary only the loss function (standard vs. fixed cross-entropy), the floating-point precision (bf16, fp32,
+fp64), and ϵ ∈{10−8, 10−12, 10−16} (Figure 5, Table 1). At ϵ = 10−8 (Figure 5, top), standard
+cross-entropy stalls at c16 ≈5.5 in bf16 and repeatedly spikes at c32 ≈16.6 in fp32, whereas our
+fixed cross-entropy crosses both cliffs smoothly to the equilibrium log(1/ϵ) ≈18.4 and reaches 100%
+test accuracy in all three precisions. Reducing ϵ to 10−16 (Figure 5, bottom) raises the equilibrium to
+6

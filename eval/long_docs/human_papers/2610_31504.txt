@@ -1,0 +1,581 @@
+Structure-preserving reduced-order models of thin panels in supersonic
+and hypersonic flow
+Miguel A. Aguil´oa,∗
+aMorphorm LLC, 100 Sun Avenue Northeast Suite 650, Albuquerque, NM 87109-4670, USA
+Abstract
+We report structure-preserving reduced-order models of both challenge problems of the
+AePW-4 High-Speed Working Group [1]. They are the AFRL/SSC RC-19 clamped thin
+panel at Mach 1.92 and the UNSW HyMAX cantilever plate at Mach 5.85. For each problem
+one construction gives two models. The reference model is a physics-based Ritz–Galerkin
+model of the plate. The learned model keeps the reference model’s exact potential, fits
+the remaining generalized forces, and trains only its dissipation. Each model is built from
+the data package the working group distributes for its case. Neither package holds a
+time-resolved response or repeated runs. There is no ensemble to learn from. The physics
+is therefore carried by the form of the model rather than by data. The learned model’s
+energy balance holds for any weights by construction. On the trained model, at random
+states, its relative residual is 2.2 × 10−15. On RC-19, inviscid shock relations applied to the
+package’s wedge geometry and schlieren shock angle predict a pressure ratio of 1.521. The
+ratio derived from the pressure-sensitive paint that Brouwer et al. [2] applied to the rigid
+panel is also 1.521. On the periodic case we ran the trained model thirty times, each from a
+different initial push. The mean dominant frequency is 1.0 % from the 236 Hz measured by
+Brouwer et al. [3]. Brouwer et al. simulated the experiment with their own reduced-order
+model. We take one periodic and one chaotic condition from their simulations. At both,
+the trained model gives the same regime as their model in all sixteen runs, eight from each
+buckled shape. It does so without their model’s 113 Hz spectral peak, which the experiment
+does not show. Because the response is chaotic, any model loses a single trajectory after a
+horizon set by the largest Lyapunov exponent. Measured displacements therefore correct
+the model through one more generalized force, which enters the same energy balance. We
+tested this correction in a twin experiment at the experiment’s 5 kHz measurement rate.
+With an offline smoother it holds the panel state to 0.0125 thicknesses without noise and
+0.0352 with 10 µm of noise. On HyMAX, with nothing fed back, the learned model tracks
+the reference model’s trailing-edge displacement for 65 ms to a relative error of 3.67 %.
+∗Corresponding author
+Email address: maguilo@morphorm.com (Miguel A. Aguil´o)
+arXiv:2610.31504v1  [cs.CE]  22 Oct 2026
+
+
+Every prediction in the reported studies was registered before its run. Four of nine failed,
+and all four are reported. The one open comparison is the displacement standard deviation
+on the RC-19 attached-shock case. There our reference model gives about a sixteenth of
+the measured value. The gap is traced to inputs the public package does not carry, and we
+state the measurement that would close it.
+Keywords:
+aeroelasticity, panel flutter, high-speed flow, reduced-order modeling, learned
+reduced-order model, structure preservation, port-Hamiltonian, discrete gradient, data
+assimilation, preregistration
+1. Introduction
+Thin panels on high-speed vehicles are loaded by the flow, heated by it, and driven by it
+into flutter [4, 5, 6]. A heated clamped panel buckles, and above the buckling temperature
+it has two stable buckled shapes. Each sits in a well, and a well is a minimum of the panel’s
+potential energy. In supersonic flow it can oscillate about one of them, switch between them,
+or do both in no repeatable order [7]. Which of these it does depends on the temperature
+rise and on the pressure across it. A design has to know the answer over the whole operating
+envelope, not at one point. High-fidelity coupled simulation resolves one condition at a
+cost of hours. Linear reduced-order models are affordable over the envelope but cannot
+represent a panel that crosses between buckled wells. A learned surrogate can be affordable
+and nonlinear. However, a surrogate whose energy change does not equal the work done on
+it cannot be defended to a reviewer. Nothing in its training says where it stops being valid.
+The AePW-4 High-Speed Working Group [1, 8] poses two challenge problems that test
+these needs directly. The AFRL/SSC RC-19 clamped thin panel at Mach 1.92 has periodic
+and chaotic responses and a case with an impinging shock. The UNSW HyMAX cantilever
+plate sits at Mach 5.85 under an impinging shock in a short-duration facility. The group’s
+stated objectives include assessing coupled tools predictively. They also include identifying
+the gaps in high-speed experiments that future tests should close.
+This work builds learned reduced-order models of both problems. Three observations
+organize it. First, the data packages the working group distributes for the two problems
+hold statistics, not trajectories. The RC-19 package supplies measured mode shapes, time-
+averaged pressures and the nine points at which the response is reported. It holds no
+time history and no repeated runs. The response statistics at those points are published
+separately [3, 9]. A method that learns its physics from examples needs an ensemble that
+does not exist. The physics must therefore be carried by the model’s form, leaving little
+to learn. Second, the panel’s non-conservative forces are linear in its state. Piston theory
+and Rayleigh damping are both linear. Their coefficients are therefore fitted once, by least
+squares, and frozen, and only the dissipation is trained. Third, the response is chaotic. Any
+model of it, however accurate, loses a single trajectory within a horizon set by the largest
+Lyapunov exponent λ. That exponent is the exponential rate at which two neighboring
+2
+
+
+trajectories separate. Tracking beyond that horizon needs measurement. The correction
+that measurement applies to the model must enter the energy balance as a generalized
+force, like the aerodynamic force. Our working hypothesis is the following.
+Consider a reduced-order model of a thin panel in high-speed flow, built from the
+data a challenge-problem package provides and from published constants. Let it
+have four properties.
+(i) Its elastic and membrane energy is expressed in the panel’s measured mode
+shapes. Its nonlinear stiffness force is exactly the gradient of that energy.
+(ii) Its aerodynamic and structural damping forces enter as generalized forces,
+with coefficients fitted by least squares and then held fixed.
+(iii) Its only trained term is a dissipation that can remove energy, but never
+add it, for every value of its parameters.
+(iv) It is advanced in time by a discrete-gradient step. That step replaces the
+energy gradient by its average along the step, which balances energy exactly
+at every step.
+Such a model will satisfy four claims.
+(P1) Its energy changes exactly by the work of its generalized forces minus its
+dissipation, for any trained weights and under any measurement correction.
+(P2) At the simulation operating conditions of Brouwer et al. [3], it reproduces
+the regimes of their reduced-order model. It does so outside its training
+temperature and from both buckled wells.
+(P3) It matches the experiment’s response statistics wherever the package sup-
+ports a comparison.
+(P4) It tracks the chaotic panel beyond its tracking horizon, given observations
+at the rate and points the experiment already uses.
+We test the hypothesis on both challenge problems, with each claim’s acceptance
+conditions fixed before its run. RC-19 carries the weight of the test, because its package
+supports comparisons with experiment. P1 is checked at random states with amplitudes
+from 10−6 to 106, and along every trajectory. P2 is tested at the two simulation operating
+conditions of Brouwer et al. [3], sixteen runs each, eight from each well. P3 is tested against
+the measured response frequency and displacement standard deviation. P4 is tested in a twin
+experiment at the published sampling rate. There the reference model generates synthetic
+observations of its own trajectory. HyMAX then tests whether the same construction
+serves a second configuration unchanged. Every prediction was registered before its run.
+Four of the nine registered predictions broke (Table 11), and they are reported as findings
+(Section 9). P1 and P2 held. P3 held for the frequency, and failed for the displacement
+standard deviation on the attached-shock case, which Section 7.7 traces to data the package
+lacks. P4 held in the twin experiment and awaits a measured time series.
+3
+
+
+Place in the series. The earlier reports in this series [10, 11, 12] reduce fields on a mesh
+with Whitney forms. These are finite-element bases whose discrete derivatives mirror the
+continuous ones. This property is called the discrete de Rham structure. Thin panels are
+better described by their mode shapes. This report therefore uses a modal Hamiltonian
+reduction, in which the energy is written in the amplitudes of the mode shapes. It keeps
+the same commitments: exact energy accounting, dissipation that cannot add energy, and
+discrete balances that hold exactly.
+Contributions. This work contributes:
+1. A reference model built on the RC-19 measurements (Sections 5.1 and 5.2). Its basis
+is the seven mode shapes measured on the panel before the test, made orthogonal by
+L¨owdin’s symmetric construction. Of all orthonormal sets, it gives the one nearest to
+the measured shapes. Its membrane stiffness comes from solving the in-plane elasticity
+problem for every pair of modes. Its temperature field comes from the surface pressures
+measured by fifteen Kulite transducers on a rigid panel. Those pressures give the
+adiabatic wall temperature, which is the temperature an insulated wall reaches under
+the boundary layer. A fin equation then gives the panel’s temperature distribution.
+It models steady conduction from the heated panel into its cooler frame, calibrated
+on the panel and frame thermocouples.
+2. A learned model whose energy balance holds for any parameters (Proposition 2). The
+rate of change of the panel’s energy always equals the power of the generalized forces
+minus the power the learned dissipation absorbs. Training cannot violate this balance,
+because it follows from the form of the model. The dissipation is positive definite
+for every parameter value. It can therefore only absorb energy (Lemma 2). The
+generalized aerodynamic force is fitted by least squares and then frozen (Section 5.8).
+On the trained model, at random states with amplitudes from 10−6 to 106, the worst
+relative residual of the balance is 2.2 × 10−15.
+3. A discrete-gradient step for the learned model (Proposition 3). The training record is
+a family of reference model trajectories, generated with the average-vector-field (AVF)
+discrete gradient. The generalized-α method is the common alternative. The two
+steps carry different truncation errors and numerical damping. A model integrated
+differently from its data drifts from them even when its forces are exact. Proposition 3
+gives the learned model the same discrete-gradient step that generated its training
+record. Each such step removes that drift and balances the model’s energy exactly,
+for any trained weights. The trained models reported here were integrated with
+the generalized-α step (Section 5.9). The discrete-gradient step applies to them
+unchanged.
+4. Assimilation as a generalized force (Section 5.11). Measured displacements at the
+instrumented points correct the model through one more generalized force. It is
+proportional to the error in the displacement and in its rate. Each time step still
+balances the panel’s energy exactly, with the work of this force reported as a separate
+4
+
+
+term (Corollary 1). The two feedback gains are not tuned. They are set from the
+linearized equation for the model-to-truth error so that its largest Lyapunov exponent
+is negative. The nine published measurement points observe all seven modes: no
+combination of modes is invisible at all nine points. In a twin experiment at the
+published 5 kHz rate, the correction with an offline smoother holds the model’s state
+to 0.0125 thicknesses without noise. A causal hold of the last sample reaches 0.325
+(Section 7.6).
+5. Comparisons as statistics (Sections 7.2 and 7.3). A thirty-member ensemble of the
+trained model, at the periodic case’s operating condition, places the mean dominant
+frequency at 238.4 Hz. That is 1.0 % from the measured 236 Hz. At the simulation
+operating conditions of Brouwer et al., it returns the regimes of their reduced-order
+model. It does so without that model’s 113 Hz peak, which the experiment does not
+show either. We also measure how an ensemble mean depends on the range of initial
+perturbations, or kicks, it samples. Every mean is quoted with that range.
+6. A measured bound on the aerodynamic enrichment (Section 7.4). The reduced-order
+model of Brouwer et al. replaces freestream quantities in piston theory by local ones,
+which scales the aerodynamic operators by 5.4 %. Rather than build that enriched
+model, we measured what the scaling changes in our reference model. We ran it at
+the periodic case’s experimental operating condition in four ensembles of 192 runs
+each. They combine unscaled and scaled aerodynamic operators with release from
+each buckled well. A two one-sided equivalence test [13] compared the mean dominant
+frequency with and without scaling. It declares equivalence when the 95 % interval of
+the difference of means lies inside a band, here ±2 %, registered before the runs. The
+mean frequency moved 0.40 % in the lower well and 0.51 % in the upper well, inside
+the band. The fluctuation amplitude moved 2.4 %. Its elasticity, the percent change
+in amplitude per percent change in the coefficients, is 2.4/5.4 = 0.44.
+7. A measured data requirement for the attached-shock case (Section 7.7). Forced at
+the measured pressure fluctuation level, the reference model’s displacement standard
+deviation there is 0.06 thicknesses. The measured value is 0.943, about sixteen times
+larger. Ruling out every admissible cause by measurement isolates one remaining
+mechanism. That mechanism is the dependence of the surface pressure on the panel’s
+deformed shape. Testing it requires time-resolved surface pressure, or a computation,
+on the deformed panel, which the package lacks.
+8. One construction across two configurations (Section 8). The HyMAX model uses the
+RC-19 construction unchanged. With no observations fed back, it tracks the reference
+model’s trailing-edge displacement for 64.9 ms. Its relative root-mean-square error
+over that window is 3.67 %. It also detects, rather than assumes, which modal bases
+its data support. A six-mode basis is declined, because its whitened coordinates keep
+only eleven of its twelve state directions.
+5
+
+
+2. The challenge problems and what their packages hold
+Both packages are distributed by the working group and marked Distribution A. They
+are used as distributed, and no number in this report is fitted to a measured flutter response.
+Two structural calibrations are stated where they are made: the thermal effectiveness on
+the buckling temperature rise, and the HyMAX bending stiffness on the first frequency.
+2.1. AFRL/SSC RC-19 clamped thin panel
+The facility and the panel. The experiment [14, 15, 1] runs in a blowdown supersonic tunnel
+with a test section 131.1 mm high and 152.4 mm wide, at a nominal Mach number of 2.0.
+RANS simulations in the package give 1.92 ± 0.02 at the panel [1]. The panel is a steel
+plate of 253.9 × 127 × 0.635 mm, set flush in the tunnel floor (Figure 1). A frame of
+304.7 × 152.4 mm, 12.85 mm thick, clamps it on all four edges. A sealed cavity behind the
+panel holds the cavity pressure pc, which sets the static pressure differential across it. The
+incoming boundary layer is 8.6 mm thick. In the heated runs the stagnation temperature is
+about 388 K at a stagnation pressure of 346 kPa. The flow heats the panel faster than its
+frame. The panel’s temperature therefore rises above the frame’s. The frame constrains
+the panel’s thermal expansion, which puts the panel into compression. It buckles once the
+rise exceeds about 5.6 K, which is the flat panel’s buckling temperature rise reported in [3].
+One thermocouple on the panel and one on the frame measure their temperatures. The
+package’s temperature rise ∆T is the difference between the two readings.
+The cases. The package defines three cases. Two have no shock on the panel and are
+labeled periodic and chaotic. The periodic case runs at a cavity pressure of 50.4 kPa and
+a temperature rise of 12.76 K. Brouwer et al. [3] report its measured dominant frequency
+as 236 Hz. The chaotic case runs at 51.5 kPa and a temperature rise of 14.74 K. Its cavity
+pressure is 0.49 kPa above the RANS reference surface pressure ps = 51.0 kPa of [3]. Brouwer
+et al. [3] report its measured dominant frequency as 257 Hz. The third case, attached-shock,
+mounts a wedge of length 110.7 mm and height 7.8 mm in the test section. Its leading edge
+is 86 mm upstream of the panel’s. The wedge places an oblique shock, measured at 35.7◦in
+the schlieren, on the panel. That case runs at a cavity pressure of 68.9 kPa and is labeled
+periodic.
+The instrumentation and what the package holds. For each case the package supplies the
+geometry of the tunnel, the wedge and the panel, and the operating conditions with their
+error bars. It supplies seven mode shapes measured before the test on an eleven by eleven
+grid, with their frequencies and damping (Figure 2). The panel’s edges were free during
+these modal measurements. It supplies the time-averaged surface pressure measured on a
+rigid panel by 15 Kulite transducers and 28 scanner taps. For the attached-shock case it adds
+the schlieren and a pressure-sensitive paint field [2]. The response was measured by digital
+image correlation at 5 kHz [1]. The package defines nine extraction points (Figure 1b). It
+does not hold the mean and the standard deviation of the displacement at those points. We
+6
+
+
+take them from the published papers [3, 9]. The package’s spectral settings are Hamming
+windows of 0.2048 s with half overlap. The resolution is therefore 1/0.2048 s = 4.88 Hz.
+Spectra and amplitudes in this report are read at three-quarter chord. The package supplies
+no time history of the response.
+sealed cavity, pc
+shock, 35.7◦
+shock generator (attached-shock case)
+M = 1.92
+panel, 0.635 mm steel, clamped on four edges
+clamping frame
+ps
+253.9 mm
+131.1 mm
+(a)
+ﬂow
+x = 3L/4
+253.9 mm
+frame, 304.7 mm
+127 mm
+(b)
+scanner taps (28)
+Kulite transducers (15)
+extraction points (9)
+Figure 1: The RC-19 configuration, with dimensions from the package. (a) The test section in side view.
+The panel is flush in the floor over a sealed cavity at pressure pc. Its flow side sees the surface pressure,
+whose RANS reference value is ps. The shock generator and its shock, at the measured 35.7◦, are present on
+the attached-shock case only. The generator’s wall and the cavity depth are schematic. (b) The planform,
+with the clamping frame shaded, the rigid-panel pressure taps and the nine extraction points. The dashed
+line is the three-quarter-chord station at which spectra and amplitudes are read.
+7
+
+
+mode 1, 242 Hz
+mode 2, 302 Hz
+mode 3, 418 Hz
+mode 4, 593 Hz
+mode 5, 618 Hz
+mode 6, 679 Hz
+mode 7, 771 Hz
+−1
+0
+1
+normalized deﬂection
+Figure 2: The seven RC-19 mode shapes measured before the test, with their measured frequencies. They
+are interpolated by bicubic splines on the package’s grid, as in Section 5.1. Each is normalized to unit peak
+with its larger lobe positive. Black lines are nodal lines, where the mode’s deflection is zero. They separate
+regions that deflect in opposite directions.
+2.2. UNSW HyMAX cantilever plate
+The facility and the plate. The HyMAX experiment of UNSW Canberra [16] runs in the
+TUSQ Ludwieg tube of the University of Southern Queensland. The test flow is a free
+jet of compression-heated air at Mach 5.85. A forebody 100 mm long carries a flat plate
+of 6061-T6, 130 × 80 × 2 mm (Figure 3a). The plate is attached by a bolted joint at its
+hinge line and is free at its trailing edge, 230 mm from the forebody’s leading edge. The
+shock is produced by a static shock generator [17]. The generator is a wedge 110 mm long
+with an included angle of 5◦. Its leading edge sits 10 mm upstream of the forebody’s and
+40 mm above its surface. Its angle of attack is αg = −3◦. The package defines the flow
+deflection as αg plus the wedge angle, −3◦+ 5◦= 2◦. That is the case the working group
+makes mandatory, and 10◦is optional. The inviscid oblique shock from its leading edge
+stands at 11.16◦. That is the weak-branch solution of the oblique-shock relation [18] for a
+2◦deflection at Mach 5.85. The shock meets the plate’s plane 40 mm/ tan 11.16◦= 203 mm
+behind the generator’s leading edge. That is 93 mm behind the hinge, beside the first of the
+two shock positions the training trajectories use, xs = 91 and 117 mm. The flow lasts about
+200 ms, and its freestream pressure is not stationary over the first 90 ms of that window
+(Figure 3b).
+What the package holds. The package supplies one run, with its freestream pressure and
+temperature and the geometry of both configurations. It holds the surface pressure at four
+transducers sampled at 50 kHz, with their calibrations. Three sit on the forebody at 40, 50
+and 60 mm, and one on the plate near its trailing edge at 220 mm. Schlieren images show
+the flexible plate and a rigid one at shock-generator angles of 2 and 10◦. The transducer on
+the plate sits under the impinging shock and reads about twice the freestream pressure.
+The one structural measurement is the first frequency, 83 Hz [16]. Xu and Dowell [19]
+8
+
+
+compute 84.7 and 530.4 Hz for the first two modes, which we carry as a computational
+reference rather than as data. The package holds no displacement. It states that a measured
+trailing-edge displacement will be provided for validation [1]. It is not used here.
+forebody
+static shock generator, 2◦
+oblique shock, 11.2◦
+1
+2
+3
+4
+pressure transducers
+hinge
+plate, 130 × 80 × 2 mm, 6061-T6
+pb
++w
+M = 5.85
+100 mm
+130 mm
+40 mm
+(a)
+0
+50
+100
+150
+200
+time from ﬂow arrival (ms)
+0
+200
+400
+600
+800
+1000
+1200
+1400
+pressure (Pa)
+(b)
+transducer 4, on the plate
+freestream, p∞
+0
+25
+50
+75
+100
+125
+distance from the hinge (mm)
+−0.5
+0.0
+0.5
+1.0
+deﬂection / tip deﬂection
+(c)
+mode 1, 83 Hz
+mode 2, 520 Hz
+Figure 3: The HyMAX configuration, 2◦case. (a) Side view, dimensioned from the UNSW data package.
+The vertical scale is exaggerated two to one; angles are labeled with their true values. It shows the static
+shock generator, the forebody, the hinge, the plate and the four pressure transducers. The dashed line
+is the inviscid oblique shock from the generator’s leading edge at Mach 5.85. Open circles mark the two
+shock positions of the training trajectories, xs = 91 and 117 mm behind the hinge. The back pressure pb
+is not measured, and w is positive toward the shock side. (b) The measured freestream pressure and the
+trailing-edge transducer over the 200 ms flow window. These are the inputs of the aerodynamic force, raw
+(light) and averaged over 2 ms (dark). (c) The two clamped-free modes of the reference model, calibrated on
+the measured first frequency.
+9
+
+
+3. Background and related work
+Panel flutter and its reduced-order models. Panel flutter has been studied for decades, with
+first-order piston theory [20, 21] as its standard aerodynamic model [4, 22]. Nonlinear panel
+flutter at supersonic and hypersonic speeds is reviewed in [5], and its aerothermoelastic
+setting in [6]. A heated buckled plate in flutter can be chaotic, as Dowell showed for a
+deterministic autonomous model [7]. Reduced-order models of geometrically nonlinear
+structures are reviewed in [23]. The RC-19 experiments that the first challenge problem
+draws on are reported in [14, 15, 2].
+The reduced-order model of Brouwer et al.. Brouwer et al. [3] built a reduced-order model
+and the simulations that accompany the RC-19 experiment. Their model projects a von
+K´arm´an plate on finite element modes and loads it with piston theory corrected for the
+boundary layer [24]. It references the static load to the computed surface pressure and damps
+the panel in Rayleigh form. It reproduces the published regimes, with two qualifications the
+authors state. Their periodic simulation required a cavity pressure 4.6 % from the measured
+one and a temperature rise 44.5 % from it. They attribute both offsets to the distribution
+of the temperature rise. Their reduced model also shows a spectral peak near 113 Hz that
+the experiment does not show. They establish that the response is chaotic with a positive
+largest Lyapunov exponent, and report how it grows with temperature. The exponent is
+computed from their reduced model’s trajectories by the linearization of their Equations 19
+to 23. Our reference model follows their Sections 2.2 and 5 closely, and the differences are
+stated in Section 5.
+The other working-group analyses. Piccolo Serafim et al. [9] correlate computations with
+the RC-19 measurements in the presence of an impinging shock. Xu and Dowell [19] model
+the HyMAX plate computationally, and Currao et al. [16] report the HyMAX experiment,
+its response and its first structural frequency. Ganti et al. [25] couple a wall-modeled
+large-eddy simulation to a finite element plate for a cantilevered aluminum panel at Mach
+2.11. That panel overhangs a backward-facing step and is not the RC-19 panel. Their
+simulated response frequency matches the measurement they compare against to within
+1 Hz. Brouwer [8] summarizes the working group’s cases and its first round of results.
+Structure in learned models. A learned model can be made to respect a physical structure in
+two ways. The structure can be added to the objective as a penalty, as in physics-informed
+networks [26]. It then holds to the degree the penalty weight buys, and only where the
+penalty was sampled. Alternatively, it can be built into the parameterization, and then
+it holds for every value of the parameters. Examples are Hamiltonian networks [27], port-
+Hamiltonian models [28] and port-Hamiltonian networks [29]. The models of this report
+are of the second kind. The panel is open: the flow does work on it, and the work can have
+either sign. The port-Hamiltonian form accounts for that work exactly instead of excluding
+it. The average-vector-field discrete gradient [30, 31, 32] carries the accounting through
+each time step exactly.
+10
+
+
+4. Notation
+Table 1 collects the symbols used in the rest of this report. Bold lowercase letters are
+vectors over the retained modes, bold uppercase letters are matrices, and a calligraphic
+letter is a tensor of order four. An overdot is a derivative in physical time t, and a prime on
+a nondimensional state is a derivative in the nondimensional time τ = ω1t. On the HyMAX
+beam, a prime on a shape or a deflection is a derivative in x. Here ω1 is the first modal
+circular frequency.
+Table 1: Symbols.
+Symbol
+Meaning
+Flow
+M, β
+Mach number; β =
+√
+M 2 −1
+p0, T0, p0,r
+stagnation pressure and temperature of a heated run; stagnation pressure
+of the rigid run
+p∞, q∞, V∞, T∞
+freestream static pressure, dynamic pressure, speed, static temperature
+fM, Rair, Pr
+isentropic factor 1 + γ−1
+2 M 2; gas constant of air; Prandtl number
+γ
+ratio of specific heats, 1.4
+ppt
+piston-theory pressure, Equation (14)
+pK
+static pressure at a Kulite transducer on the rigid RC-19 panel
+pc, ps, ∆p
+RC-19 cavity pressure, reference surface pressure, ∆p = pc −ps
+Taw, rc
+adiabatic wall temperature and recovery factor, Equation (10)
+Mℓ
+local Mach number: on RC-19, from the measured surface pressure; on
+HyMAX, freestream or post-shock
+qℓ, βℓ, Vℓ
+local dynamic pressure, supersonic factor and flow speed on the HyMAX
+plate, Equation (24)
+pb, xs, Π
+HyMAX back pressure, shock position from the hinge, measured shock
+pressure ratio
+αg
+HyMAX forebody angle of attack
+Mn, Θs, Θw
+HyMAX shock-normal Mach number, shock angle, flow deflection
+pℓ, Tℓ
+HyMAX post-shock static pressure and temperature
+p4, ptop, pst
+HyMAX trailing-edge transducer pressure; flow-side pressure on the
+plate; static pressure distribution, Equation (25)
+a, c
+local piston-theory stiffness and damping coefficients on the HyMAX
+plate, Equation (24)
+Structure
+x, y, t
+streamwise and spanwise coordinates; physical time
+n
+number of retained modes
+Ω, h, ρ
+RC-19 panel planform; plate thickness, of the RC-19 panel or the HyMAX
+plate by section; density
+E, ν, α, C
+Young’s modulus, Poisson’s ratio, thermal expansion, plane-stress stiff-
+ness times h
+w, u
+transverse deflection; in-plane displacement
+11
+
+
+Symbol
+Meaning
+K, Ub, Um, Ws
+kinetic, bending and membrane energy of the plate; work of the static
+pressure
+ab
+symmetric bilinear form of the bending energy, Ub = 1
+2ab(w, w)
+δW, W
+virtual work of the pressures on the HyMAX plate; total work of the
+aerodynamic force and the damping, Figure 4
+Db, Kb
+flexural rigidity Eh3/[12(1 −ν2)]; modal bending stiffness matrix
+Lg, ˜M
+Lagrangian K −U; mass matrix of the orthogonalized shapes
+uij, ηij
+in-plane displacement and membrane strain of the mode pair (i, j)
+σT , uT
+thermal stress per kelvin; in-plane displacement under the thermal strain
+alone
+eq
+membrane strain carried by the modal amplitudes, Equation (6)
+ε, η, εT
+in-plane strain, von K´arm´an membrane strain, thermal strain
+∆T, sT , ηT
+temperature rise, panel thermocouple minus frame thermocouple; unit-
+mean shape of the panel’s temperature excess; thermal effectiveness
+ϑ, ¯ϑ, Lf
+panel temperature excess over the frame, its panel mean, fin length,
+Equation (11)
+Tframe, ¯Taw
+frame temperature; panel mean of the adiabatic wall temperature
+k, hc
+thermal conductivity of the panel; film coefficient of the boundary layer
+ϕi, ϕ, M
+measured RC-19 mode shapes, singly and as a vector; their mass matrix,
+(M)ij = ρh
+R
+ϕiϕj dA
+˜ϕi, ˜ϕ
+unit-mass RC-19 mode shapes (measured, orthogonalized), singly and
+as a vector
+ψi, ψ
+unit-mass HyMAX mode shapes (clamped-free), singly and as a vector
+b, L, Ac, I, EI
+HyMAX plate width, length, section area, second moment of area,
+bending stiffness
+ξ, κi, χi
+position along the beam x/L; clamped-free eigenvalue roots; shape
+coefficient, Equation (18)
+I, δij
+identity matrix; Kronecker delta
+fi, ωi, ω
+modal frequency, ωi = 2πfi; the vector of the ωi
+q, p
+modal displacement and momentum, p = ˙q
+H, U
+Hamiltonian; its potential part
+G, nT
+thermal preload operator, Equation (7); stress resultant per kelvin
+K(∆T)
+linear stiffness of the heated flat panel, Equation (9)
+D
+quartic membrane tensor, Equation (8)
+ℓ, ℓf
+generalized load of a unit pressure; of a measured pressure field
+C, αd, βd, ζ
+reference model damping; Rayleigh coefficients; HyMAX modal damping
+ratio
+ci
+Rayleigh damping of mode i in the units of τ, (αd + βdω2
+i )/ω1
+A, B
+aerodynamic stiffness and damping operators
+f, g
+non-conservative generalized force; prescribed drive, dimensional in the
+reference model and divided by wsω2
+1 in the learned model
+J, R
+skew-symmetric structure matrix; dissipation matrix, Equation (12)
+∆t, ∆τ
+integrator step size, in physical time and in τ
+ρ∞
+spectral radius at infinite frequency of the generalized-α step
+12

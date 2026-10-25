@@ -1,0 +1,497 @@
+Conservative Meta-Agent Search:
+Architecture Adaptation under Non-Stationarity
+Ali Atiah Alzahrani†
+Abstract
+Automated design of agentic systems is typically evaluated on static task suites with
+immediate scalar rewards. Deployed systems face persistent shift, delayed depen-
+dent feedback, correlated component failures, and costly architecture changes. We
+formalize meta-agent architecture search as sequential incumbent replacement with
+switching costs and hard risk constraints, and introduce Conservative Meta-Agent
+Search (CMAS). Throughout, meta-agent denotes the entire outer loop: proposer,
+compiler, evaluator, gate, and rollback controller. CMAS retrieves archived archi-
+tectures and proposes typed graph edits, then scores each against the incumbent
+by paired shadow replay under common random numbers. Component credit is
+interventional. Promotion requires an empirically calibrated, variance-penalized
+simultaneous score above a pre-specified margin, and is followed by a simulated
+canary stage and pre-specified rollback. Backtested return cannot certify meta-level
+skill, so we introduce METAINVEST-BENCH, a regime-switching simulator whose
+specified worker competence makes a surrogate-optimal architecture computable,
+with leakage-controlled replay, adversarial governance tracks, and five reusable
+negative controls. Financial streams give an instrumented, risk-sensitive test of
+meta-level generalization; we claim no alpha. Across 96 streams, CMAS cuts
+normalized mean surrogate dynamic-oracle regret from 0.116 to 0.104 and raises
+held-out utility from 0.44 to 0.48 over the strongest adaptive common-budget reim-
+plementation; when extra workers add no value, it contracts to near-single-agent
+teams. Its deployment inference cost is ∼6% lower, though its search-inclusive
+token cost is the highest of the methods compared. The observed per-update false-
+promotion rate is 3.4% against a nominal 5% target, and 4.8% in a sealed rerun.
+The statistical ingredients are standard. The calibration is empirical: it concerns
+an update-level replay statistic on an author-designed benchmark, and guarantees
+neither full-utility improvement, nor absence of simulated canary-stage harm, nor
+sequence-level error control.
+1
+Introduction
+Meta-agents act on agentic systems.
+They design harnesses, optimize compound workflows,
+allocate resources, and supervise workers. An LLM system’s performance depends on weights,
+but also on prompts, tools, memory, communication, verification, and control flow [1, 3, 5], and a
+growing literature searches code-defined workflows [19], modular components [14], communication
+graphs [23, 18], and query-dependent architectures [9, 20]. Yet most evaluations remain static:
+candidates receive immediate scores on exchangeable tasks, and the best design is deployed without
+modeling persistent change or the risk of a bad update.
+Architecture is therefore a decision variable that should track the regime (Figure 1). Investment
+systems expose non-stationarity, delayed and dependent feedback, correlated component errors,
+†Corresponding author: aliatiah100@gmail.com. The views expressed are those of the author and do not reflect the
+views of any other individual or entity. This material is for research purposes only and does not constitute investment advice.
+Submitted to 40th Conference on Neural Information Processing Systems (NeurIPS 2026).
+arXiv:2610.31436v1  [cs.AI]  22 Oct 2026
+
+
+Growth
+Inflation
+Stress
+Recovery
+Range
+regime
+Illustrative scenario – not experimental results
+time
+Frozen agent
+Fixed workflow
+CMAS (ours)
+frozen
+stale harness · delayed
+feedback never reused
+✗
+shift missed, no update
+possible failure under shift
+?
+6 specialists: trend · macro · value · sent. · tail · skeptic
+identical roster, every context
+higher fixed inference cost
+may remain adequate
+?
+?
+lean
+continual harness adaptation
+expand: +hedge
+conservative gate
+adapts under
+fixed risk controls
+Figure 1: Illustrative schematic of architecture as a sequential decision variable; annotations
+are conceptual and do not report experimental results. A frozen workflow may miss persistent
+shifts; a fixed committee stays expensive in every regime; CMAS expands, rewires, contracts, retains,
+or rolls back under fixed external controls, after reversible calibrated promotion.
+switching costs, and tail-risk constraints. Finance is useful here as an instrumented, risk-sensitive test
+of meta-level generalization and conservative update evaluation. Backtested return is not intrinsically
+persuasive [6, 7, 13]. What is missing is (i) a controlled benchmark whose surrogate-optimal worker
+architecture is computable and changes over time, and (ii) a method that screens candidate updates un-
+der noisy, delayed feedback [17, 15, 12, 2]. An update whose simulator-evaluated mean improvement
+is at most the promotion margin is a false promotion, the meta-level analogue of a false discovery
+and a near-neutral change; Table 2 separates it from the outcomes that do make the system worse.
+Generated multi-agent systems can also be costlier yet weaker than strong single-agent baselines [4];
+a credible meta-agent must learn both when to assemble specialists and when to collapse to a
+simpler system. We ask whether a meta-agent can adapt the composition, communication graph,
+and compute allocation of a compound agentic system under regime shifts while empirically limiting
+false promotion, architecture bloat, and operational risk.
+We answer with CMAS (Figure 2). The inner loop executes a bounded agent architecture behind
+a deterministic constraint and authorization layer. The outer loop observes the pre-decision regime
+descriptor zk and a trace archive, proposes typed edits, evaluates candidates against the incumbent
+by paired shadow replay, assigns counterfactual credit, and promotes only when the empirically
+calibrated simultaneous score clears the margin. Promotion enters a simulated canary stage and is
+reversible. Every method sees the same pre-decision descriptor zk, available before the decisions it
+informs, while the latent simulator regime st is evaluator-only. Throughout, meta-agent denotes this
+entire outer loop (proposer, compiler, evaluator, credit estimator, gate, and rollback controller), not
+the proposal model alone. It is a hybrid: generation is LLM-based and archive-conditioned, while the
+compiler, risk projection, authorization layer, gate, and rollback rules are deterministic and outside
+anything the LLM can edit (Figure 2, locked box).
+Three contributions follow. (1) We formulate agent-architecture search as sequential incumbent
+replacement over typed architectures, with a structural distance (Eq. (1)) as switching cost, delayed
+dependent utility (Eq. (2)), hard eligibility constraints, an explicit false-promotion target, and meta-
+level generalization (Definition 1) as the scored quantity. (2) CMAS couples archive-conditioned
+typed edits, paired candidate–incumbent replay under common random numbers, interventional
+Shapley-style [34, 35] credit fed back to the proposer, and a conservative promotion-and-rollback
+gate. The statistical ingredients are standard; the contribution is their integration. Proposition 1 states
+only the idealized conditions under which such a gate would control family-wise false promotion, and
+Section 4 scopes the departures. (3) METAINVEST-BENCH’s controlled track makes surrogate-oracle
+regret, selection accuracy, and credit fidelity computable, and five reusable controls (clone-collapse,
+shuffled-regime, gate-calibration, proposer-value, Goodhart-drift) measure whether adaptation hap-
+pens for the intended reason, exposing reward gaming under a return-only evaluator (RQ7).
+2
+
+
+The main empirical finding is a promotion-calibration separation. Holding the evaluator and gate
+fixed, false promotion stays at 3.2–3.5% across proposers while utility tracks proposer quality
+(Table 7).
+2
+Related work and positioning
+Automated design and optimization of agent systems.
+ADAS, AgentSquare/AFlow,
+MaAS/AutoMaAS, and GEPA search executable programs,
+workflows,
+architectures,
+or
+prompts [3, 14, 19, 20, 9, 1]. GPTSwarm and G-Designer optimize communication graphs [23, 18].
+Adaptive Auto-Harness directly studies sustained harness construction and routing on open-ended,
+heterogeneous, non-stationary streams [43]. HarnessAudit evaluates trajectory-level boundary
+and information-flow compliance, while SafeHarness integrates verification, privilege control,
+degradation, and rollback across the agent lifecycle [44, 45]. What CMAS makes first-class is
+repeated candidate–incumbent replacement, paired replay on shared randomness, update-level
+promotion calibration, switching cost, and a reversible simulated canary stage. The closest systems
+route at solve time and leave the deployed incumbent in place [43, 20], gate on candidate quality
+without a paired incumbent comparison or rollback [39, 40], or audit and secure execution without
+an update-level false-promotion estimand [44, 45]; full comparisons in Appendix I.
+Safe improvement, verification, and evaluation validity. Four literatures supply ingredients
+(Appendix I): safe policy improvement and conservative bandits give the gate its form [26–28]; non-
+stationary switching-cost learning the regret metric [31, 32]; safety and verification work the threat
+model [11, 16, 8]; off-policy evaluation [38] motivates paired replay. New here are a typed action
+space with a distance (Eq. (1)), adaptively LLM-generated pools (so the guarantee is pool-conditional),
+and interventional trace-level credit. Because financial evaluation is vulnerable to leakage [6, 7, 13,
+22, 17, 15, 12, 10, 2], the simulator is primary and market replay provides external validity only.
+3
+Problem: sequential meta-agent design under non-stationarity
+Inner decision system.
+At time t an information packet xt is Ft-measurable; architecture h
+produces an unconstrained proposal ˜wt(h) and trace τt(h). A deterministic projection maps it to
+the feasible set, wt(h) = ΠCt( ˜wt(h)), with Ct encoding leverage, concentration, turnover, volatility,
+and restricted-asset constraints. The LLM system cannot modify ΠCt, accounting, authorization, or
+data cutoffs (Figure 2, locked box). Net return is Rnet
+t+1(h) = wt(h)⊤rt+1 −κt∥wt(h) −wt−1(h)∥1;
+during paired replay wt−1(h) is the candidate’s own counterfactual weights, so each pays its
+own path’s turnover. Because an active projection can mask proposal differences, we fix its form
+throughout: Euclidean projection onto the constraint polytope via a QP solver.
+Architectures, distance, and meta-level generalization.
+An executable architecture is a typed
+object h = (V, E, ρ, µ, b, g, v) ∈H: worker set V , directed acyclic communication graph E, typed
+roles and prompts ρ, model assignments µ, compute/tool budgets b, aggregation rule g, verification
+nodes v. We equip H with a distance
+d(h, h′) = ωV dJac(V, V ′) + ωEdGED(E, E′)
++ ωbdbudget(b, b′) + ωρdtyped
+ (ρ, µ, g, v), (ρ′, µ′, g′, v′)
+
+.
+(1)
+used both as a switching cost and as a drift diagnostic. All four terms are normalized to [0, 1], so
+no architecture field changes at zero switching or novelty cost. With ≤10 edges (Appendix B) dGED
+is exact; weights are fixed in advance (Table 17) and act through λswitch. At outer-loop time k, the
+meta-agent sees the observable pre-decision regime descriptor zk, the incumbent hk, and an archive
+Dk of traces, credits, and outcomes; it proposes a candidate pool Hk ⊂H.
+Definition 1 (Meta-level generalization). A meta-policy π (εgen, εsafe)-generalizes over a held-out
+factor family F (tasks, regime mixtures, worker libraries, model backbones) if expected held-out
+utility is within εgen of in-distribution utility and each held-out violation or false-promotion rate is
+no more than εsafe worse; the strict version sets εsafe = 0. We report achieved deltas rather than
+asserting a threshold (Table 13): the strict clause is not met, since held-out false promotion rises
+0.7 pp (RQ3).
+3
+
+
+OUTER LOOP monthly · propose, screen and promote one bounded architecture update
+retrieve
+parents from Dk
+typed diff
+compile-checked
+paired replay
+shared seeds
+credit ϕi
+per component
+gate
+Scorek(c) > ϵ
+canary
++ rollback
+1
+2
+3
+4
+5
+6
+candidate vs. incumbent
+empirically calibrated
+reversible
+INNER LOOP weekly · run the deployed harness hk
+LLM-EDITABLE
+trend
+macro
+tail-risk
+skeptic
+aggregate g
+typed outputs oi,t: scores · confidence · evidence · risk flags
+risk projection ΠCt
+authorization · accounting
+· data cutoffs
+IMMUTABLE · the proposer cannot edit this
+decision wt
+trace τt: tool calls · cost · violations · delayed outcome
+ARCHIVE Dk
+operational memory of prior
+workflow behaviour
+regime zj · architecture hj
+trace · utility ˆ
+Jj
+credit ˆϕj · failure label
+conditions the next proposal; the
+foundation-model weights are
+never updated
+log
+promote hk+1, or retain hk
+Figure 2: CMAS as a governed adaptation loop for a multi-agent investment workflow. The risk
+projection, authorization, accounting and data cutoffs sit outside the LLM-editable boundary. Left:
+the archive Dk is operational memory of prior workflow behavior, storing regimes, architectures,
+traces, utility and credit estimates, and failure labels; the foundation-model weights are never updated.
+Bottom (inner loop, weekly): incumbent hk runs typed specialists whose outputs oi,t are aggregated
+by g, after which the immutable projection ΠCt enforces the financial control boundary and the
+trace τt is logged back to the archive. Top (outer loop, monthly): ❶retrieve parents by regime
+similarity and novelty; ❷propose a compile-checked, auditable typed diff with hypothesis; ❸paired
+shadow replay of candidate against incumbent under common random numbers, plus red-teaming; ❹
+interventional credit ϕi fed back; ❺promote only if the empirically calibrated simultaneous score
+exceeds ϵ; ❻simulated canary stage with rollback, after which the promoted hk+1 (or the retained
+hk) returns to the inner loop.
+Constrained utility over shadow window Wk scalarizes soft preferences; hard constraints stay eligibil-
+ity filters. A candidate failing authorization, evidence, leakage, or risk checks is ineligible regardless
+of utility. For candidate h and the sequence’s previous architecture h−,
+Jk(h; h−) = CEQγ
+ Rnet(h)
+
+−λcvar CVaR.95
+ −Rnet(h)
+
+−λdd MDD(h)
+−λcost Cost(h) −λturn Turnover(h) −λswitch d(h, h−) −λviol Viol(h).
+(2)
+CEQγ(R) = E[R]−γ
+2 Var(R) is the certainty equivalent, CVaR.95 the mean worst 5%, MDD maxi-
+mum drawdown; penalties are nonnegative and normalized by frozen training statistics (Appendix G).
+Viol counts only soft violations (hard authorization and risk violations are eligibility filters), and
+“OOD utility” is held-out Jk under the same frozen constants. The gate tests only the additive re-
+turn/cost/turnover/switch statistic ˜J, which omits the path-risk terms, so a candidate can clear the gate
+yet reduce full Jk within eligibility. A false promotion is distinct from both a negative- ˜J promotion
+and a full-J reduction (Table 2). Let h⋆
+1:K denote the computable surrogate dynamic-oracle sequence
+that maximizes P
+k Jk(h⋆
+k; h⋆
+k−1) over the enumerated feasible surrogate space. The reported
+normalized mean surrogate dynamic-oracle regret is K−1 P
+k
+
+Jk(h⋆
+k; h⋆
+k−1) −Jk(hk; hk−1)
+
+; each
+sequence pays switching cost against its own predecessor.
+The promotion gate uses the following explicitly additive block statistic, with every term normalized
+by the same frozen training constants used in Eq. (2):
+˜Jk,b(h; h−) = R
+net
+k,b(h) −λcostCostk,b(h) −λturnTurnoverk,b(h)
+−λswitchd(h, h−) −λviolViolk,b(h).
+(3)
+The CEQ variance term, CVaR, and MDD are excluded from ˜J as non-additive path functionals;
+they act through full-J reporting and hard eligibility filters. A candidate pays d(c, hk), while the
+incumbent’s own comparison ˜Jk,b(hk; hk) pays zero incremental switching cost. False-promotion
+labels concern the held-out mean of this paired statistic. They say nothing about full utility or
+downstream harm.
+4
+
+
+4
+CMAS: conservative meta-agent search
+Typed worker and architecture interfaces.
+Workers are bounded specialists, each returning a
+typed tuple oi,t = (si,t, ci,t, ui,t, ei,t, qi,t): asset scores, calibrated confidence, uncertainty, evidence
+identifiers, risk flags. The library holds trend, macro, value/carry, sentiment, liquidity/tail-risk, and
+skeptic agents. Before execution, an architecture compiler validates schemas, acyclicity, permissions,
+budgets, and evidence contracts, rejecting invalid diffs with machine-readable errors the proposer
+can learn from.
+Archive-conditioned candidate generation.
+The archive stores tuples (zj, hj, τj, ˆJj, ˆϕj, fj),
+where ˆϕj are component credits and fj failure labels. Parents are retrieved by
+Sj = βz sim(zk, zj) + βJ ˆJj −βu ˆσj + βd novelty(hj),
+(4)
+with Gaussian regime kernel sim(zk, zj)
+=
+exp(−∥zk −zj∥2/2ℓ2) and novelty(hj)
+=
+minh′∈deployed d(hj, h′) from Eq. (1). Records dominated on (utility, cost) are dropped first, so the
+archive acts as stepping stones [21]. The proposer sees only retrieved records and may apply one
+auditable typed edit per candidate, drawn from a closed set (workers, edges, one role field, budget,
+aggregation, verification; Table 3). Each proposal is a machine-readable diff with a hypothesis,
+mechanism, and anticipated failure mode (Figure 2, ❷). We exclude unrestricted code generation:
+free-form self-rewriting [21, 37] would change the candidate distribution and evaluation surface
+at once, confounding calibration attribution.
+Paired evaluation and interventional credit assignment.
+Candidate and incumbent run on the
+same packets, seeds, market paths, and tool responses; pairing removes path luck and sharply reduces
+the variance of the improvement estimate. For component i (worker, edge, verification node, budget
+increment) we estimate Shapley-style interventional credit
+ϕi(h) = Eπ
+h
+J
+ Preπ(i) ∪{i}
+
+−J
+ Preπ(i)
+ i
+,
+(5)
+where π is a uniform random permutation of C(h) and Preπ(i) the components preceding i,
+estimated over a fixed permutation budget (Table 17) under common random numbers, counted in
+search compute. The removal operator is compiler-valid: dropping i re-routes orphaned edges to the
+aggregator, substitutes a neutral pass-through for a removed verifier, and holds the token budget fixed.
+Infeasible coalitions take the incumbent’s projected utility, so J(S) is always defined. Because the
+imputation is a design choice shrinking the credit of components whose removal breaks compilation,
+these are compiler-defined Shapley-style credits rather than canonical Shapley values (alternative rule:
+Appendix C). We do not report the Monte Carlo standard error of ˆϕ, so the evaluated outcome is the
+rank correlation; individual magnitudes should not be read quantitatively. Credits from round k enter
+the archive only at round k+1, never within the round that generated them. The pool Hk is therefore
+fixed before the shadow evidence that evaluates it, the pre-generation condition of Proposition 1.
+Attribution is interventional, so a persuasive worker that adds no counterfactual utility receives no
+credit. Appendix I positions this against observational textual backpropagation [25, 1].
+Adversarial and negative-control evaluation.
+The evaluator applies five intervention families
+(dropout, corrupted workers, stale data, cost shocks, descriptor corruption; Appendix C). Two
+negative controls are central: under clone-collapse all workers share identical information and
+competence, so a sound meta-agent should contract [4]; permuting zk (shuffled-regime) should
+make any conditional advantage vanish (Table 10).
+Conservative promotion with calibrated simultaneous correction.
+For candidate c, let Dc,b =
+˜Jk,b(c; hk) −˜Jk,b(hk; hk) be the paired improvement of Eq. (3) on effective block b, where Beff
+counts approximately independent blocks (circular block bootstrap [33], pre-selected length). At
+update k the archive and pool are frozen at cutoff tk; the pre-designated window Wk is scored without
+revealing outcomes to the proposer, and labels and credits enter Dk+1 only afterwards. Successive
+26-week windows overlap at monthly cadence, so later rounds may reuse earlier observations, but
+no round adapts its pool to its own held-out Wk (Appendix G). The implemented gate applies an
+empirically calibrated, variance-penalized simultaneous score,
+Scorek(c) = ¯Dc −rk,c,
+rk,c =
+s
+2 bVk,c log
+ 2|Hk|/δk
+
+Beff
+,
+(6)
+5
+
+
+treating the tightly concentrated paired deltas (empirical range ≈0.04 under common random num-
+bers) as sub-Gaussian; the idealized Bernstein analysis appears in Appendix A. Here bVk,c is the
+sample variance of the Dc,b. Because both bVk,c and Beff are estimated, Scorek is not a confidence
+bound; it is calibrated empirically (Figure 4; Remark 1, Appendix A). Among feasible candidates,
+the gate promotes the highest-scoring one (ties broken toward fewer workers) only if Scorek(c) > ϵ;
+otherwise it retains the incumbent. Promotion first enters a simulated, limited-authority canary stage
+alongside the incumbent, with pre-specified rollback triggers.
+The result below assumes a valid confidence radius, which Eq. (6) does not provide. We state it
+because it forces the design conditions.
+Proposition 1 (Idealized conditional family-wise false-promotion result; not a property of Eq. (6)).
+Fix the candidate pool Hk before the shadow sample is drawn (Hk measurable w.r.t. information
+prior to Wk), and let rvalid
+k,c
+be any valid 1 −δk/|Hk| confidence radius for candidate c’s mean block
+improvement. Define the idealized lower confidence bound LCBideal
+k
+(c) = ¯Dc −rvalid
+k,c . Then, with
+probability at least 1 −δk, every candidate promoted under LCBideal
+k
+(c) > ϵ has expected replay
+improvement exceeding ϵ; choosing δk = δ/K (or δk = 6δ/π2k2) bounds the probability of any
+false promotion across updates by δ.
+Departures. The proof is a standard simultaneous-concentration argument [26–28]. Eq. (6) breaks
+three of its premises (Appendix A): overlapping windows break cross-update disjointness; the
+variance-only penalty drops the Bernstein range correction and plugs in an estimated block count,
+so no finite-sample theorem applies; and the deltas are winsorized. We therefore call the gate
+empirically calibrated (Figure 4). A sealed-protocol rerun removes cross-update overlap and realizes
+4.8% at the 5% target. It does not validate Proposition 1, which concerns replay improvement and
+says nothing about a misspecified objective (RQ7). A real deployment would inflate the margin to
+ϵ + ξk; every number here uses ξk = 0, and nothing was run live.
+Scoping. Within an update, δ is split across the |Hk| candidates and budgeted at δ = 0.05 per
+update, which is the denominator that the 3.4% rate and Figure 4 report against. Sequence-level
+control would require δk = δ/K or the anytime schedule, neither activated for Track A. The implied
+per-stream bound is vacuous, so RQ4’s per-stream rate is covered by no 5% guarantee (Appendix A).
+5
+METAINVEST-BENCH: benchmarking meta-level adaptation
+No single backtest can establish meta-agent quality, so METAINVEST-BENCH triangulates controlled
+capability (Track A), external validity (Track B), and adversarial governance (Track C) over a shared
+worker library, risk layer, and budget accounting (Figure 6).
+Track A: controlled regime environment. The primary controlled benchmark is a hidden-state factor
+process, a Markov regime-switching model after [36]. The simulator specifies regime-dependent
+worker competence, so a surrogate-optimal architecture is computable. The regime evolves, a signal
+about next-period factors is emitted before the decision, and the return realizes afterward:
+st+1 ∼P(· | st),
+qt, νi,t, ηi,t ∈Ft,
+νt+1, ϵt+1 ⊥Ft,
+ut+1 = Astqt + νt+1,
+vi,t = Ci,stqt + νi,t,
+ft+1 = µst + ut+1,
+yi,t = Hi,stµst + Gi,stvi,t + ηi,t,
+rt+1 = Bstft+1 + ϵt+1.
+(7)
+Here qt is the pre-decision predictable component; worker-observation noises νi,t, ηi,t are Ft-
+measurable at decision time, while the time-(t+1) innovations νt+1, ϵt+1 are independent of Ft (all
+sampled independently given the regime). Ast and Ci,st induce the worker–future-shock correlation
+without exposing a future-indexed quantity; Gi,st sets signal strength; workers never see ft+1, rt+1,
+or oracle labels. The tensors H, G define hidden regime-dependent competence (some specialists use-
+ful only in some regimes; one persuasive but anti-correlated). Knowing them, the evaluator computes
+a surrogate dynamic-oracle sequence on the same schedule and budget, charging switching cost rather
+than taking the per-regime best. That makes regret, selection accuracy, and credit fidelity computable.
+LLM workers in Track A. A worker is an LLM specialist: it receives a rendered evidence
+packet built from its noisy signal yi,t, the context zk, and role instructions, and returns oi,t. The
+simulator sets signal quality via H, G, while the LLM supplies calibration, disagreement, and failure
+modes (over-confidence, susceptibility to the “persuasive” anti-correlated worker), so Track A tests
+6
+
+
+orchestration (worked packet in Appendix C). The evaluator observes st only to score the surrogate
+oracle; every method sees the same zk (no-leakage conditions: Eq. (7)).
+Track B: market replay; Track C: worker-fleet governance. Track B is a secondary, underpowered
+external-validity check on historical data, using date-controlled and counterfactual structural replay
+against documented LLM-backtest leakage [6, 7, 22] (Appendix C). Track C is a market-noise-free
+suite run under a budgeted meta-adversary, following the compromised-insider threat model of [11].
+It tests whether the meta-agent detects a corrupted worker, isolates the affected path, picks a minimal
+repair, avoids leaking restricted context, and rolls back after a simulated governance incident.
+6
+Experimental protocol
+Baselines. Seven Track A methods: a strong single agent with self-consistency under the same
+per-decision deployment budget cap; a fixed full committee; a rule-based regime router; a LinUCB ban-
+dit [29] over a 15-architecture menu (partially logged; Table 6); AFlow-style workflow search [14, 19];
+MaAS/AutoMaAS-style adaptive selection [20, 9], the strongest adaptive competitor and what “best
+adaptive baseline” denotes throughout; and GEPA-style prompt-only optimization [1]. All are scored
+against the same surrogate dynamic oracle and share data packets, zk, worker library, risk layer, model
+pool, and equal search-inclusive budget caps (Shapley and paired-replay compute counted), with no in-
+formation advantage. These are our reimplementations, not official releases, so every superiority claim
+is scoped to common-budget reimplementations under a shared risk layer. Each method’s defining
+search mechanism is retained; only what the shared environment forces is changed (retained/changed
+detail in Appendix C). Routing the best baseline’s proposals through our gate still reaches 0.45 OOD
+utility against CMAS’s 0.48 (Table 7), bounding the risk that a weak reimplementation drives the result.
+Research questions. RQ1 regret and cost-adjusted utility; RQ2 interventional worker competence
+vs. evaluator noise; RQ3 transfer to unseen regimes, libraries, and backbones (Definition 1); RQ4
+gate calibration under serial dependence; RQ5 sparsity when extra agents add no value; RQ6
+recovery from compromised workers; RQ7 drift under a misspecified (return-only) evaluator.
+Metrics. Track A: normalized mean surrogate dynamic-oracle regret; selection accuracy; adaptation
+delay (updates until post-shift regret returns within ϵdelay, distinct from the margin ϵ); credit rank
+correlation. Track B: CEQ, Sharpe, MDD, CVaR, turnover, factor α. All tracks: cost, size, churn,
+violations, rollback precision/recall, and false-promotion rate. That rate is the fraction of per-update
+decisions promoting a candidate whose simulator-evaluated mean improvement is ≤ϵ (undefined
+where a method never switches).
+Statistics. Nested walk-forward with an untouched final test; search is confined to training/validation
+intervals. The unit of replication is a stream (96 = 12 seeds × 8 schedules), with paired stream-level
+block-bootstrap CIs as the primary inference and schedule-clustered hierarchical intervals as a
+sensitivity analysis (Tables 1, 7–10). With only eight top-level schedules, clustered intervals are
+read cautiously and significance rests on the paired stream-level difference under common random
+numbers; clustering widens intervals without overturning the ablations (e.g. no-paired-evaluation
+OOD utility [0.42, 0.48]; Table 10). Paired CMAS-vs-best-baseline differences in regret and OOD
+utility exclude zero after Holm correction. The full pairwise matrix is omitted for space (seed
+separation in Appendix G).
+This simulator-evaluated mean improvement is not directly observed: the evaluator estimates it
+from 50 Monte Carlo paths per candidate (SE < 0.004; ties within ±0.005 of ϵ labeled false
+conservatively). Score form, block length, winsorization, ϵ, and pool size were frozen at validation
+before the untouched final test (Tables 15–16; configuration Table 17).
+7
+Results and diagnostic analyses
+RQ1: Adaptation and cost-adjusted utility. Among adaptive methods, CMAS attains the lowest re-
+gret, adaptation delay, and false promotion, and the highest OOD utility and credit fidelity (Tables 1, 8).
+Versus the MaAS/AutoMaAS-style reimplementation, regret fell 0.116 →0.104 (10.3%), OOD util-
+ity rose 0.44 →0.48, credit correlation 0.32 →0.41, deployment inference cost was 6.0% lower, and
+recovery took 2.7 updates vs. 3.1 (Figure 3). Paired differences exclude zero after Holm correction:
+regret −0.012 ([−0.020, −0.004]), OOD utility +0.038 ([+0.010, +0.066]). CMAS is nevertheless
+7

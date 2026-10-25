@@ -1,0 +1,819 @@
+The Geometry of Metaphor: Probing and Steering Metaphor
+Representations in Large Language Models
+Shihui Li*, Mette Andersen∗, Martha Lewis
+Institute for Logic, Language, and Computation
+University of Amsterdam
+shihui.li@student.uva.nl, {m.f.andersen, m.a.f.lewis}@uva.nl
+Abstract
+Metaphor is a crucial aspect of human cogni-
+tion. As such, we would like to understand
+how it is represented in large language models
+(LLMs) and how it might be controlled. We
+use mechanistic interpretability techniques to
+identify causal subspaces in a range of LLMs
+covering different architectures and sizes. We
+show that we are able to steer output on classi-
+fication tasks across different parts of speech.
+We are also able to steer output on generation
+tasks, indicating that these techniques can be
+used to control the metaphoricity of LLM out-
+put.
+1
+Introduction
+Metaphor is an essential part of everyday hu-
+man language use. Sources such as Steen et al.
+(2010); Shutova (2010) show that metaphor per-
+vades language. Furthermore, metaphor forms a
+basis for the fundamental creativity and concept
+formation that we are capable of (Lakoff and John-
+son, 2008). Large language models such as Llama
+3 (Grattafiori et al., 2024) have some capacity to
+understand and produce metaphorical language, al-
+though whether they are up to human performance
+is debated (Chakrabarty et al., 2021; Stowe et al.,
+2022; Ichien et al., 2024).
+One way to understand the capacities of large
+language models is via mechanistic interpretabil-
+ity: by examining the internals of large language
+models via, for example, the Logit Lens1, causal
+interventions (Meng et al., 2022), or circuit discov-
+ery (Conmy et al., 2023). Sharkey et al. (2025)
+provides a thorough review and discussion of open
+problems in the area. One recent paper, Marks
+and Tegmark (2024), argued that Llama models
+exhibited a ‘truth direction’ at particular layers,
+*Joint first authors
+1https://www.lesswrong.
+com/posts/AcKRB8wDpdaN6v6ru/
+interpreting-gpt-the-logit-lens
+which was common to different datasets, and that
+the models’ output could be steered by causal in-
+tervention on this layer.
+Finding such a direction for metaphor would
+give insight into how models represent metaphor.
+This has been investigated to some extent (Boisson
+et al., 2024) but not yet at the mechanistic level.
+Finding this direction could also provide a useful
+‘dial’ that could potentially be used to steer the
+metaphoricity or literalness of output text, using
+techniques from e.g. Li et al. (2023). In this paper,
+we use activation patching (Meng et al., 2022) and
+distributed alignment search (Geiger et al., 2024) to
+find a ‘metaphoricity direction’ or subspace within
+a given model. We show that these directions are
+causally effective: we are able to change the output
+of models in classification tasks for metaphor iden-
+tification and interpretation; and in a generation
+task we are able to steer the model towards more
+metaphorical output.
+Contributions
+• We identify directions and subspaces for
+metaphoricity in a range of models, and show
+that these have some causal effect.
+• We show that these directions are somewhat
+consistent across different metaphor datasets.
+• We test seven models from four different
+model families (Gemma (Riviere et al., 2024),
+Qwen (Bai et al., 2023), Llama (Grattafiori
+et al., 2024), Mistral (Jiang et al., 2023))
+across small (7-9B) and medium-large (27-
+70B) sizes.
+• We show that steering models in a generation
+task can change model output from more lit-
+eral to more metaphorical.
+arXiv:2610.31520v1  [cs.CL]  22 Oct 2026
+
+
+2
+Background and Related work
+Metaphor identification and interpretation
+In
+metaphor processing, research has focussed on
+two main tasks: metaphor identification, that is,
+identifying whether a word is metaphorical, and
+metaphor interpretation, that is, identifying the
+meaning of a metaphorical utterance. Work in us-
+ing LLMs for metaphor identification include Fuoli
+et al. (2026); Reimann and Scheffler (2025). On the
+metaphor interpretation side, there has been a range
+of work showing that modern LLMs have relatively
+strong performance at understanding metaphor, es-
+pecially when fine-tuned (Ichien et al., 2024; Liu
+et al., 2022b). Since metaphor is a key part of hu-
+man language, we would like to understand how
+LLMs interpret and identify metaphor.
+Activation Patching
+Mechanistic interpretabil-
+ity techniques attempt to understand and affect the
+output of large language models by inspecting their
+internal representations, for example by looking at
+the vectors of activations produced at each layer of
+the model (Meng et al., 2022; Marks and Tegmark,
+2024). A common technique is to then causally
+intervene on these representations. This means that
+we examine how a model’s output changes when
+we alter its internal representations, for example
+by activation patching, introduced in Meng et al.
+(2022); that is, we save the activations for one in-
+put, and patch these into the activations for another
+input, examining which layers and tokens affect
+the output.
+In Marks and Tegmark (2024), the authors use
+activation patching to find a combination of layer
+and token input that represents a concept of truth
+in a language model.
+Distributed Alignment Search (DAS)
+(Geiger
+et al., 2024) is a method for finding causal con-
+cepts in model activations, based on the assump-
+tion that full-vector activations may be polyseman-
+tic, i.e. may be activated for different concepts.
+The method has been used in existing benchmarks
+(Mueller et al., 2025) for causal variable local-
+ization, and compared to other methods (SAEs,
+PCA, full-vector), DAS has been shown to find
+concepts that achieve superior causal performance.
+In this paper, we use DAS to find a causal concept
+of metaphoricity in the model’s residual stream,
+and compare the performance of steering using
+DAS with the existing mass-mean steering used by
+Marks and Tegmark (2024).
+Controlling Generation
+Controlling the style
+of LLM generated text is also an active area of re-
+search. Techniques used include training a separate
+model (Liu et al., 2022a), or prompt-based style
+control such as in (Liu et al., 2024). Relatedly, Li
+et al. (2023) alter the truthfulness of generated text
+via inference-time interventions.
+Summary
+Metaphor identification, interpreta-
+tion, and generation are key aspects of language
+use. So far, in LLMs, these abilities have mostly
+been investigated by looking at behavioural out-
+puts. In this paper, we use activation patching
+and distributed alignment search to investigate
+firstly whether metaphorical and literal sentences
+are linearly separable in activation space, secondly
+whether we can steer models towards literal or
+metaphoric output, and lastly whether the steering
+vectors are common to different datasets. We con-
+trol the metaphoricity of generated output using the
+inference-time intervention technique introduced
+by Li et al. (2023). To our knowledge, this is the
+first attempt to control the metaphoricity of LLM
+output via intervention on the activations, rather
+than via prompting or building an external model.
+3
+Datasets and Tasks
+3.1
+Datasets
+We use three datasets covering two different parts
+of speech (nouns and adjectives)2. Using mecha-
+nistic interpretability techniques requires that mod-
+els are able to perform to a high standard on the
+task, and the structure of the dataset also needs to
+be fairly controlled. We therefore use relatively
+simply structured datasets. Following Marks and
+Tegmark (2024), we use datasets with the following
+properties: 1) each sentence contains exactly one
+metaphorical target word; 2) sentences are short
+and structurally simple; 3) within each dataset, sen-
+tences have the same syntactic structure.
+We use the following three datasets. Examples
+of sentences with metaphorical nouns and adjec-
+tives are shown in Table 1.
+Noun dataset (NOUN).
+We start from the small
+training set of Fig-QA (Liu et al., 2022b), which
+contains 200 human-written creative metaphors.
+Each example is paired with one correct rephrase
+and one incorrect rephrase in a Winograd-style
+2We initially also used a verb dataset, however model
+performance on this dataset was not sufficiently high to probe
+with interpretability techniques.
+
+
+Category
+Example sentence
+Noun
+The book is a puzzle.
+Adj
+The welcome is warm.
+Table 1: Example sentences with metaphorically used
+nouns and adjectives. In example sentences, metaphori-
+cal target words are coloured blue.
+format. Every two metaphor examples form a pair
+representing the meaning of a particular rephrase.
+We first remove idioms, multi-clause descrip-
+tions, and long narrative sentences (e.g., “The
+painting has the creativity of Rembrandt and Pi-
+casso getting their paintings married”). We then
+use ChatGPT (OpenAI, 2025) to rewrite the re-
+maining examples into short, direct metaphors with
+the parallel structure “The noun1 is (a/an) noun2”.
+For example, the original sentence “The bear was
+the size of a whale after eating a smaller whale”
+is simplified to “The bear is a whale”. In each
+sentence, noun2 metaphorically describes noun1.
+We manually verify that each sentence is grammat-
+ically correct and preserves the original metaphori-
+cal mappings. The final dataset contains 130 sen-
+tence tuples. In the rest of the paper we refer to
+this dataset as NOUN.
+Adjective dataset (ADJ).
+We use the ADJ+N
+metaphor/literal dataset proposed by Tsvetkov et al.
+(2014). The test set contains 100 adjective–noun
+pairs with both literal and metaphorical usages.
+We modify this dataset to have a sentence format
+using the template “The N is ADJ.” In this dataset,
+the adjective carries the metaphorical meaning and
+modifies the noun. In the remainder of this paper,
+we refer to this dataset as ADJ.
+Domain-specific adjective dataset (DOM).
+We
+also use the dataset by Gutiérrez et al. (2016) for
+DAS training, steering prediction and steering gen-
+eration. The dataset consists of adjective-noun
+pairs across 8 different domains (clarity, depth,
+light, strength, substance, taste, temperature, tex-
+ture). Each sample is labelled literal (e.g. “warm
+coffee”) or metaphorical (e.g. “warm welcome”).
+We evaluate on n=100 per steering direction from
+the held-out set not used for training DAS. In the
+remainder of this paper we refer to this dataset as
+DOM.
+3.2
+Tasks
+We carry out an identification task, an interpreta-
+tion task, and a generation task.
+Identification
+Models are prompted with a
+four-shot setup to label a sentence as either ‘literal’
+or ‘metaphoric’.
+The adjective datasets from
+Tsvetkov et al. (2014) and Gutiérrez et al. (2016)
+are in the form adjective noun. We rephrase
+these into sentences of the form ‘The noun is
+adjective’. The full prompt for ADJ is then
+as follows. See Appendix A for the prompt for
+NOUN
+The town is sleepy. This sentence is: metaphoric
+The sand is white. This sentence is: literal
+The moon is young. This sentence is: metaphoric
+The banana is ripe. This sentence is: literal
+sentence. This sentence is:
+Interpretation
+Models are prompted with a
+four-shot setup.
+In each shot, a metaphorical
+sentence and a candidate paraphrase are given, and
+the paraphrase is labelled as ‘apt’ or ‘inapt’. This
+task uses NOUN, which is based on FigQA (Liu
+et al., 2022b). Apt/inapt pairs are taken from their
+setup. The full prompt is given below:
+Determine whether the paraphrase is apt or
+inapt.
+The politician is glass: The politician is transpar-
+ent. This paraphrase is: apt.
+The politician is a wall: The politician is transpar-
+ent. This paraphrase is: inapt.
+The cake is heaven: The cake is not delicious. This
+paraphrase is: inapt.
+The cake is heaven: The cake is delicious. This
+paraphrase is: apt.
+sentence: rephrase. This paraphrase is:
+Generation
+Models
+are
+prompted
+with
+a
+five-shot setup to output an interpretation of a
+sentence that could be either literal or metaphor-
+ical. The dataset used is DOM, and we reword
+adjective-noun pairs into sentences of the form
+‘The noun was adjective’. The full prompt is
+given below:
+The welcome was warm.
+The meaning of
+‘warm’ is: affectionate and emotionally inviting.
+The lamp was bright. The meaning of ‘bright’ is:
+emitting a strong, clear light.
+
+
+The novel was deep. The meaning of ‘deep’ is:
+intellectually complex and rich in meaning.
+The stone was smooth. The meaning of ‘smooth’
+is: having an even surface with no roughness.
+The defeat was bitter. The meaning of ‘bitter’ is:
+painful, hard to accept, and leaving resentment.
+The noun was adj. The meaning of ‘adj’ is:
+4
+Methods
+4.1
+Identifying areas encoding metaphoricity
+For each of the datasets and tasks described above,
+we use one of two techniques designed to isolate
+the part of the model used to encode metaphoric-
+ity. For the identification and interpretation tasks
+across NOUN, ADJ, and DOM, we use activation
+patching. For DOM and for the generation task,
+we also use distributed alignment search (DAS)
+to identify a linear subspace encoding metaphoric-
+ity. We use the mass-mean probe from Marks and
+Tegmark (2024) and the learned DAS subspaces
+to steer model output in the identification and in-
+terpretation tasks, requiring single-token output.
+Finally, we use the mass-mean probe and DAS
+subspaces to steer generation over multiple tokens,
+finding that it is possible to steer models towards
+more metaphorical or more literal output.
+4.1.1
+Activation Patching
+In the identification task, we use the following
+procedure. On ADJ, we insert the following sen-
+tence into the prompt template in Section 3.2 to
+form a prompt pL= The skin is dry. For prompt
+pL we expect the output ‘literal’. We then form
+a paired prompt pM replacing skin with wit. For
+this prompt we expect the output ‘metaphoric’. To
+find out which hidden states contain information
+about the metaphoricity of the sentence, we run
+the model on the input pM and cache the activa-
+tions hi,ℓ(pM) for each token position i and layer
+ℓ. Then, for each i and ℓ, we run the model on
+PL and modify the model’s forward pass by swap-
+ping hi,ℓ(PL) for hi,ℓ(PM). Finally, we record the
+difference in log probability between the tokens
+"metaph"3 and "literal". The larger the difference,
+the more influential the hidden state in position
+i and layer ℓon the model’s prediction. For the
+dataset NOUN, we use the prompt pair pL=The
+breeze is cold and pM=The breeze is ice. For the
+3LlaMA-3.1-8B tokenizes "metaphor" into subwords
+"metaph" and "or". In our study, we examine the model’s
+first output token "metaph".
+interpretation task, we use the prompt pair pinapt
+= The puzzle is rocket science: The puzzle is easy
+and papt = The puzzle is rocket science: The puzzle
+is difficult.
+4.1.2
+Distributed Alignment Search
+We use Distributed Alignment Search (DAS)
+(Geiger et al., 2024) to localize, if it exists, a low-
+dimensional, linear subspace encoding metaphoric-
+ity. After identifying the most causally implicated
+token-position in the residual stream using full-
+vector activation patching, DAS trains a rotation
+matrix on top of these activations. The rotation
+matrix is trained to maximize Interchange Inter-
+vention Accuracy (IIA), which is the fraction of
+samples where patching flips model prediction in
+the expected direction.
+Concretely, let h ∈Rd denote the residual
+stream at a fixed layer ℓand token position p. As
+will be seen in Figure 3, the full stop token at the
+end of the target sentence in each prompt is highly
+causally implicated. We perform DAS at this token
+at the layer that optimises the IIA score.
+DAS learns a matrix R
+∈
+Rd×k with or-
+thonormal columns (R⊤R = Ik), defining a k-
+dimensional subspace of the representation space.
+Given a source hidden state hsource and a base hid-
+den state hbase, the intervention replaces the sub-
+space component of hbase with that of hsource:
+hpatched =
+h
+|{z}
+original
+activation
+−
+RR⊤h
+| {z }
+remove original
+subsp. coords
++ RR⊤µtarget
+|
+{z
+}
+inject target
+subsp. coords
+During training, we alternate intervention direc-
+tions: on even steps we patch literal representations
+into metaphor prompts (aiming to flip the output to
+literal), and on odd steps the reverse. The loss for a
+single example is L = logit(other) −logit(target)
+where target is the correct post-intervention label
+and other is the original label. R is updated via
+Adam for 1,000 steps while the model weights are
+frozen.
+IIA is the fraction of samples that are cor-
+rectly flipped. In our case, if hbase is predicted
+as “metaphor” for the model, it should flip to “lit-
+eral” post-patching to contribute positively to IIA.
+Hence, IIA = 1.0 means we have found the variable
+capable of flipping all held-out examples.
+
+
+4.2
+Model steering
+We evaluate whether we can steer incorrect pre-
+dictions towards correct ones using two methods:
+full-vector mass-mean steering, as used by Marks
+and Tegmark (2024), and steering using the mean
+activations for metaphor-sample and literal-sample
+activations in the DAS subspace. The means are
+computed from correctly predicted samples, and
+we steer incorrectly predicted samples in both di-
+rections.
+Mass-mean steering is implemented as:
+hsteered ←h + α(µmet −µlit)
+(1)
+DAS steering is implemented as:.
+hsteered ←h −α RR⊤h + α RR⊤µtarget
+(2)
+We set α = 1 for the identification and inter-
+pretation tasks on NOUN, ADJ, and DOM. On
+DOM we train DAS matrices firstly across the
+whole dataset, and subsequently for each individ-
+ual domain.
+4.2.1
+Generation of multiple tokens
+To test whether the DAS subspace encodes a
+general-purpose concept of metaphor, which ex-
+tends beyond the prediction task it was trained
+on, we steer free-form generation. We prompt the
+model as described in section 3.2. During decod-
+ing, we steer every generated token as in Li et al.
+(2023): we use a hook function to save the acti-
+vation we use for patching, and inject it at every
+generated token.
+We compare baseline generation, mass mean,
+and DAS outputs across α ∈{1, 2, 5, 10} and both
+steering directions (lit →met and met →lit).
+Evaluation using LLM-as-judge
+To quantify
+the degree to which generated output changed
+from explaining a literal use of an adjective to a
+metaphorical use and vice versa, we use Qwen 2.5
+72B Instruct as a judge. Only the first sentence of
+each completion is judged, and a degeneracy filter
+applied before judging: a completion is marked
+degenerate if any single word repeats ≥3 times.
+The judge is prompted using the prompt shown in
+Appendix K.
+Metrics
+We report the following metrics: Flip
+rate (MM / DAS): fraction of of completions
+where judge label matches the target direction. De-
+generate responses are counted as 0, and we only
+consider the samples where the judge was able
+to judge correctly on the baseline generation pre-
+steering.
+4.3
+Models Evaluated
+We evaluate seven instruction-tuned models across
+four model families4 on metaphor identification
+and interpretation tasks. These are: Gemma 2 9B
+IT; LLaMA 3.1 8B IT; LLaMA 3.1 70B IT; Mistral
+7B IT; Mixtral 8×7B IT; Qwen 2.5 7B IT; Qwen
+2.5 72B IT, where IT stands for intstruction tuned.
+5
+Results
+5.1
+Baseline Performance
+We evaluate all models on the identification and
+interpretation tasks across all datasets (see Table
+2). We can see that all models are able to perform
+these tasks to a reasonable standard with the ex-
+ception of Gemma 27B on DOM. This modes is
+excluded from further analysis on this dataset.
+5.2
+Identifying Metaphoricity
+5.2.1
+Activation patching
+Examples of patching from the interpretation and
+identification tasks are presented in Figure 1. Ad-
+ditional patching results are shown in Figures 3
+and 4 in the Appendix.
+Across both parts of speech and both tasks,
+we observe three groups of activations that most
+strongly influence the output (Figure 1). Two of
+these groups are expected. Group (a) corresponds
+to tokens that differ between the patching source
+and base prompts (e.g., “skin” and “wit”). Group
+(c) corresponds to the final token “:”, which is nat-
+ural because the hidden states of the final token
+directly determine the next-token prediction.
+Group (b) contains the final token “.” in the
+sentence or paraphrase, as well as the token im-
+mediately preceding it.
+We hypothesize that
+Group (b) activations encode information about
+the metaphoricity of the sentence or paraphrase.
+Based on the patching results, we extract the hid-
+den states of the selected period token on the layer
+which has the most influence on the model’s out-
+put (e.g. 11th layer for Llama-3.1-8B, 29th layer
+for Llama-3.1-70B). We visualize LLM represen-
+tations of our datasets using principal component
+4Where available, we also evaluated non-instruction tuned
+models, but found that their performance on the tasks was
+not strong enough for the application of interpretability tech-
+niques.
+
+
+Task
+Dataset
+LLaMA-3.1-8B
+LLaMA-3.1-70B
+Qwen-2.5-7B
+Qwen-2.5-72B
+Mistral-7B
+Mixtral-8x7B
+Gemma-2-9B
+Gemma-2-27B
+Identification
+ADJ
+0.755
+0.915
+0.860
+0.930
+0.760
+0.870
+0.930
+0.915
+NOUN
+0.840
+0.905
+0.815
+0.888
+0.645
+0.881
+0.873
+0.900
+DOM
+0.841
+0.907
+0.805
+0.911
+0.814
+0.825
+0.881
+0.464
+Interpretation
+NOUN
+0.727
+0.862
+0.696
+0.815
+0.765
+0.796
+0.845
+0.858
+Table 2: Baseline accuracy on the 4-shot evaluation on identification and interpretation tasks across all models and
+datasets. DOM results use the M&T 5-shot prompt. Gemma-2-27B excluded from DOM analysis.
+(a) Llama 8b identification task
+(b) Llama 8b interpretation task
+Figure 1: Activation patching results for Llama 3.1 8B. (a) Identification task. The prompts use the literal
+sentence “The skin is dry.” and the metaphorical sentence “The wit is dry.” from ADJ We patch activations from the
+literal prompt into the metaphorical prompt. (b) Interpretation task. The prompts use the metaphorical sentence
+“The puzzle is rocket science.”, the correct paraphrase “The puzzle is easy.”, and the incorrect paraphrase “The
+puzzle is difficult.” from NOUN. We patch activations from the apt paraphrase into the inapt paraphrase.
+analysis (PCA). As shown in Figure 2, the first two
+principal components (PC1 and PC2) linearly sep-
+arate metaphorical from literal and apt from inapt
+across NOUN and ADJ and both tasks. More re-
+sults are available in Figures 5,6 and 7 in Appendix
+C.
+5.2.2
+DAS training
+Table 3: Global (all domains pooled) DAS IIA across
+models. IIA reported as mean ± std with 95% CI.
+Model
+ℓ
+k
+IIA ± std
+95% CI
+Gemma-9B
+19
+16
+0.807 ± 0.007
+[0.799, 0.815]
+LLaMA-8B
+11
+16
+0.793 ± 0.006
+[0.783, 0.802]
+Mistral-7B
+10
+32
+0.711 ± 0.019
+[0.698, 0.722]
+Mixtral-8x7B
+11
+16
+0.691 ± 0.026
+[0.680, 0.701]
+Qwen-7B
+14
+16
+0.830 ± 0.000
+[0.821, 0.839]
+LLaMA-70B
+28
+32
+0.640 ± 0.025
+[0.630, 0.650]
+Qwen-72B
+52
+32
+0.843 ± 0.024
+[0.836, 0.850]
+We select the optimal layer for training DAS
+using plain activation patching at the full stop token
+across layers. We extract the full hidden vector at
+this token at the optimal layer, and train two DAS
+matrices (k=16 and k=32). In Table 3 we report
+best layer ℓ, subspace dimension k and IIA score.
+We are interested in whether the model has a
+Table 4: LLaMA-8B: Domain-specific DAS IIA vs.
+global DAS transfer on held-out evaluation set
+Concept
+Domain-specific DAS
+Global DAS (transfer)
+Clarity
+0.316 ± 0.070 [0.262, 0.369]
+0.500 [0.404, 0.596]
+Depth
+0.343 ± 0.010 [0.299, 0.386]
+0.910 [0.868, 0.952]
+Light
+0.322 ± 0.122 [0.294, 0.352]
+0.727 [0.674, 0.776]
+Streng.
+0.606 ± 0.061 [0.582, 0.628]
+0.967 [0.953, 0.982]
+Sub.
+0.309 ± 0.059 [0.248, 0.371]
+0.814 [0.714, 0.900]
+Taste
+0.645 ± 0.054 [0.588, 0.706]
+0.842 [0.763, 0.921]
+Temp.
+0.470 ± 0.051 [0.435, 0.506]
+0.568 [0.500, 0.627]
+Tex.
+0.343 ± 0.022 [0.311, 0.376]
+0.713 [0.657, 0.765]
+domain-general causal encoding of metaphor, or
+multiple domain-specific ones. We therefore com-
+pare the IIA for a global DAS matrix and multiple
+domain-specific DAS matrices on a held out eval-
+uation set for each domain (not used for training
+global DAS, nor the domain-specific variant). Re-
+sults for Llama 3.1 8B are reported in Table 4. We
+see that the global DAS matrices have higher IIA
+than domain-specific matrices. For all results, see
+Table 9 and Table 10.
+5.3
+Model steering
+5.3.1
+Identification and Interpretation
+On the identification and interpretation tasks on
+NOUN and ADJ, we intervene on model outputs
+
+
+Figure 2: PCA visualization of activations at layer 11 for Llama 3.1 8B, for the identification task on the adjective
+(left) and noun(middle) datasets, and for the interpretation task on the adjective dataset (right). Notice that literal
+and metaphoric sentences are more or less linearly separable.
+Task
+train/test
+probe
+met→lit
+/apt→inapt
+lit→met
+/inapt→apt
+Task 1
+Adj/Adj
+LogReg
+.038
+.051
+MM-diff
+.227
+.471
+Noun/Noun
+LogReg
+.025
+.041
+MM-diff
+.195
+.449
+Adj/Noun
+LogReg
+.026
+.032
+MM-diff
+.138
+.254
+Noun/Adj
+LogReg
+.028
+.040
+MM-diff
+.230
+.666
+Task 2
+Noun/Noun
+LogReg
+.011
+.014
+MM-diff
+.355
+.564
+Table 5: Normalized indirect effects (NIEs) of mass-
+mean difference (MM-diff) and logistic regression (Lo-
+gReg) probes on the identification and interpretation
+tasks for LLaMA-3.1-8B. Higher NIE values indicate
+stronger causal steering effects.
+as in Eq. (1). Then, we construct a linear probe
+using the direction θ = µmet −µlit:
+p(metaphor | s) = σ
+ θ⊤h(s)
+
+,
+where σ(x) =
+1
+1+e−x . For the interpretation task,
+we define directions for apt/inapt pairs using the
+corresponding means.
+First, we use the mass-mean probe to flip the
+true positive outputs in test set into the opposite
+label. We then compare MM probes with standard
+logistic regression (LR) probes trained on the same
+representations. For both probes, we calculate the
+normalized indirect effect (NIE) of the intervention.
+For details of the NIE calculation, see Appendix J.
+Results for Llama-3.1-8B are reported in Table 5.
+Results across all models are in Appendix J.
+5.3.2
+Mass-mean and DAS steering
+We compare the performance of mass-mean steer-
+ing and subspace steering using the global DAS
+Model
+MM flip rate
+DAS flip rate
+Gemma 2 9B
+75.0%
+86.0%
+LLaMA 3.1 8B
+54.0%
+71.0%
+LLaMA 3.1 70B
+57.0%
+65.0%
+Mistral 7B
+64.0%
+45.0%
+Mixtral 8×7B
+72.0%
+61.0%
+Qwen 2.5 7B
+62.0%
+61.0%
+Qwen 2.5 72B
+88.0%
+91.0%
+Table 6: Repair rates on initially-incorrect items. MM
+flip rate: proportion of incorrect items flipped to the
+correct answer by full-residual-stream patching. DAS
+flip rate: proportion flipped by intervening only on the
+learned subspace. Bold marks the higher value per row.
+matrices trained in Section 5.2.2. We choose ini-
+tially incorrect predictions on the identification
+task on the DOM dataset. We use the two steering
+methods to steer output to the correct prediction.
+Results are reported in Table 6. We see that we are
+able to achieve fairly high performance across mod-
+els. For a full overview, see Table 11 in Appendix
+F.
+5.3.3
+Generation
+Whilst there are differences between models, we
+find that α = 5 enables the most effective steer-
+ing on average. Results for Llama-3.1-8B are pre-
+sented in Table 7. For a full overview, we refer to
+Tables 12 and 13 in Appendix G.
+To validate the results of the LLM-as-judge, we
+qualitatively inspect the generated outputs. We dis-
+play some generations in Table 8. More examples,
+including successful and unsuccessful generations,
+are included in Table 14 in the Appendix.
+6
+Discussion and Conclusions
+Our results show that there are clear directions and
+subspaces associated with metaphoricity across a

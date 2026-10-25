@@ -1,0 +1,651 @@
+CAUSAL CHAIN OF THOUGHT:
+MITIGATING ATTENTION LEAKAGE VIA CONTEXT
+ISOLATION
+Gabriele Dominici ∗
+Università della Svizzera Italiana
+gabriele.dominici@usi.ch
+Teague McMillan ∗
+ETH Zurich
+tmcmillan@ethz.ch
+Fazl Barez
+University of Oxford
+fazl@robots.ox.ac.uk
+Marc Langheinrich
+Università della Svizzera Italiana
+marc.langheinrich@usi.c
+Martin Gjoreski
+Università della Svizzera Italiana
+martin.gjoreski@usi.ch
+ABSTRACT
+Chain-of-thought (CoT) prompting elicits step-by-step rationales that appear to
+explain model predictions, but there is no guarantee these steps causally drive
+the final answer. In standard autoregressive generation, dense attention allows
+each reasoning step to attend to the full context, enabling the model to derive
+answers through direct lookup while generating plausible-sounding but post-hoc
+justifications. We introduce CausalCoT, an inference framework that enforces
+causal transparency by decomposing problems into a directed acyclic graph of
+atomic sub-questions, evaluating each node in an isolated context containing only
+its direct causal parents. This Markovian structure removes attention pathways to
+non-parent content, making downstream predictions sensitive to local reasoning
+rather than global context leakage. Across a diverse suite of reasoning benchmarks,
+CausalCoT preserves competitive predictive performance while improving expla-
+nation faithfulness, increasing causal sensitivity of intermediate reasoning steps by
+an average of 12 and up to 21 percentage points over the strongest baseline. The
+structured dependency graph additionally enables test-time interventions in which
+local corrections propagate predictably through downstream reasoning.
+1
+INTRODUCTION
+Large Language Models (LLMs) are increasingly deployed in high-stakes domains like healthcare,
+where user trust is crucial (Chen et al., 2024). Here, non-experts frequently rely on LLM-generated
+rationales, treating them as transparent windows into the model’s decision-making (Barez et al.,
+2025). However, this trust is often misplaced. While techniques like Reinforcement Learning
+from Human Feedback (RLHF) (Ouyang et al., 2022), Group Relative Policy Optimization (GRPO)
+(DeepSeek-AI et al., 2025), and Chain of Thought (CoT) (Wei et al., 2023) produce highly plausible
+text, they optimize for human preference rather than mechanistic transparency. Consequently, these
+explanations are frequently unfaithful to the model’s internal logic (Mayne et al., 2026; Matton et al.,
+2025; Turpin et al., 2023; Lanham et al., 2023). Alarmingly, even researchers sometimes misuse
+these persuasive post-hoc rationalizations with true explanations (Barez et al., 2025).
+This fundamental disconnect is a critical barrier to safe deployment. Specifically, standard CoT
+prompting suffers from severe causal opacity driven by attention leakage, the phenomenon where
+dense, global attention mechanisms allow a model to implicitly bleed information across its entire
+∗Equal contribution
+1
+arXiv:2610.31639v1  [cs.LG]  22 Oct 2026
+
+
+Question. A 67-year-old woman presents with fatigue, numbness in her feet, and decreased vibration sensation. Labs show hemoglobin 9.8 g/dL, MCV 112 fL, and
+hypersegmented neutrophils. Anti-intrinsic factor antibodies are positive.
+Which substance is most directly impaired? (A) Folate   (B) Intrinsic factor   (C) Bile salts ...
+Chain of Thought
+Answer: Let's think step by step:
+Step 1: Low hemoglobin, high MCV, and
+hypersegmented neutrophils indicate
+megaloblastic macrocytic anemia.
+Step 2: Numbness and decreased vibration
+sensation suggest vitamin B12 deficiency,
+which can cause neurologic symptoms.
+Step 3: Positive anti-intrinsic factor
+antibodies indicate pernicious anemia, which
+impairs intrinsic factor.
+Step 4: Intrinsic factor is required for vitamin
+B12 absorption in the terminal ileum.
+Step 5: Therefore, impaired intrinsic factor
+explains the patient's B12 deficiency and
+symptoms.
+Final answer: (B) Intrinsic factor
+Causal Chain of Thought
+HUMAN
+ASSISTANT
+Q1.1
+What anemia pattern is suggested
+by the MCV and smear findings?
+Elevated MCV with hypersegmented
+neutrophils suggests megaloblastic
+macrocytic anemia.
+Q1.2
+What do the numbness and
+decreased vibration sensation
+suggest?
+Neurologic involvement —
+characteristic of vitamin B12
+deficiency.
+Q1.3
+What does a positive anti-intrinsic
+factor antibody test indicate?
+Pernicious anemia — an
+autoimmune cause of impaired
+intrinsic factor function.
+Q2.1
+Which vitamin deficiency best explains the previous
+finding?
+Vitamin B12 deficiency best explains the findings.
+Q2.2
+What mechanism causes the vitamin deficiency in this
+finding?
+Impaired intrinsic factor prevents normal vitamin
+absorption in the terminal ileum.
+FINAL ANSWER
+Which answer choice is most directly
+impaired?
+(B) Intrinsic factor
+ASSISTANT
+ASSISTANT
+ASSISTANT
+ASSISTANT
+ASSISTANT
+ASSISTANT
+Figure 1: CoT vs. CausalCoT. (Left) In standard CoT, the model generates a continuous, autore-
+gressive stream of reasoning. (Right) Our proposed CausalCoT framework structurally isolates
+reasoning into a Directed Acyclic Graph (DAG). Each sub-question is evaluated in a restricted context
+containing only its explicitly routed parental dependencies. This enforces a procedural Markovian
+property, making the final prediction depend on explicitly routed intermediate outputs rather than
+unrestricted access to the full reasoning trace as done in CoT.(Completions shortened for illustration).
+context window rather than strictly depending on preceding logical steps. Because of this leakage,
+generated reasoning may appear perfectly logical while remaining entirely disconnected from the
+final prediction. For instance, Turpin et al. (2023) demonstrate that when provided with subtle
+context biases or unstated hints, models will heavily exploit these heuristics to derive an answer, yet
+completely omit them from their generated explanations, fabricating a step-by-step rationale that
+was never utilized. Furthermore, Lanham et al. (2023) reveal that actively modifying, degrading,
+or intervening on early CoT steps often yields surprisingly little impact on the downstream output.
+Together, these phenomena prove that standard autoregressive reasoning frequently acts as a superfi-
+cial justification, rather than a sequence of causally relevant steps that drive the model’s behavior.
+Although recent frameworks have attempted to resolve this opacity via alignment training (Paul et al.,
+2024) or question decomposition (Radhakrishnan et al., 2023), they still evaluate steps within shared
+contexts, inevitably suffering from continued attention leakage.
+To bridge the gap between plausible generation and faithful reasoning, we introduce Causal Chain-
+of-Thought (CausalCoT)1. CausalCoT enforces a strict transparent inference structure to prevent
+attention leakage, ensuring that a model’s stated reasoning correctly dictates its final prediction. Our
+approach operates in two phases: (i) the model decomposes a complex query into a topological plan,
+a Directed Acyclic Graph (DAG) of interdependent sub-questions; (ii) each node is evaluated in
+isolation, constrained entirely to its specific query and the explicitly routed answer of its direct parents
+(or the initial input, for root nodes). By enforcing this Markovian property, we construct a network
+of question-answer pairs where each step is causally driven only by its local dependencies. This
+architectural constraint removes the spurious contextual leakage of standard autoregressive generation
+during the evaluation phase. Furthermore, it natively supports counterfactual simulatability, allowing
+users to intervene on internal reasoning nodes and propagate those logical changes downstream. A
+comparison between CoT and CausalCoT is shown in Figure 1.
+We make four contributions:
+1We use the term “causal” throughout this work to denote strict procedural dependence (i.e., subsequent
+reasoning steps are strictly conditioned on the related prior steps) rather than formal statistical causal inference
+or structural causal models. This scoping is stated in full in Appendix D.
+2
+
+
+• We introduce CausalCoT, an inference framework that grounds reasoning in an explicit
+DAG, restricting intermediate steps to attend strictly to their parent nodes and eliminating
+spurious contextual shortcuts present in CoT.
+• We propose Predictable Change, a faithfulness metric that moves beyond the classic
+raw perturbation flip rates by testing whether downstream predictions match the logical
+implications of injected errors rather than arbitrary sensitivity.
+• We establish that CausalCoT significantly enhances reasoning faithfulness, across mulitple
+frontier models, with competitive predictive accuracy, performing on par with standard CoT
+or incurring only marginal drops.
+• We demonstrate that the underlying dependency graph facilitates targeted test-time interven-
+tions, propagating local corrections downstream far more reliably than standard CoT.
+2
+BACKGROUND
+Chain-of-Thought and LLM Explanations. LLMs are fundamentally optimized to model and
+generate human-like text. Because human explanations are typically structured to be clear, helpful,
+and persuasive, LLMs naturally exploit these stylistic traits, especially when fine-tuned via RLHF,
+where helpfulness and clarity are explicit reward signals. To enhance complex reasoning capabilities
+at inference time, prompting strategies such as CoT (Wei et al., 2023; Yao et al., 2023; Besta et al.,
+2024) and related evolutions encourage the model to output a step-by-step rationale before producing
+a final answer. Recent training paradigms, such as GRPO (DeepSeek-AI et al., 2025), even bake
+this step-by-step generation directly into the model’s policy. While these mechanisms produce
+highly plausible rationales that are easily trusted by non-expert users, they optimize for coherent text
+generation rather than enforcing strict dependencies between intermediate reasoning steps.
+The Illusion of Faithfulness. Generated reasoning traces frequently fail to reflect a model’s true
+decision mechanisms (Matton et al., 2025; McMillan et al., 2025; Lanham et al., 2023). This
+unfaithfulness typically manifests either as counterfactual inconsistency (Turpin et al., 2023; Matton
+et al., 2025; Mayne et al., 2026), where context perturbations change the model behavior in ways
+that contradict its stated rules, or as post-hoc rationalization (Lanham et al., 2023; Bogdan et al.,
+2025), where intermediate steps act merely as superficial justifications lacking causal influence
+over predictions. Here, we focus on mitigating post-hoc rationalization by enforcing a transparent
+inference process where each step is causally determined solely by its predecessors or the input. To
+quantify post-hoc rationalization, we evaluate causal reliance via intermediate step perturbations
+(Lanham et al., 2023): modifying, truncating, or corrupting reasoning steps during inference; if
+modifying a step leaves the final prediction unchanged, the trace lacks causal efficacy and is unfaithful.
+See Appendix B for details on faithfulness metrics.
+3
+METHOD: CAUSAL CHAIN-OF-THOUGHT (CAUSALCOT)
+3.1
+RATIONALE: THE ROOTS OF UNFAITHFUL REASONING
+We hypothesize that the unfaithfulness observed in standard LLM reasoning stems from two funda-
+mental mechanisms inherent to their architecture and training:
+1. Information Leakage via Attention (Lanham et al., 2023; Radhakrishnan et al., 2023): In
+standard autoregressive generation, the Transformer’s attention mechanism allows every generated
+token to attend to all preceding tokens. Crucially, this leakage is transitive: because a previous token’s
+latent representation has already absorbed information from earlier tokens across previous layers,
+attending to it implicitly carries forward the entire historical context. Consequently, each reasoning
+step is influenced by the entire context window, both directly and indirectly. Even when tokens are
+logically unrelated to a specific intermediate deduction, non-zero attention scores permit spurious
+information to seep through. This explains why intervening on a generated reasoning step often fails
+to alter the final prediction: the model bypasses the explicit stated logical chain and retrieves the
+necessary signal directly from the original input (as illustrated in Figure 2).
+2. Reward-Driven Token Optimization (Turpin et al., 2023; Matton et al., 2025; Perez et al., 2022;
+Chen et al., 2025):
+3
+
+
+Standard CoT
+Input X
+Reasoning Step 1
+Reasoning Step 2
+Final Answer Y
+Leakage
+CausalCoT
+Input X
+Question v1
+Question v2
+Answer A1
+Answer A2
+Question v3
+Final Answer Y
+Figure 2: Attention Leakage: Standard Chain-
+of-Thought suffers from causal opacity: dense at-
+tention creates “leakage” pathways (red dashed
+arrows) that bypass intermediate logic. CausalCoT
+enforces a strict DAG. By evaluating intermediate
+steps in isolated contexts, each answer is causally
+derived only from its direct parent nodes.
+Modern alignment techniques, such as RLHF
+(Ouyang et al., 2022), optimize models to fulfill
+specific criteria (e.g., helpfulness, safety, lack of
+bias) at the token-sequence level. Consequently,
+the model learns a policy that maximizes re-
+ward by generating highly plausible, human-
+appealing text, rather than a faithful represen-
+tation of its internal mechanistic process. For
+example, if the reward model penalizes biased
+language, the LLM will generate a rationale that
+explicitly avoids citing sensitive attributes, even
+if those attributes covertly drove the underlying
+prediction. Because this deceptive misalignment
+is fundamentally baked into the model’s learned
+policy, simply prompting for transparency is in-
+sufficient; the model will continuously manip-
+ulate the autoregressive token stream to con-
+struct a convincing narrative that diverges from
+its actual internal computation. Overcoming this
+requires a rigorous structural intervention that
+binds the stated plan to the final answer, guaran-
+teeing that if a logical sequence is executed, the
+resulting prediction aligns with the generated
+rationale.
+3.2
+THE CAUSALCOT FRAMEWORK
+To address these fundamental flaws, we introduce Causal Chain-of-Thought (CausalCoT). Our
+framework explicitly decouples the generation of a logical plan from its execution, structuring
+inference to suppress attention-based leakage and enforce strict dependencies. As illustrated in Figure
+2, CausalCoT shifts away from the leakage-prone, continuous attention of standard autoregressive
+reasoning by dividing the inference process into two distinct isolated phases: Graph Generation and
+Context-Isolated Question Evaluation. Further implementation details are provided in Appendix G.
+Formal Problem Setup. Let X ∈X denote the input prompt (e.g., a complex reasoning question)
+and Y ∈Y denote the target final answer. We assume access to a pre-trained LLM, denoted
+as a policy πθ. In standard autoregressive CoT prompting, the model generates a sequence of
+intermediate reasoning tokens R = (r1, r2, . . . , rm) prior to predicting the final answer, such that
+Y ∼πθ(· | X, R). Because the generation of each intermediate token rt is heavily conditioned on the
+entire preceding context—i.e., rt ∼πθ(· | X, r<t). This dense attention mechanism creates severe
+causal opacity. It makes it impossible to guarantee whether a given token rt is logically derived from
+relevant predecessors, or spuriously extracted from X or unrelated segments of R<t. Our objective is
+to replace the opaque autoregressive reasoning trace R with an externally auditable directed graph
+structure, where each intermediate generation is conditioned only on explicitly routed inputs. This
+does not claim to expose the model’s internal computation; rather, it constrains the deployed inference
+procedure so that downstream generations cannot directly attend to non-parent reasoning content.
+Phase 1: Graph Generation. Rather than allowing the model to autoregressively stream a continuous
+CoT, we first prompt the LLM to act exclusively as a planner. Given an input prompt X, the model
+decomposes the problem into a set of discrete, atomic sub-questions and constructs a DAG, denoted
+as G = (V, E). Here, each node vi ∈V represents a specific sub-question, and each directed edge
+(vi, vj) ∈E indicates that the derived answer ai for question vi is necessary to solve vj. By explicitly
+mapping these dependencies a priori, we leverage the LLM’s robust zero-shot planning capabilities
+while strictly preventing it from simultaneously executing the logic. This decoupling reduces one
+source of entanglement between planning and execution: the structural design of the reasoning path
+is not contaminated by the model’s bias toward plausible explanations that do not align with the
+execution.
+4
+
+
+Phase 2: Context-Isolated Question Evaluation. Once the graph G is instantiated, we execute the
+reasoning trace by traversing the graph topologically. Each node is evaluated using the same LLM,
+but strictly within an isolated context window:
+• Root Nodes: For any initial node with no parents (vroot), the LLM is prompted only with
+the original input X and the specific sub-question defined by vroot.
+• Internal and Leaf Nodes: For any descendant node vj, the LLM is prompted with the sub-
+question vj alongside the answers of its direct parent nodes, denoted as Pa(vj). Crucially,
+the model does not have access to the overarching global input X, nor to any sibling or
+parallel reasoning branches.
+By enforcing this strict topological evaluation, we remove direct attention links from a node to non-
+parent reasoning content. The generated answer to a specific question vj is determined exclusively by
+Pa(vj). This forced Markovian property guarantees that the final prediction is a faithful product of
+the intermediate steps. The complete CausalCoT inference procedure is formalized in Algorithm 1.
+3.3
+INFERENCE PROPERTIES AND HUMAN-IN-THE-LOOP INTERVENTIONS
+The structural transparency of CausalCoT natively unlocks several powerful inference-time properties
+that are fundamentally intractable under standard autoregressive generation. By decoupling the
+reasoning plan from its execution, users can actively interact with and steer the model’s logic at
+multiple stages:
+• Structural Auditing and Test-Time Interventions: Before reasoning begins, the gener-
+ated DAG G = (V, E) is fully exposed for a priori inspection. Experts can rectify flawed
+logic, value misalignments, or missing steps by adding or removing sub-questions v ∈V,
+modifying context, or redefining edges E. Inspired by concept interventions in interpretable
+architectures (Koh et al., 2020; Dominici et al., 2024), experts can also perform test-time
+surgical corrections on incorrect or hallucinated intermediate nodes; due to topological iso-
+lation, only downstream descendants require recomputation. Unlike standard autoregressive
+CoT, where dense attention causes localized edits to trigger unpredictable cascades that
+destabilize reasoning, CausalCoT enables predictable, efficient steering to improve final
+predictive performance.
+• Faithful Counterfactual Simulation: The forced Markovian property natively supports
+counterfactual simulations via explicit causal interventions (conceptually equivalent to
+Pearl’s do-operator, e.g., do(vi = x)). Users can cleanly intervene on the value produced
+by a node (or on the information in the input), and dynamically propagate these changes
+through the graph (keeping it fixed). Since the environment is sealed against non-causal
+leakage and the ancestors of v are dropped from every downstream context and cannot
+re-enter the resulting final answer, Y is a faithful reflection of the counterfactual intervention,
+under the same generated graph.
+4
+EXPERIMENTS
+We design our experiments to evaluate the efficacy, faithfulness, and intervenability of CausalCoT
+compared to standard autoregressive reasoning. Specifically, we aim to answer the following research
+questions:
+• RQ1 (Performance): Does enforcing a strict causal graph degrade task accuracy compared
+to standard CoT?
+• RQ2 (Faithfulness): Are the intermediate steps genuine drivers of the generation? Specifi-
+cally, if an intermediate reasoning step is modified, does the model structurally rely on it,
+and does the final prediction shift in a predictable direction?
+• RQ3 (Intervenability): Can CausalCoT reliably integrate test-time interventions to correct
+intermediate reasoning steps?
+All the remaining information about the experimental settings such as hyperparameters, dataset splits
+and additional information are defined in Appendix F, while the used prompts in Appendix I.
+5
+
+
+4.1
+EXPERIMENTAL SETUP
+Datasets. We evaluate CausalCoT across performance, faithfulness, and intervenability using diverse
+benchmarks. We first use GPQA (Rein et al., 2023), a graduate-level science dataset, to ensure our
+model maintains competitive reasoning capabilities. Next, we incorporate MedQA (Jin et al., 2020)
+to test multi-step clinical deduction in high-stakes domains. Finally, we leverage the Counterfactual
+Simulatability Suite (CF Suite) (Mayne et al., 2026) across health, business, and ethics to quantify
+causal transparency and responsiveness to interventions. Combined, these benchmarks provide a
+robust foundation for assessing both task accuracy and model interpretability.
+Models and Baselines. We evaluate three families of models (Gemma 3, GPT-5.4, and Claude
+4.5/4.6) across varying parameter scales. We compare CausalCoT against standard CoT prompting
+and Factored Decomposition (Radhakrishnan et al., 2023). Factored Decomposition isolates reasoning
+by breaking queries into sub-questions and evaluating them in restricted context windows. However,
+it suffers from two structural flaws: intermediate steps lack explicit parental routing, and the final
+prediction concatenates all generated text, reintroducing pervasive attention leakage. CausalCoT
+resolves these vulnerabilities by enforcing a DAG architecture, guaranteeing pure context isolation.
+Further details on baseline mechanics and comparison with CausalCoT are further explained in
+Appendix C.
+Evaluation Metrics. We evaluate our three research questions using the following metrics:
+• Predictive Performance (RQ1): We report standard Accuracy (Acc) to determine if
+CausalCoT’s strict DAG constraints degrade foundational problem-solving capabilities.
+We also report Pass@3 (the probability of generating at least one correct answer across
+three independent inferences). Because CausalCoT strictly enforces the generated topology,
+a malformed initial graph guarantees predictive failure. We therefore evaluate whether
+multi-sample generation mitigates zero-shot planning bottlenecks by providing multiple
+opportunities to produce a valid response.
+• Faithfulness and Predictability (RQ2): To quantify the causal influence of intermediate
+reasoning, we adapt established step-perturbation methodologies (Lanham et al., 2023).
+By injecting targeted errors using a frontier model (GPT-5.4) into intermediate nodes, we
+measure the frequency of downstream answer changes. To distinguish genuine causal
+adherence from arbitrary perturbation instability, we introduce a Predictable Change metric.
+This metric relies on an LLM judge that determines the logical downstream implication
+of each injected error, accounting for instances where a perturbation is insufficient to alter
+the final label. We then evaluate whether the model’s corrupted conclusion matches this
+counterfactual target, confirming that downstream predictions predictably adhere to the
+modified premise.
+• Test-Time Intervenability (RQ3): To evaluate the practical utility of our framework’s
+"human-in-the-loop" capabilities, we simulate expert interventions using a frontier proxy
+model (GPT-5.4) tasked with identifying and correcting erroneous reasoning steps. Both
+CausalCoT and Factored Decomposition support multi-level interventions, allowing the
+proxy to explicitly correct either an initial sub-question (planning) or a generated intermedi-
+ate answer (execution). However, CausalCoT’s strict DAG topology provides the routing
+necessary to propagate these surgical edits to downstream dependent steps. On the other
+hand, CoT supports only the correction of intermediate steps. By measuring downstream
+predictive improvements across an intervention budget of k ∈{1, 2, 3}, we quantify how
+efficiently these edits correct the model’s reasoning.
+5
+RESULTS
+5.1
+RQ1: PREDICTIVE ACCURACY
+CausalCoT maintains competitive accuracy, absorbing an expected performance trade-off to
+enable strict causal isolation (Table 1). As shown in Table 1, our framework generally preserves
+competitive overall accuracy with only a minor reduction of 1.05 to 6.38 percentage points (p.p.)
+in average accuracy on different datasets compared to the best-performing baselines. This slight
+degradation is a direct consequence of enforcing the DAG structure and removing dense attention
+6
+
+
+Table 1: Predictive Performance (RQ1): Accuracy (Acc) and the probability of generating at least
+one correct answer in three samples (Pass@3). Results are presented as percentages (%± standard
+error). CausalCoT is able to maintain competitive accuracy, with a slight performance decline as a
+trade-off for context isolation.
+Model
+Method
+MedQA
+GPQA
+Counterfactuals
+Overall Average
+Acc (%) ↑
+Pass@3 (%) ↑
+Acc (%) ↑
+Pass@3 (%) ↑
+Acc (%) ↑
+Pass@3 (%) ↑
+Acc (%) ↑
+Pass@3 (%) ↑
+Gemma 4B
+CoT
+49.00 ± 0.47
+66.00 ± 3.35
+31.17 ± 0.59
+50.50 ± 3.54
+54.34 ± 0.33
+62.42 ± 3.77
+44.84 ± 0.28
+59.64 ± 2.05
+FactoredDecomp
+46.50 ± 0.62
+55.50 ± 3.51
+24.17 ± 0.72
+36.00 ± 3.39
+56.57 ± 0.82
+64.85 ± 3.72
+42.41 ± 0.42
+52.12 ± 2.05
+CausalCoT
+44.67 ± 0.72
+70.50 ± 3.22
+28.83 ± 0.36
+56.50 ± 3.51
+46.67 ± 1.48
+68.48 ± 3.62
+40.06 ± 0.56
+65.16 ± 1.99
+Gemma 12B
+CoT
+68.83 ± 0.76
+81.00 ± 2.77
+39.67 ± 2.00
+60.00 ± 3.46
+53.13 ± 0.87
+61.82 ± 3.78
+53.88 ± 0.77
+67.61 ± 1.94
+FactoredDecomp
+62.00 ± 0.85
+70.50 ± 3.22
+32.50 ± 1.25
+46.00 ± 3.52
+52.93 ± 0.66
+63.64 ± 3.74
+49.14 ± 0.55
+60.05 ± 2.02
+CausalCoT
+55.83 ± 0.27
+76.00 ± 3.02
+32.33 ± 1.53
+56.00 ± 3.51
+55.56 ± 0.44
+72.12 ± 3.49
+47.91 ± 0.54
+68.04 ± 1.93
+GPT-5.4 Nano
+CoT
+84.17 ± 0.54
+90.50 ± 2.07
+55.17 ± 0.83
+70.00 ± 3.24
+53.94 ± 0.49
+58.18 ± 3.84
+64.42 ± 0.37
+72.89 ± 1.81
+FactoredDecomp
+77.17 ± 0.59
+91.00 ± 2.02
+44.83 ± 1.57
+72.00 ± 3.17
+52.32 ± 1.00
+80.00 ± 3.11
+58.11 ± 0.65
+81.00 ± 1.63
+CausalCoT
+74.33 ± 0.72
+91.50 ± 1.97
+44.83 ± 0.98
+69.00 ± 3.27
+54.95 ± 0.44
+73.33 ± 3.44
+58.04 ± 0.43
+77.94 ± 1.71
+GPT-5.4 Mini
+CoT
+92.50 ± 0.62
+95.50 ± 1.47
+60.83 ± 1.36
+77.00 ± 2.98
+53.54 ± 0.44
+57.58 ± 3.85
+68.96 ± 0.52
+76.69 ± 1.69
+FactoredDecomp
+87.17 ± 0.36
+95.00 ± 1.54
+46.50 ± 0.47
+71.00 ± 3.21
+56.57 ± 1.35
+80.00 ± 3.11
+63.41 ± 0.49
+82.00 ± 1.58
+CausalCoT
+87.17 ± 0.98
+95.00 ± 1.54
+58.17 ± 1.30
+78.00 ± 2.93
+53.74 ± 0.33
+67.27 ± 3.65
+66.36 ± 0.55
+80.09 ± 1.64
+GPT-5.4
+CoT
+96.83 ± 0.27
+98.00 ± 0.99
+75.33 ± 0.14
+83.00 ± 2.66
+50.91 ± 0.49
+54.55 ± 3.88
+74.36 ± 0.19
+78.52 ± 1.60
+FactoredDecomp
+96.50 ± 0.24
+98.50 ± 0.86
+65.00 ± 1.41
+82.50 ± 2.69
+49.49 ± 2.03
+71.52 ± 3.51
+70.33 ± 0.83
+84.17 ± 1.50
+CausalCoT
+93.50 ± 0.00
+96.50 ± 1.30
+69.50 ± 0.47
+81.50 ± 2.75
+53.54 ± 1.00
+61.82 ± 3.78
+72.18 ± 0.37
+79.94 ± 1.62
+Claude Haiku 4.5
+CoT
+90.33 ± 0.59
+95.00 ± 1.54
+64.33 ± 1.16
+80.50 ± 2.80
+51.92 ± 1.29
+58.79 ± 3.83
+68.86 ± 0.61
+78.10 ± 1.66
+FactoredDecomp
+81.67 ± 1.19
+93.50 ± 1.74
+60.67 ± 0.95
+81.50 ± 2.75
+54.95 ± 1.44
+71.52 ± 3.51
+65.76 ± 0.70
+82.17 ± 1.60
+CausalCoT
+87.17 ± 0.54
+95.50 ± 1.47
+57.67 ± 0.76
+79.50 ± 2.85
+55.15 ± 0.57
+73.33 ± 3.44
+66.66 ± 0.36
+82.78 ± 1.57
+Claude Sonnet 4.6
+CoT
+95.33 ± 0.36
+96.50 ± 1.30
+80.17 ± 0.27
+87.50 ± 2.34
+53.54 ± 0.16
+58.18 ± 3.84
+76.35 ± 0.16
+80.73 ± 1.56
+FactoredDecomp
+94.33 ± 0.27
+97.50 ± 1.10
+79.17 ± 0.36
+87.00 ± 2.38
+53.33 ± 1.51
+66.06 ± 3.69
+75.61 ± 0.53
+83.52 ± 1.51
+CausalCoT
+93.00 ± 0.62
+97.00 ± 1.21
+79.17 ± 0.72
+89.00 ± 2.21
+53.74 ± 0.72
+60.61 ± 3.80
+75.30 ± 0.40
+82.20 ± 1.52
+pathways, which prevents the model from exploiting the spurious global correlations that typically
+inflate autoregressive accuracy. We see this dynamic clearly when evaluating the Factored Decom-
+position baseline: while it occasionally achieves marginally higher predictive metrics, it does so by
+concatenating all generated sub-answers alongside the original input at the final prediction stage.
+This effectively reintroduces the very global attention leakage that aids accuracy at the expense
+of causal faithfulness. CausalCoT structurally forbids this final-stage leakage, fully absorbing the
+well-established accuracy-interpretability trade-off (Koh et al., 2020; Zarlenga et al., 2022) (Appendix
+H.9 inspects the types of error CausalCoT makes). Given that these LLMs are not explicitly fine-tuned
+for topological planning, achieving such robust zero-shot performance under strict causal constraints
+is highly encouraging, particularly as the accuracy gap systematically narrows in frontier models (e.g.,
+GPT-5.4 and Claude Sonnet 4.6) that more readily adapt to these structural demands. Appendix H.2
+details the impact of graph structure on CausalCoT’s performance, alongside Appendix H.4 showing
+an ablation on exploring graph quality and context reintroduction at the final node.
+CausalCoT achieves high multi-sample success rates (Pass@3) by overcoming initial graph
+formulation errors through repeated structural attempts (Table 1). Because our framework
+isolates context, structural defects in the initial DAG, such as a missing dependency or a malformed
+output, cannot be silently compensated by global-context lookup, as they can in standard CoT, and are
+therefore more likely to surface as prediction failures rather than being masked. However, resampling
+mitigates this zero-shot planning bottleneck. By taking multiple attempts, the model explores
+structurally distinct graphs. Once it generates the correct graph, CausalCoT executes the logic to
+reach the correct answer. Standard CoT obtains smaller Pass@3 gains on several settings, consistent
+with it generating highly correlated variations of the same text stream. Factored Decomposition
+shares some of CausalCoT’s multi-sample benefits by proposing alternative subquestions, but lacks
+our strict downstream execution. This dynamic shows how CausalCoT is partially limited by initial
+planning, suggesting that future work ensembling or refining the DAG prior to execution could yield
+improvements in baseline accuracy. Appendix H.7 quantifies this variability and attributes it to the
+graph-generation step.
+5.2
+RQ2: EXPLANATION FAITHFULNESS
+CausalCoT significantly increases reasoning faithfulness, outperforming baselines by strictly
+forbidding attention leakage (Table 2). When targeted errors are injected into intermediate reasoning
+steps, standard CoT exhibits low answer-change rates; for instance, advanced models like GPT-5.4
+and Claude Sonnet 4.6 alter their final answers only 26.82% and 9.97% of the time, respectively.
+This confirms that standard generation suffers from severe attention leakage: highly capable models
+bypass the corrupted logic and rely on global context to predict the answer, treating their own
+intermediate text as mere decoration. This aligns with Emmons et al. (2025), who demonstrate that
+models become increasingly causally unfaithful on simpler tasks (Appendix H details a reproduction
+7
