@@ -38,5 +38,6 @@ scratch/
 
 # Evaluation checkpoints
 eval/**/*.cache.json
+eval/*checkpoint*.json
 
 
