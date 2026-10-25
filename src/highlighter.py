@@ -160,66 +160,69 @@ def run_predictions(
         is_low_burstiness = (burstiness_std < 4.0 and len(sentences) >= 5)
 
         predictions = []
+        batch_size = 32
         with torch.no_grad():
-            for idx, sent in enumerate(sentences):
-                prob_mb = None
-                prob_rob = None
-                
-                # Build surrounding paragraph window context for ModernBERT if multiple sentences exist
-                prev_sent = sentences[idx - 1] if idx > 0 else ""
-                next_sent = sentences[idx + 1] if idx < len(sentences) - 1 else ""
-                window_context = f"{prev_sent} {sent} {next_sent}".strip()
+            for b_idx in range(0, len(sentences), batch_size):
+                b_sents = sentences[b_idx : b_idx + batch_size]
+                b_contexts = []
+                for offset, s in enumerate(b_sents):
+                    global_idx = b_idx + offset
+                    prev_sent = sentences[global_idx - 1] if global_idx > 0 else ""
+                    next_sent = sentences[global_idx + 1] if global_idx < len(sentences) - 1 else ""
+                    window_context = f"{prev_sent} {s} {next_sent}".strip()
+                    b_contexts.append(window_context if len(window_context) > len(s) else s)
 
-                # ModernBERT forward pass (evaluating 3-sentence window context, truncated to 512 tokens)
                 if mb_model is not None and mb_tokenizer is not None:
-                    mb_inputs = mb_tokenizer(window_context if len(window_context) > len(sent) else sent, truncation=True, max_length=512, return_tensors="pt")
+                    mb_inputs = mb_tokenizer(b_contexts, padding=True, truncation=True, max_length=512, return_tensors="pt")
                     mb_inputs = {k: v.to(device) for k, v in mb_inputs.items()}
-                    mb_logits = mb_model(**mb_inputs).logits
-                    prob_mb = float(torch.softmax(mb_logits, dim=-1).cpu().numpy()[0][1])
-                    
-                # RoBERTa forward pass (micro sentence syntax level)
-                if rob_model is not None and rob_tokenizer is not None:
-                    rob_inputs = rob_tokenizer(sent, truncation=True, max_length=512, return_tensors="pt")
-                    rob_inputs = {k: v.to(device) for k, v in rob_inputs.items()}
-                    rob_logits = rob_model(**rob_inputs).logits
-                    prob_rob = float(torch.softmax(rob_logits, dim=-1).cpu().numpy()[0][1])
-                    
-                # Check for Humanizer / Paraphraser Transition Patterns
-                sent_lower = sent.lower()
-                has_humanizer_transition = bool(re.search(HUMANIZER_TRANSITIONS_REGEX, sent_lower))
-                
-                # Layer 3: Adaptive Non-Linear Gated Max-Pooling & Multi-Domain Stylometric Boost
-                if prob_mb is not None and prob_rob is not None:
-                    base_score = max(prob_rob, prob_mb)
-                    if has_humanizer_transition:
-                        # Apply calibrated boost for humanized transition artifacts
-                        prob_ai = min(0.99, max(base_score, 0.65) + 0.15)
-                    elif is_low_burstiness and base_score >= 0.35:
-                        prob_ai = min(0.99, base_score + 0.10)
-                    elif prob_rob >= 0.38 or prob_mb >= 0.38:
-                        prob_ai = base_score
-                    else:
-                        prob_ai = 0.50 * prob_mb + 0.50 * prob_rob
-                elif prob_mb is not None:
-                    prob_ai = prob_mb if not has_humanizer_transition else min(0.99, max(prob_mb, 0.65) + 0.12)
-                elif rob_model is not None:
-                    prob_ai = prob_rob if not has_humanizer_transition else min(0.99, max(prob_rob, 0.65) + 0.12)
+                    with torch.autocast(device_type=device, dtype=torch.float16, enabled=(device == "cuda")):
+                        mb_logits = mb_model(**mb_inputs).logits
+                    probs_mb = torch.softmax(mb_logits.float(), dim=-1)[:, 1].cpu().tolist()
                 else:
-                    prob_ai = 0.02
+                    probs_mb = [None] * len(b_sents)
 
-                # Guard against standalone title metadata, author lines, and affiliations
-                is_metadata = bool(re.search(
-                    r'^\s*(?:independent research|university|department|school|e-mail|email|july \d{4}|june \d{4}|august \d{4}|january \d{4}|february \d{4}|march \d{4}|april \d{4}|may \d{4}|september \d{4}|october \d{4}|november \d{4}|december \d{4})\s*$',
-                    sent_lower
-                ))
-                if is_metadata:
-                    prob_ai = 0.02
-                    
-                predictions.append({
-                    "sentence": sent,
-                    "score": float(prob_ai),
-                    "label": 1 if prob_ai >= 0.5 else 0
-                })
+                if rob_model is not None and rob_tokenizer is not None:
+                    rob_inputs = rob_tokenizer(b_sents, padding=True, truncation=True, max_length=512, return_tensors="pt")
+                    rob_inputs = {k: v.to(device) for k, v in rob_inputs.items()}
+                    with torch.autocast(device_type=device, dtype=torch.float16, enabled=(device == "cuda")):
+                        rob_logits = rob_model(**rob_inputs).logits
+                    probs_rob = torch.softmax(rob_logits.float(), dim=-1)[:, 1].cpu().tolist()
+                else:
+                    probs_rob = [None] * len(b_sents)
+
+                for sent, prob_mb, prob_rob in zip(b_sents, probs_mb, probs_rob):
+                    sent_lower = sent.lower()
+                    has_humanizer_transition = bool(re.search(HUMANIZER_TRANSITIONS_REGEX, sent_lower))
+
+                    if prob_mb is not None and prob_rob is not None:
+                        base_score = max(prob_rob, prob_mb)
+                        if has_humanizer_transition:
+                            prob_ai = min(0.99, max(base_score, 0.65) + 0.15)
+                        elif is_low_burstiness and base_score >= 0.35:
+                            prob_ai = min(0.99, base_score + 0.10)
+                        elif prob_rob >= 0.38 or prob_mb >= 0.38:
+                            prob_ai = base_score
+                        else:
+                            prob_ai = 0.50 * prob_mb + 0.50 * prob_rob
+                    elif prob_mb is not None:
+                        prob_ai = prob_mb if not has_humanizer_transition else min(0.99, max(prob_mb, 0.65) + 0.12)
+                    elif rob_model is not None:
+                        prob_ai = prob_rob if not has_humanizer_transition else min(0.99, max(prob_rob, 0.65) + 0.12)
+                    else:
+                        prob_ai = 0.02
+
+                    is_metadata = bool(re.search(
+                        r'^\s*(?:independent research|university|department|school|e-mail|email|july \d{4}|june \d{4}|august \d{4}|january \d{4}|february \d{4}|march \d{4}|april \d{4}|may \d{4}|september \d{4}|october \d{4}|november \d{4}|december \d{4})\s*$',
+                        sent_lower
+                    ))
+                    if is_metadata:
+                        prob_ai = 0.02
+
+                    predictions.append({
+                        "sentence": sent,
+                        "score": float(prob_ai),
+                        "label": 1 if prob_ai >= 0.5 else 0
+                    })
         return predictions, False
         
     except Exception as e:
