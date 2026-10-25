@@ -269,8 +269,8 @@ def main():
         score_comb = score_document_combination(score_mb, score_rob, 0.50, 0.50)
         preds_combination.append(score_comb)
 
-        if (idx + 1) % 10 == 0 or (idx + 1) == len(df_papers):
-            print(f" -> Processed {idx + 1}/{len(df_papers)} documents (Elapsed: {time.time() - start_time:.1f}s)")
+        if (idx + 1) % 5 == 0 or (idx + 1) == len(df_papers) or (idx + 1) <= 5:
+            print(f" -> Processed {idx + 1}/{len(df_papers)} docs [{row['id']}]: MB={score_mb:.3f}, Rob={score_rob:.3f}, Pipe={score_pipe:.3f} (Elapsed: {time.time() - start_time:.1f}s)", flush=True)
 
     df_papers["pred_3sent_pipeline"] = preds_pipeline_3sent
     df_papers["pred_sliding_rob_512"] = preds_sliding_rob_512
